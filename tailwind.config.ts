@@ -9,6 +9,10 @@ export default {
   ],
   theme: {
   	extend: {
+		animation: {
+			'fade-in-out': 'fadeInOut 15s infinite',
+		  },
+		  
   		colors: {
   			background: 'hsl(var(--background))',
   			foreground: 'hsl(var(--foreground))',
