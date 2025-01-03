@@ -23,11 +23,11 @@ export default function Home() {
           <Services />
         </section>
 
-        <section id="menu" className="min-h-screen py-20">
+        <section id="menu" className="py-20">
           <Menu />
         </section>
 
-        <section id="contact" className="min-h-screen py-20">
+        <section id="contact" className="">
           <Contact />
         </section>
       </div>

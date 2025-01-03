@@ -37,7 +37,7 @@ export function Hero() {
             <BackgroundLines className="flex items-center justify-center w-full flex-col px-4">
                 <div className="mb-8">
                     <h1 
-                        className={`text-8xl font-bold text-gray-600 transition-opacity duration-500 ease-in-out ${
+                        className={`text-3xl sm:text-4xl md:text-6xl lg:text-7xl xl:text-8xl font-bold text-gray-600 transition-opacity duration-500 ease-in-out ${
                             fade ? 'opacity-90' : 'opacity-0'
                         }`}
                     >
