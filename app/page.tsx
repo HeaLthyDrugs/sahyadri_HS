@@ -19,7 +19,7 @@ export default function Home() {
           <About />
         </section>
 
-        <section id="services" className="min-h-screen py-20">
+        <section id="services" className="py-20">
           <Services />
         </section>
 
