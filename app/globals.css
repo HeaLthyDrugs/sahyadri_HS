@@ -138,3 +138,14 @@ input, textarea {
 .no-visible-scrollbar::-webkit-scrollbar {
   display: none;
 }
+
+@media print {
+  .print\:hidden {
+    display: none;
+  }
+  
+  body {
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+}

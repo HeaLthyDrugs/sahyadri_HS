@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { motion } from "framer-motion";
+import { useRouter } from "next/navigation";
 
 const navLinks = [
     { href: "#home", label: "Home" },
@@ -15,6 +16,11 @@ const navLinks = [
 
 export function Navbar() {
     const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+    const router = useRouter();
+
+    const handleLoginClick = () => {
+        router.push('/admin/login');
+    };
 
     return (
         <nav className="fixed top-6 left-1/2 -translate-x-1/2 w-[90%] max-w-4xl bg-white/10 backdrop-blur-md z-50 rounded-3xl border border-white/20 shadow-lg">
@@ -117,6 +123,7 @@ export function Navbar() {
 
                         {/* Login Button */}
                         <motion.button
+                            onClick={handleLoginClick}
                             className="relative px-6 py-2 ml-4 text-white bg-gradient-to-r from-amber-500 to-amber-600 rounded-full overflow-hidden group"
                             whileHover="hover"
                             whileTap={{ scale: 0.95 }}
@@ -214,6 +221,7 @@ export function Navbar() {
                         
                         {/* Mobile Login Button */}
                         <motion.button
+                            onClick={handleLoginClick}
                             className="w-full px-4 py-2 mt-2 text-white bg-gradient-to-r from-amber-500 to-amber-600 rounded-full"
                             whileTap={{ scale: 0.95 }}
                         >
