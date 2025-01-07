@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
+import { FiChevronDown, FiChevronRight, FiMenu, FiX } from "react-icons/fi";
 import { 
   RiDashboardLine, 
   RiArchiveLine,
@@ -16,13 +17,7 @@ import {
   RiFileListLine,
   RiFileTextLine,
   RiPieChartLine,
-  RiLogoutBoxLine,
-  RiMenu2Line,
-  RiCloseLine,
-  RiArrowUpLine,
-  RiArrowDownLine,
-  RiArrowDownSLine,
-  RiArrowRightSLine
+  RiLogoutBoxLine
 } from "react-icons/ri";
 import { PackagesPage } from "./pages/inventory/packages";
 import { ProductsPage } from "./pages/inventory/products";
@@ -30,8 +25,7 @@ import { ProgramsPage } from "./pages/consumer/programs";
 import { InvoicePage } from "./pages/billing/invoice";
 import { ParticipantsPage } from "./pages/consumer/participants";
 import { BillingEntriesPage } from "./pages/billing/entries";
-import { supabase } from "@/lib/supabase";
-import { format } from "date-fns";
+import { OverviewPage } from "./pages/overview";
 
 interface MenuItem {
   title: string;
@@ -40,95 +34,11 @@ interface MenuItem {
   path?: string;
 }
 
-interface DashboardStats {
-  totalParticipants: number;
-  activePrograms: number;
-  totalProducts: number;
-  monthlyRevenue: number;
-  participantTrend: number;
-  revenueTrend: number;
-}
-
-interface RecentActivity {
-  id: string;
-  type: string;
-  description: string;
-  timestamp: string;
-}
-
 export function AdminDashboard() {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState("overview");
   const [openMenus, setOpenMenus] = useState<string[]>([]);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-
-  const [stats, setStats] = useState<DashboardStats>({
-    totalParticipants: 0,
-    activePrograms: 0,
-    totalProducts: 0,
-    monthlyRevenue: 0,
-    participantTrend: 0,
-    revenueTrend: 0
-  });
-
-  const [recentActivity, setRecentActivity] = useState<RecentActivity[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-
-  useEffect(() => {
-    fetchDashboardData();
-  }, []);
-
-  const fetchDashboardData = async () => {
-    try {
-      // Fetch total participants
-      const { data: participants } = await supabase
-        .from('participants')
-        .select('count');
-
-      // Fetch active programs
-      const { data: programs } = await supabase
-        .from('programs')
-        .select('count')
-        .eq('status', 'Ongoing');
-
-      // Fetch total products
-      const { data: products } = await supabase
-        .from('products')
-        .select('count');
-
-      // Calculate monthly revenue from billing entries
-      const startOfMonth = format(new Date(), 'yyyy-MM-01');
-      const { data: revenue } = await supabase
-        .from('billing_entries')
-        .select('quantity, rate')
-        .gte('date', startOfMonth);
-
-      const monthlyRevenue = revenue?.reduce((acc, entry) => 
-        acc + (entry.quantity * entry.rate), 0) || 0;
-
-      setStats({
-        totalParticipants: participants?.[0]?.count || 0,
-        activePrograms: programs?.[0]?.count || 0,
-        totalProducts: products?.[0]?.count || 0,
-        monthlyRevenue,
-        participantTrend: 12, // Example trend percentage
-        revenueTrend: 8 // Example trend percentage
-      });
-
-      // Fetch recent activity
-      const { data: activity } = await supabase
-        .from('activity_log')
-        .select('*')
-        .order('timestamp', { ascending: false })
-        .limit(5);
-
-      setRecentActivity(activity || []);
-      setIsLoading(false);
-    } catch (error) {
-      console.error('Error fetching dashboard data:', error);
-      setIsLoading(false);
-    }
-  };
 
   const menuItems: MenuItem[] = [
     {
@@ -170,8 +80,8 @@ export function AdminDashboard() {
   };
 
   const toggleMenu = (title: string) => {
-    setOpenMenus(prev =>
-      prev.includes(title)
+    setOpenMenus(prev => 
+      prev.includes(title) 
         ? prev.filter(item => item !== title)
         : [...prev, title]
     );
@@ -183,213 +93,171 @@ export function AdminDashboard() {
   };
 
   return (
-    <div className="flex h-screen bg-gray-100">
-      {/* Mobile menu button */}
-      <button
-        className="lg:hidden fixed top-4 left-4 z-50 p-2 bg-white rounded-md shadow-md"
-        onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-      >
-        {isSidebarOpen ? (
-          <RiCloseLine className="w-6 h-6" />
-        ) : (
-          <RiMenu2Line className="w-6 h-6" />
-        )}
-      </button>
-
-      {/* Sidebar */}
-      <div
-        className={`fixed inset-y-0 left-0 transform ${
-          isSidebarOpen ? "translate-x-0" : "-translate-x-full"
-        } lg:relative lg:translate-x-0 transition duration-200 ease-in-out lg:block bg-white w-64 shadow-lg z-40`}
-      >
-        {/* Sidebar content */}
-        <div className="h-full flex flex-col">
-          <div className="p-4 border-b">
+    <div className="min-h-screen bg-gray-100">
+      {/* Mobile Header */}
+      <div className="md:hidden fixed top-0 left-0 right-0 bg-white z-30 border-b">
+        <div className="flex items-center justify-between p-4">
+          <div className="flex items-center space-x-3">
             <Image
               src="/logo.png"
               alt="Logo"
-              width={40}
-              height={40}
+              width={32}
+              height={32}
               className="rounded-full"
             />
+            <span className="text-lg font-semibold ">Admin Panel</span>
+          </div>
+          <button
+            onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+            className="p-2 rounded-lg hover:bg-gray-100"
+          >
+            {isSidebarOpen ? (
+              <FiX className="w-6 h-6" />
+            ) : (
+              <FiMenu className="w-6 h-6" />
+            )}
+          </button>
+        </div>
+      </div>
+
+      {/* Overlay for mobile */}
+      {isSidebarOpen && (
+        <div 
+          className="fixed inset-0 bg-black/50 z-30 md:hidden"
+          onClick={() => setIsSidebarOpen(false)}
+        />
+      )}
+
+      {/* Sidebar */}
+      <div className={`
+        fixed inset-y-0 left-0 z-40
+        w-64 bg-white shadow-lg
+        transform transition-transform duration-200 ease-in-out
+        md:translate-x-0
+        ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}
+      `}>
+        <div className="flex flex-col h-full">
+          {/* Logo - Hidden on mobile as it's in the header */}
+          <div className="p-4 border-b hidden md:block">
+            <div className="flex items-center space-x-3">
+              <Image
+                src="/logo.png"
+                alt="Logo"
+                width={40}
+                height={40}
+                className="rounded-full"
+              />
+              <span className="text-lg font-semibold">Admin Panel</span>
+            </div>
           </div>
 
-          <nav className="flex-1 overflow-y-auto p-4">
-            {menuItems.map((item) => (
-              <div key={item.title} className="mb-2">
-                {item.items ? (
-                  <>
-                    <button
-                      onClick={() => toggleMenu(item.title)}
-                      className="w-full flex items-center justify-between p-2 rounded-md hover:bg-gray-100"
-                    >
-                      <div className="flex items-center">
-                        {item.icon}
-                        <span className="ml-3">{item.title}</span>
-                      </div>
-                      {openMenus.includes(item.title) ? (
-                        <RiArrowDownSLine className="w-5 h-5" />
-                      ) : (
-                        <RiArrowRightSLine className="w-5 h-5" />
+          {/* Navigation */}
+          <nav className="flex-1 p-4 overflow-y-auto mt-16 md:mt-0">
+            <ul className="space-y-2">
+              {menuItems.map((item) => (
+                <li key={item.title}>
+                  {item.items ? (
+                    // Dropdown Menu
+                    <div>
+                      <button
+                        onClick={() => toggleMenu(item.title)}
+                        className="w-full flex items-center justify-between px-4 py-2 text-left text-gray-700 hover:bg-gray-50 rounded-lg group"
+                      >
+                        <div className="flex items-center gap-3">
+                          <span className="text-gray-500 group-hover:text-amber-600 transition-colors">
+                            {item.icon}
+                          </span>
+                          <span>{item.title}</span>
+                        </div>
+                        {openMenus.includes(item.title) ? (
+                          <FiChevronDown className="w-4 h-4" />
+                        ) : (
+                          <FiChevronRight className="w-4 h-4" />
+                        )}
+                      </button>
+                      {openMenus.includes(item.title) && (
+                        <ul className="ml-4 mt-2 space-y-2">
+                          {item.items.map((subItem) => (
+                            <li key={subItem.path}>
+                              <button
+                                onClick={() => handleNavigation(subItem.path)}
+                                className={`w-full px-4 py-2 text-sm rounded-lg text-left flex items-center gap-3 transition-colors ${
+                                  activeTab === subItem.path
+                                    ? "bg-amber-50 text-amber-700"
+                                    : "text-gray-600 hover:bg-gray-50"
+                                }`}
+                              >
+                                <span className={`${
+                                  activeTab === subItem.path
+                                    ? "text-amber-600"
+                                    : "text-gray-400"
+                                }`}>
+                                  {subItem.icon}
+                                </span>
+                                {subItem.name}
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
                       )}
+                    </div>
+                  ) : (
+                    // Regular Menu Item
+                    <button
+                      onClick={() => handleNavigation(item.path!)}
+                      className={`w-full px-4 py-2 rounded-lg text-left flex items-center gap-3 ${
+                        activeTab === item.path
+                          ? "bg-amber-50 text-amber-700"
+                          : "text-gray-700 hover:bg-gray-50"
+                      }`}
+                    >
+                      <span className={`${
+                        activeTab === item.path
+                          ? "text-amber-600"
+                          : "text-gray-500"
+                      }`}>
+                        {item.icon}
+                      </span>
+                      {item.title}
                     </button>
-                    {openMenus.includes(item.title) && (
-                      <div className="ml-4 mt-2 space-y-2">
-                        {item.items.map((subItem) => (
-                          <button
-                            key={subItem.path}
-                            onClick={() => setActiveTab(subItem.path)}
-                            className={`w-full flex items-center p-2 rounded-md hover:bg-gray-100 ${
-                              activeTab === subItem.path ? "bg-gray-100" : ""
-                            }`}
-                          >
-                            {subItem.icon}
-                            <span className="ml-3">{subItem.name}</span>
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </>
-                ) : (
-                  <button
-                    onClick={() => setActiveTab(item.path!)}
-                    className={`w-full flex items-center p-2 rounded-md hover:bg-gray-100 ${
-                      activeTab === item.path ? "bg-gray-100" : ""
-                    }`}
-                  >
-                    {item.icon}
-                    <span className="ml-3">{item.title}</span>
-                  </button>
-                )}
-              </div>
-            ))}
+                  )}
+                </li>
+              ))}
+            </ul>
           </nav>
 
+          {/* Logout */}
           <div className="p-4 border-t">
             <button
               onClick={handleLogout}
-              className="w-full flex items-center p-2 rounded-md hover:bg-gray-100 text-red-600"
+              className="w-full px-4 py-2 text-sm text-red-600 hover:bg-red-50 rounded-lg flex items-center gap-2"
             >
-              <RiLogoutBoxLine className="w-5 h-5" />
-              <span className="ml-3">Logout</span>
+              <RiLogoutBoxLine className="w-4 h-4" />
+              Logout
             </button>
           </div>
         </div>
       </div>
 
-      {/* Main content */}
-      <div className="flex-1 overflow-auto">
-        <AdminContent 
-          activeTab={activeTab} 
-          stats={stats} 
-          isLoading={isLoading}
-          recentActivity={recentActivity}
-          setActiveTab={setActiveTab}
-        />
+      {/* Main Content */}
+      <div className="md:ml-64 p-4 md:p-8 mt-16 md:mt-0">
+        <div className="bg-white rounded-lg shadow p-4 md:p-6">
+          <h2 className="text-xl md:text-2xl font-semibold mb-4">
+            {activeTab.charAt(0).toUpperCase() + activeTab.slice(1)}
+          </h2>
+          
+          {/* Content based on active tab */}
+          <AdminContent activeTab={activeTab} />
+        </div>
       </div>
     </div>
   );
 }
 
-function AdminContent({ 
-  activeTab, 
-  stats, 
-  isLoading,
-  recentActivity,
-  setActiveTab 
-}: { 
-  activeTab: string;
-  stats: DashboardStats;
-  isLoading: boolean;
-  recentActivity: RecentActivity[];
-  setActiveTab: (tab: string) => void;
-}) {
+function AdminContent({ activeTab }: { activeTab: string }) {
   switch (activeTab) {
     case "overview":
-      return (
-        <div className="p-6">
-          <h1 className="text-2xl font-semibold mb-6">Dashboard Overview</h1>
-          
-          {/* Stats Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
-            <StatCard
-              title="Total Participants"
-              value={stats.totalParticipants}
-              trend={stats.participantTrend}
-              icon={<RiGroupLine className="w-6 h-6" />}
-              loading={isLoading}
-            />
-            <StatCard
-              title="Active Programs"
-              value={stats.activePrograms}
-              icon={<RiCalendarEventLine className="w-6 h-6" />}
-              loading={isLoading}
-            />
-            <StatCard
-              title="Total Products"
-              value={stats.totalProducts}
-              icon={<RiShoppingCart2Line className="w-6 h-6" />}
-              loading={isLoading}
-            />
-            <StatCard
-              title="Monthly Revenue"
-              value={`₹${stats.monthlyRevenue.toLocaleString()}`}
-              trend={stats.revenueTrend}
-              icon={<RiMoneyDollarCircleLine className="w-6 h-6" />}
-              loading={isLoading}
-            />
-          </div>
-
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Recent Activity */}
-            <div className="bg-white rounded-lg shadow p-6">
-              <h2 className="text-lg font-semibold mb-4">Recent Activity</h2>
-              <div className="space-y-4">
-                {isLoading ? (
-                  <div className="animate-pulse space-y-4">
-                    {[...Array(5)].map((_, i) => (
-                      <div key={i} className="h-16 bg-gray-100 rounded-lg" />
-                    ))}
-                  </div>
-                ) : recentActivity.length > 0 ? (
-                  recentActivity.map((activity) => (
-                    <ActivityItem key={activity.id} activity={activity} />
-                  ))
-                ) : (
-                  <p className="text-gray-500 text-center py-4">No recent activity</p>
-                )}
-              </div>
-            </div>
-
-            {/* Quick Actions */}
-            <div className="bg-white rounded-lg shadow p-6">
-              <h2 className="text-lg font-semibold mb-4">Quick Actions</h2>
-              <div className="grid grid-cols-2 gap-4">
-                <QuickActionButton
-                  label="Add Program"
-                  icon={<RiCalendarEventLine className="w-5 h-5" />}
-                  onClick={() => setActiveTab("programs")}
-                />
-                <QuickActionButton
-                  label="Add Product"
-                  icon={<RiShoppingCart2Line className="w-5 h-5" />}
-                  onClick={() => setActiveTab("products")}
-                />
-                <QuickActionButton
-                  label="Billing Entry"
-                  icon={<RiFileListLine className="w-5 h-5" />}
-                  onClick={() => setActiveTab("entries")}
-                />
-                <QuickActionButton
-                  label="View Invoice"
-                  icon={<RiFileTextLine className="w-5 h-5" />}
-                  onClick={() => setActiveTab("invoice")}
-                />
-              </div>
-            </div>
-          </div>
-        </div>
-      );
+      return <OverviewPage />;
     case "packages":
       return <PackagesPage />;
     case "products":
@@ -415,87 +283,22 @@ function AdminContent({
   }
 }
 
-function StatCard({ 
-  title, 
-  value, 
-  trend, 
-  icon, 
-  loading 
-}: { 
-  title: string;
-  value: number | string;
-  trend?: number;
-  icon: React.ReactNode;
-  loading: boolean;
-}) {
-  return (
-    <div className="bg-white rounded-lg shadow p-6">
-      {loading ? (
-        <div className="animate-pulse space-y-4">
-          <div className="h-4 bg-gray-100 rounded w-1/2"></div>
-          <div className="h-8 bg-gray-100 rounded w-3/4"></div>
-        </div>
-      ) : (
-        <>
-          <div className="flex items-center justify-between mb-2">
-            <h3 className="text-gray-500 text-sm">{title}</h3>
-            <span className="text-gray-400">{icon}</span>
-          </div>
-          <div className="flex items-end">
-            <span className="text-2xl font-semibold">{value}</span>
-            {trend !== undefined && (
-              <span className={`ml-2 flex items-center text-sm ${
-                trend >= 0 ? 'text-green-500' : 'text-red-500'
-              }`}>
-                {trend >= 0 ? (
-                  <RiArrowUpLine className="w-4 h-4" />
-                ) : (
-                  <RiArrowDownLine className="w-4 h-4" />
-                )}
-                {Math.abs(trend)}%
-              </span>
-            )}
-          </div>
-        </>
-      )}
-    </div>
-  );
-}
+function DashboardCard({ title, value, trend }: { title: string; value: string; trend: string }) {
+  const isPositive = trend.startsWith("+");
 
-function ActivityItem({ activity }: { activity: RecentActivity }) {
   return (
-    <div className="flex items-center p-3 bg-gray-50 rounded-lg">
-      <div className="mr-4">
-        {activity.type === 'program' && <RiCalendarEventLine className="w-5 h-5 text-blue-500" />}
-        {activity.type === 'billing' && <RiFileListLine className="w-5 h-5 text-green-500" />}
-        {activity.type === 'participant' && <RiUserLine className="w-5 h-5 text-purple-500" />}
-      </div>
-      <div>
-        <p className="text-sm text-gray-600">{activity.description}</p>
-        <p className="text-xs text-gray-400">
-          {format(new Date(activity.timestamp), 'MMM d, yyyy h:mm a')}
-        </p>
+    <div className="bg-gray-50 p-4 md:p-6 rounded-lg">
+      <h3 className="text-sm font-medium text-gray-500">{title}</h3>
+      <div className="mt-2 flex items-baseline">
+        <p className="text-xl md:text-2xl font-semibold text-gray-900">{value}</p>
+        <span
+          className={`ml-2 text-sm font-medium ${
+            isPositive ? "text-green-600" : "text-red-600"
+          }`}
+        >
+          {trend}
+        </span>
       </div>
     </div>
-  );
-}
-
-function QuickActionButton({ 
-  label, 
-  icon, 
-  onClick 
-}: { 
-  label: string;
-  icon: React.ReactNode;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className="flex items-center justify-center gap-2 p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
-    >
-      {icon}
-      <span className="text-sm font-medium">{label}</span>
-    </button>
   );
 } 
