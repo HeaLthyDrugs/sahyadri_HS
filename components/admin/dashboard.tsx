@@ -22,10 +22,12 @@ import {
 import { PackagesPage } from "./pages/inventory/packages";
 import { ProductsPage } from "./pages/inventory/products";
 import { ProgramsPage } from "./pages/consumer/programs";
-import { InvoicePage } from "./pages/billing/invoice";
+
 import { ParticipantsPage } from "./pages/consumer/participants";
 import { BillingEntriesPage } from "./pages/billing/entries";
 import { OverviewPage } from "./pages/overview";
+import InvoicePage from "./pages/billing/invoice";
+import Report from "./pages/billing/report";
 
 interface MenuItem {
   title: string;
@@ -273,7 +275,7 @@ function AdminContent({ activeTab }: { activeTab: string }) {
     case "invoice":
       return <InvoicePage />;
     case "reports":
-      return <div>Reports page coming soon...</div>;
+      return <Report />;
     default:
       return (
         <div className="text-center text-gray-500">

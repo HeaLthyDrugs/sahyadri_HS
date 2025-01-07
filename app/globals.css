@@ -141,11 +141,41 @@ input, textarea {
 
 @media print {
   .print\:hidden {
-    display: none;
+    display: none !important;
   }
   
   body {
     print-color-adjust: exact;
     -webkit-print-color-adjust: exact;
+  }
+
+  /* Ensure white background and black text for printing */
+  .bg-white {
+    background-color: white !important;
+  }
+
+  .text-gray-900 {
+    color: #111827 !important;
+  }
+
+  /* Remove shadows when printing */
+  .shadow,
+  .shadow-lg {
+    box-shadow: none !important;
+  }
+
+  /* Ensure tables print properly */
+  table {
+    break-inside: auto;
+  }
+  
+  tr {
+    break-inside: avoid;
+    break-after: auto;
+  }
+
+  /* Add page margins */
+  @page {
+    margin: 2cm;
   }
 }
