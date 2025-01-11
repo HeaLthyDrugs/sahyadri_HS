@@ -15,7 +15,6 @@ interface Package {
   name: string;
   description: string;
   type: string;
-  created_at: string;
 }
 
 export function PackagesPage() {
@@ -39,7 +38,7 @@ export function PackagesPage() {
       const { data, error } = await supabase
         .from('packages')
         .select('*')
-        .order('created_at', { ascending: false });
+        .order('name', { ascending: true });
 
       if (error) {
         throw error;
@@ -156,9 +155,6 @@ export function PackagesPage() {
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Type
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Created At
-                </th>
                 <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Actions
                 </th>
@@ -175,9 +171,6 @@ export function PackagesPage() {
                   </td>
                   <td className="px-6 py-4 text-sm text-gray-500">
                     {pkg.type}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {new Date(pkg.created_at).toLocaleDateString()}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                     <button
@@ -197,7 +190,7 @@ export function PackagesPage() {
               ))}
               {packages.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="px-6 py-4 text-center text-gray-500">
+                  <td colSpan={4} className="px-6 py-4 text-center text-gray-500">
                     No packages found
                   </td>
                 </tr>

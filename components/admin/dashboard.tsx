@@ -17,7 +17,8 @@ import {
   RiFileListLine,
   RiFileTextLine,
   RiPieChartLine,
-  RiLogoutBoxLine
+  RiLogoutBoxLine,
+  RiSettingsLine
 } from "react-icons/ri";
 import { PackagesPage } from "./pages/inventory/packages";
 import { ProductsPage } from "./pages/inventory/products";
@@ -28,6 +29,8 @@ import { BillingEntriesPage } from "./pages/billing/entries";
 import { OverviewPage } from "./pages/overview";
 import InvoicePage from "./pages/billing/invoice";
 import Report from "./pages/billing/report";
+import StaffPage from "./pages/consumer/staff";
+import Config from "./pages/config";
 
 interface MenuItem {
   title: string;
@@ -73,6 +76,11 @@ export function AdminDashboard() {
         { name: "Invoice", path: "invoice", icon: <RiFileTextLine className="w-4 h-4" /> },
         { name: "Reports", path: "reports", icon: <RiPieChartLine className="w-4 h-4" /> }
       ]
+    },
+    {
+      title: "Configuration",
+      path: "config",
+      icon: <RiSettingsLine className="w-5 h-5" />
     }
   ];
 
@@ -269,13 +277,15 @@ function AdminContent({ activeTab }: { activeTab: string }) {
     case "participants":
       return <ParticipantsPage />;
     case "staff":
-      return <div>Staff page coming soon...</div>;
+      return <StaffPage />;
     case "entries":
       return <BillingEntriesPage />;
     case "invoice":
       return <InvoicePage />;
     case "reports":
       return <Report />;
+    case "config":
+      return <Config />;
     default:
       return (
         <div className="text-center text-gray-500">

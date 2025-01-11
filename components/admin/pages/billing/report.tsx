@@ -125,12 +125,12 @@ export default function ReportPage() {
       // Transform data
       const formattedData: ReportData[] = (data || []).map(entry => ({
         date: format(new Date(entry.entry_date), 'dd/MM/yyyy'),
-        program: entry.programs?.name || 'N/A',
-        package: entry.packages?.name || 'N/A',
-        product: entry.products?.name || 'N/A',
+        program: entry.programs[0]?.name || 'N/A',
+        package: entry.packages[0]?.name || 'N/A',
+        product: entry.products[0]?.name || 'N/A',
         quantity: entry.quantity,
-        rate: entry.products?.rate || 0,
-        amount: entry.quantity * (entry.products?.rate || 0)
+        rate: entry.products[0]?.rate || 0,
+        amount: entry.quantity * (entry.products[0]?.rate || 0)
       }));
 
       // Calculate summary

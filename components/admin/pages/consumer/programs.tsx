@@ -132,7 +132,7 @@ export function ProgramsPage() {
     end_time: "",
     total_participants: ""
   });
-  const [viewMode, setViewMode] = useState<'grid' | 'table'>('grid');
+  const [viewMode, setViewMode] = useState<'table' | 'grid'>('table');
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<Program['status'] | 'all'>('all');
   const [sortField, setSortField] = useState<'start_date' | 'name' | 'total_participants'>('start_date');
@@ -514,16 +514,6 @@ export function ProgramsPage() {
           {/* View Toggle - Stack on mobile */}
           <div className="flex items-center bg-white rounded-lg shadow order-first sm:order-none">
             <button
-              onClick={() => setViewMode('grid')}
-              className={`p-2 ${
-                viewMode === 'grid'
-                  ? 'text-amber-600 bg-amber-50'
-                  : 'text-gray-500 hover:text-amber-600'
-              }`}
-            >
-              <RiGridLine className="w-5 h-5" />
-            </button>
-            <button
               onClick={() => setViewMode('table')}
               className={`p-2 ${
                 viewMode === 'table'
@@ -532,6 +522,16 @@ export function ProgramsPage() {
               }`}
             >
               <RiTableLine className="w-5 h-5" />
+            </button>
+            <button
+              onClick={() => setViewMode('grid')}
+              className={`p-2 ${
+                viewMode === 'grid'
+                  ? 'text-amber-600 bg-amber-50'
+                  : 'text-gray-500 hover:text-amber-600'
+              }`}
+            >
+              <RiGridLine className="w-5 h-5" />
             </button>
           </div>
 
