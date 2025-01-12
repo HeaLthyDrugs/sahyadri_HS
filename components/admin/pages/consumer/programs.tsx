@@ -18,7 +18,8 @@ import {
   RiArrowLeftSLine,
   RiArrowRightSLine,
   RiDownloadLine,
-  RiUploadLine
+  RiUploadLine,
+  RiUserLine
 } from "react-icons/ri";
 import { supabase } from "@/lib/supabase";
 import { toast } from "react-hot-toast";
@@ -28,6 +29,7 @@ import { parse, unparse } from 'papaparse';
 interface Program {
   id: string;
   name: string;
+  customer_name: string;
   start_date: string;
   start_time: string;
   end_date: string;
@@ -126,10 +128,11 @@ export function ProgramsPage() {
   const [programs, setPrograms] = useState<Program[]>([]);
   const [formData, setFormData] = useState({
     name: "",
+    customer_name: "",
     start_date: "",
-    start_time: "",
+    start_time: "09:00",
     end_date: "",
-    end_time: "",
+    end_time: "17:00",
     total_participants: ""
   });
   const [viewMode, setViewMode] = useState<'table' | 'grid'>('table');
@@ -177,6 +180,14 @@ export function ProgramsPage() {
     return 'Ongoing';
   };
 
+  const formatTime = (time: string) => {
+    const [hours, minutes] = time.split(':');
+    const hour = parseInt(hours);
+    const ampm = hour >= 12 ? 'PM' : 'AM';
+    const formattedHour = hour % 12 || 12;
+    return `${formattedHour}:${minutes} ${ampm}`;
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
@@ -187,6 +198,7 @@ export function ProgramsPage() {
 
       const programData = {
         name: formData.name,
+        customer_name: formData.customer_name,
         start_date: formData.start_date,
         start_time: formData.start_time,
         end_date: formData.end_date,
@@ -215,10 +227,11 @@ export function ProgramsPage() {
 
       setFormData({
         name: "",
+        customer_name: "",
         start_date: "",
-        start_time: "",
+        start_time: "09:00",
         end_date: "",
-        end_time: "",
+        end_time: "17:00",
         total_participants: ""
       });
       setEditingProgram(null);
@@ -627,6 +640,7 @@ export function ProgramsPage() {
                         setEditingProgram(program);
                         setFormData({
                           name: program.name,
+                          customer_name: program.customer_name,
                           start_date: program.start_date,
                           start_time: program.start_time,
                           end_date: program.end_date,
@@ -650,16 +664,26 @@ export function ProgramsPage() {
 
                 <div className="space-y-2">
                   <div className="flex items-center text-sm">
+                    <RiUserLine className="w-4 h-4 text-gray-400 mr-2" />
+                    <span className="text-gray-500">Customer:</span>
+                    <span className="ml-auto font-medium">{program.customer_name}</span>
+                  </div>
+                  <div className="flex items-center text-sm">
                     <RiCalendarLine className="w-4 h-4 text-gray-400 mr-2" />
-                    <span className="text-gray-500">Duration:</span>
-                    <span className="ml-auto font-medium">{program.days} days</span>
+                    <span className="text-gray-500">Program:</span>
+                    <span className="ml-auto font-medium">{program.name}</span>
                   </div>
                   <div className="flex items-center text-sm">
                     <RiTimeLine className="w-4 h-4 text-gray-400 mr-2" />
                     <span className="text-gray-500">Time:</span>
                     <span className="ml-auto font-medium">
-                      {program.start_time} - {program.end_time}
+                      {formatTime(program.start_time)} - {formatTime(program.end_time)}
                     </span>
+                  </div>
+                  <div className="flex items-center text-sm">
+                    <RiCalendarLine className="w-4 h-4 text-gray-400 mr-2" />
+                    <span className="text-gray-500">Duration:</span>
+                    <span className="ml-auto font-medium">{program.days} days</span>
                   </div>
                   <div className="flex items-center text-sm">
                     <RiGroupLine className="w-4 h-4 text-gray-400 mr-2" />
@@ -690,10 +714,16 @@ export function ProgramsPage() {
                 <thead className="bg-gray-50">
                   <tr>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Customer Name
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Program Name
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Duration
+                      Date
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Days
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Time
@@ -712,19 +742,22 @@ export function ProgramsPage() {
                 <tbody className="bg-white divide-y divide-gray-200">
                   {paginatedPrograms().map((program) => (
                     <tr key={program.id} className="hover:bg-gray-50">
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {program.customer_name}
+                      </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="text-sm font-medium text-gray-900">
                           {program.name}
                         </div>
-                        <div className="text-sm text-gray-500">
-                          {new Date(program.start_date).toLocaleDateString()} - {new Date(program.end_date).toLocaleDateString()}
-                        </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {format(new Date(program.start_date), 'MMM dd, yyyy')} - {format(new Date(program.end_date), 'MMM dd, yyyy')}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                         {program.days} days
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {program.start_time} - {program.end_time}
+                        {formatTime(program.start_time)} - {formatTime(program.end_time)}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                         {program.total_participants}
@@ -740,6 +773,7 @@ export function ProgramsPage() {
                             setEditingProgram(program);
                             setFormData({
                               name: program.name,
+                              customer_name: program.customer_name,
                               start_date: program.start_date,
                               start_time: program.start_time,
                               end_date: program.end_date,
@@ -789,10 +823,11 @@ export function ProgramsPage() {
                   setEditingProgram(null);
                   setFormData({
                     name: "",
+                    customer_name: "",
                     start_date: "",
-                    start_time: "",
+                    start_time: "09:00",
                     end_date: "",
-                    end_time: "",
+                    end_time: "17:00",
                     total_participants: ""
                   });
                 }}
@@ -803,6 +838,19 @@ export function ProgramsPage() {
             </div>
 
             <form onSubmit={handleSubmit} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700">
+                  Customer Name
+                </label>
+                <input
+                  type="text"
+                  value={formData.customer_name}
+                  onChange={(e) => setFormData({ ...formData, customer_name: e.target.value })}
+                  className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-amber-500 focus:outline-none focus:ring-amber-500"
+                  required
+                />
+              </div>
+
               <div>
                 <label className="block text-sm font-medium text-gray-700">
                   Program Name
@@ -892,10 +940,11 @@ export function ProgramsPage() {
                     setEditingProgram(null);
                     setFormData({
                       name: "",
+                      customer_name: "",
                       start_date: "",
-                      start_time: "",
+                      start_time: "09:00",
                       end_date: "",
-                      end_time: "",
+                      end_time: "17:00",
                       total_participants: ""
                     });
                   }}

@@ -8,3 +8,13 @@ if (!supabaseUrl || !supabaseAnonKey) {
 }
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey); 
+
+export type Participant = {
+  id: string;
+  attendee_name: string;
+  security_checkin: string;
+  reception_checkin: string;
+  reception_checkout: string;
+  security_checkout: string;
+  created_at: string;
+} 
