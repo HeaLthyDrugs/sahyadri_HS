@@ -7,7 +7,8 @@ import {
   RiCloseLine,
   RiDownloadLine,
   RiUploadLine,
-  RiAlertLine
+  RiAlertLine,
+  RiEditLine
 } from "react-icons/ri";
 import { toast } from "react-hot-toast";
 import { format } from 'date-fns';
@@ -17,10 +18,11 @@ import { supabase } from "@/lib/supabase";
 interface Participant {
   id: string;
   attendee_name: string;
-  security_checkin: string;
+  type: string;
+  security_checkin?: string;
   reception_checkin: string;
   reception_checkout: string;
-  security_checkout: string;
+  security_checkout?: string;
   created_at: string;
 }
 
@@ -34,11 +36,14 @@ export function ParticipantsPage() {
   const [itemsPerPage] = useState(10);
   const [formData, setFormData] = useState({
     attendee_name: "",
+    type: "participant",
     security_checkin: "",
     reception_checkin: "",
     reception_checkout: "",
     security_checkout: "",
   });
+
+  const [editingParticipant, setEditingParticipant] = useState<Participant | null>(null);
 
   useEffect(() => {
     // Fetch participants from Supabase
@@ -59,38 +64,79 @@ export function ParticipantsPage() {
     fetchParticipants();
   }, []);
 
+  const handleEdit = (participant: Participant) => {
+    setEditingParticipant(participant);
+    setFormData({
+      attendee_name: participant.attendee_name,
+      type: participant.type,
+      security_checkin: participant.security_checkin ? format(new Date(participant.security_checkin), "yyyy-MM-dd'T'HH:mm") : "",
+      reception_checkin: format(new Date(participant.reception_checkin), "yyyy-MM-dd'T'HH:mm"),
+      reception_checkout: format(new Date(participant.reception_checkout), "yyyy-MM-dd'T'HH:mm"),
+      security_checkout: participant.security_checkout ? format(new Date(participant.security_checkout), "yyyy-MM-dd'T'HH:mm") : "",
+    });
+    setIsModalOpen(true);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-
     setIsLoading(true);
 
     try {
       const participantData = {
-        id: String(Date.now()),
         attendee_name: formData.attendee_name,
-        security_checkin: new Date(formData.security_checkin).toISOString(),
+        type: formData.type,
+        ...(formData.security_checkin && {
+          security_checkin: new Date(formData.security_checkin).toISOString()
+        }),
         reception_checkin: new Date(formData.reception_checkin).toISOString(),
         reception_checkout: new Date(formData.reception_checkout).toISOString(),
-        security_checkout: new Date(formData.security_checkout).toISOString(),
-        created_at: new Date().toISOString()
+        ...(formData.security_checkout && {
+          security_checkout: new Date(formData.security_checkout).toISOString()
+        }),
       };
 
-      const { error } = await supabase
-        .from('participants')
-        .insert([participantData]);
+      if (editingParticipant) {
+        // Update existing participant
+        const { error } = await supabase
+          .from('participants')
+          .update(participantData)
+          .eq('id', editingParticipant.id);
 
-      if (error) throw error;
+        if (error) throw error;
 
-      setParticipants(prev => [...prev, participantData]);
-      toast.success('Participant added successfully');
+        setParticipants(prev => 
+          prev.map(p => p.id === editingParticipant.id ? 
+            { ...p, ...participantData } : p
+          )
+        );
+        toast.success('Participant updated successfully');
+      } else {
+        // Create new participant
+        const newParticipant = {
+          ...participantData,
+          id: String(Date.now()),
+          created_at: new Date().toISOString()
+        };
+
+        const { error } = await supabase
+          .from('participants')
+          .insert([newParticipant]);
+
+        if (error) throw error;
+
+        setParticipants(prev => [newParticipant, ...prev]);
+        toast.success('Participant added successfully');
+      }
 
       setFormData({
         attendee_name: "",
+        type: "participant",
         security_checkin: "",
         reception_checkin: "",
         reception_checkout: "",
         security_checkout: "",
       });
+      setEditingParticipant(null);
       setIsModalOpen(false);
     } catch (error) {
       console.error('Error saving participant:', error);
@@ -122,9 +168,23 @@ export function ParticipantsPage() {
   const handleDeleteAll = async () => {
     try {
       setIsLoading(true);
+      
+      // First check if there are any participants to delete
+      const { data: existingParticipants } = await supabase
+        .from('participants')
+        .select('id');
+
+      if (!existingParticipants || existingParticipants.length === 0) {
+        toast.error('No participants to delete');
+        setIsDeleteAllModalOpen(false);
+        return;
+      }
+
+      // If there are participants, proceed with deletion
       const { error } = await supabase
         .from('participants')
-        .delete();
+        .delete()
+        .gte('id', '0'); // Delete all records where id is greater than or equal to '0'
 
       if (error) throw error;
 
@@ -144,10 +204,9 @@ export function ParticipantsPage() {
       const exportData = participants.map(participant => ({
         'No.': participant.id,
         'Attendee Name': participant.attendee_name,
-        'Security Check-In': format(new Date(participant.security_checkin), 'dd-M-yyyy HH:mm'),
-        'Reception Check-In': format(new Date(participant.reception_checkin), 'dd-M-yyyy HH:mm'),
-        'Reception Check-Out': format(new Date(participant.reception_checkout), 'dd-M-yyyy HH:mm'),
-        'Security Check-Out': format(new Date(participant.security_checkout), 'dd-M-yyyy HH:mm')
+        'Role': participant.type,
+        'Check In': format(new Date(participant.reception_checkin), 'dd-MMM-yyyy h:mm a'),
+        'Check Out': format(new Date(participant.reception_checkout), 'dd-MMM-yyyy h:mm a')
       }));
 
       const csv = unparse(exportData);
@@ -184,10 +243,15 @@ export function ParticipantsPage() {
             try {
               return {
                 attendee_name: row['Attendee Name'],
-                security_checkin: formatDate(row['Security Check-In']),
+                type: row['Type'] || 'participant',
+                ...(row['Security Check-In'] && {
+                  security_checkin: formatDate(row['Security Check-In'])
+                }),
                 reception_checkin: formatDate(row['Reception Check-In']),
                 reception_checkout: formatDate(row['Reception Check-Out']),
-                security_checkout: formatDate(row['Security Check-Out']),
+                ...(row['Security Check-Out'] && {
+                  security_checkout: formatDate(row['Security Check-Out'])
+                }),
               };
             } catch (error) {
               console.error('Error processing row:', row, error);
@@ -196,10 +260,8 @@ export function ParticipantsPage() {
           }).filter((item): item is NonNullable<typeof item> => 
             item !== null && 
             item.attendee_name && 
-            item.security_checkin &&
             item.reception_checkin &&
-            item.reception_checkout &&
-            item.security_checkout
+            item.reception_checkout
           );
 
           if (importData.length === 0) {
@@ -354,19 +416,19 @@ export function ParticipantsPage() {
             <thead className="bg-gray-50">
               <tr>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  No.
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Attendee Name
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Security Check-In
+                  Role
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Reception Check-In
+                  Check In
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Reception Check-Out
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Security Check-Out
+                  Check Out
                 </th>
                 <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Actions
@@ -374,29 +436,52 @@ export function ParticipantsPage() {
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {paginatedParticipants.map((participant) => (
+              {paginatedParticipants.map((participant, index) => (
                 <tr key={participant.id} className="hover:bg-gray-50">
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    {(currentPage - 1) * itemsPerPage + index + 1}
+                  </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="text-sm font-medium text-gray-900">
                       {participant.attendee_name}
                     </div>
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {format(new Date(participant.security_checkin), 'dd-M-yyyy HH:mm')}
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium
+                      ${participant.type === 'admin' ? 'bg-purple-100 text-purple-800' : 
+                        participant.type === 'staff' ? 'bg-blue-100 text-blue-800' : 
+                        'bg-green-100 text-green-800'}`}>
+                      {participant.type.charAt(0).toUpperCase() + participant.type.slice(1)}
+                    </span>
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {format(new Date(participant.reception_checkin), 'dd-M-yyyy HH:mm')}
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="text-sm text-gray-500">
+                      <div>{format(new Date(participant.reception_checkin), 'dd MMM yyyy')}</div>
+                      <div className="text-xs text-gray-400">
+                        {format(new Date(participant.reception_checkin), 'h:mm a')}
+                      </div>
+                    </div>
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {format(new Date(participant.reception_checkout), 'dd-M-yyyy HH:mm')}
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="text-sm text-gray-500">
+                      <div>{format(new Date(participant.reception_checkout), 'dd MMM yyyy')}</div>
+                      <div className="text-xs text-gray-400">
+                        {format(new Date(participant.reception_checkout), 'h:mm a')}
+                      </div>
+                    </div>
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {format(new Date(participant.security_checkout), 'dd-M-yyyy HH:mm')}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                  <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-2">
+                    <button
+                      onClick={() => handleEdit(participant)}
+                      className="text-amber-600 hover:text-amber-900"
+                      title="Edit participant"
+                    >
+                      <RiEditLine className="w-5 h-5" />
+                    </button>
                     <button
                       onClick={() => handleDelete(participant.id)}
                       className="text-red-600 hover:text-red-900"
+                      title="Delete participant"
                     >
                       <RiDeleteBinLine className="w-5 h-5" />
                     </button>
@@ -474,20 +559,22 @@ export function ParticipantsPage() {
 
               <div>
                 <label className="block text-sm font-medium text-gray-700">
-                  Security Check-In
+                  Role
                 </label>
-                <input
-                  type="datetime-local"
-                  value={formData.security_checkin}
-                  onChange={(e) => setFormData({ ...formData, security_checkin: e.target.value })}
+                <select
+                  value={formData.type}
+                  onChange={(e) => setFormData({ ...formData, type: e.target.value })}
                   className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-amber-500 focus:outline-none focus:ring-amber-500"
-                  required
-                />
+                >
+                  <option value="participant">Participant</option>
+                  <option value="staff">Staff</option>
+                  <option value="admin">Admin</option>
+                </select>
               </div>
 
               <div>
                 <label className="block text-sm font-medium text-gray-700">
-                  Reception Check-In
+                  Check In Time
                 </label>
                 <input
                   type="datetime-local"
@@ -500,7 +587,7 @@ export function ParticipantsPage() {
 
               <div>
                 <label className="block text-sm font-medium text-gray-700">
-                  Reception Check-Out
+                  Check Out Time
                 </label>
                 <input
                   type="datetime-local"
@@ -511,26 +598,15 @@ export function ParticipantsPage() {
                 />
               </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700">
-                  Security Check-Out
-                </label>
-                <input
-                  type="datetime-local"
-                  value={formData.security_checkout}
-                  onChange={(e) => setFormData({ ...formData, security_checkout: e.target.value })}
-                  className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-amber-500 focus:outline-none focus:ring-amber-500"
-                  required
-                />
-              </div>
-
               <div className="flex justify-end gap-3 mt-6">
                 <button
                   type="button"
                   onClick={() => {
                     setIsModalOpen(false);
+                    setEditingParticipant(null);
                     setFormData({
                       attendee_name: "",
+                      type: "participant",
                       security_checkin: "",
                       reception_checkin: "",
                       reception_checkout: "",
@@ -546,7 +622,7 @@ export function ParticipantsPage() {
                   disabled={isLoading}
                   className="px-4 py-2 text-sm font-medium text-white bg-amber-600 rounded-md hover:bg-amber-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-amber-500 disabled:opacity-50"
                 >
-                  {isLoading ? 'Saving...' : 'Add'}
+                  {isLoading ? 'Saving...' : editingParticipant ? 'Update' : 'Add'}
                 </button>
               </div>
             </form>
