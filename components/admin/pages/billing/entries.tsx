@@ -12,17 +12,21 @@ import {
   RiHistoryLine,
   RiFileExcelLine,
   RiSave3Line,
-  RiFilterLine
+  RiFilterLine,
+  RiCalculatorLine,
+  RiArrowDownSLine
 } from "react-icons/ri";
 import Papa from 'papaparse';
+import { calculateDuration, isDateInRange } from "@/lib/utils";
 
 interface Program {
   id: string;
   name: string;
+  customer_name: string;
   start_date: string;
   end_date: string;
-  total_participants: number;
-  status: 'Upcoming' | 'Ongoing' | 'Completed';
+  package_id: string;
+  status: string;
 }
 
 interface Product {
@@ -60,6 +64,76 @@ interface EntryHistory {
   details: string;
 }
 
+interface Participant {
+  id: string;
+  attendee_name: string;
+  reception_checkin: string;
+  reception_checkout: string;
+  program_id: string;
+}
+
+const ProgramSelect = ({ 
+  value, 
+  onChange, 
+  programs 
+}: { 
+  value: string; 
+  onChange: (value: string) => void; 
+  programs: Program[]; 
+}) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const selectedProgram = programs.find(p => p.id === value);
+
+  return (
+    <div className="relative min-w-[300px]">
+      <button
+        type="button"
+        onClick={() => setIsOpen(!isOpen)}
+        className="w-full flex items-center justify-between border rounded px-3 py-2 bg-white hover:bg-gray-50"
+      >
+        {selectedProgram ? (
+          <div className="flex flex-col items-start">
+            <span className="font-medium">{selectedProgram.name}</span>
+            <span className="text-sm text-gray-500">
+              {selectedProgram.customer_name} • {format(parseISO(selectedProgram.start_date), 'dd/MM/yyyy')} - {format(parseISO(selectedProgram.end_date), 'dd/MM/yyyy')}
+              {selectedProgram.status === 'Completed' ? ' (Completed)' : ''}
+            </span>
+          </div>
+        ) : (
+          <span className="text-gray-500">Select Program</span>
+        )}
+        <RiArrowDownSLine className={`w-5 h-5 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+      </button>
+
+      {isOpen && (
+        <div className="absolute z-10 w-full mt-1 bg-white border rounded-md shadow-lg max-h-60 overflow-auto">
+          {programs.map(program => (
+            <button
+              key={program.id}
+              type="button"
+              onClick={() => {
+                onChange(program.id);
+                setIsOpen(false);
+              }}
+              className={`w-full px-3 py-2 text-left hover:bg-gray-50 ${
+                program.id === value ? 'bg-amber-50' : ''
+              }`}
+            >
+              <div className="flex flex-col">
+                <span className="font-medium">{program.name}</span>
+                <span className="text-sm text-gray-500">
+                  {program.customer_name} • {format(parseISO(program.start_date), 'dd/MM/yyyy')} - {format(parseISO(program.end_date), 'dd/MM/yyyy')}
+                  {program.status === 'Completed' ? ' (Completed)' : ''}
+                </span>
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
 export function BillingEntriesPage() {
   const [selectedMonth, setSelectedMonth] = useState(format(new Date(), 'yyyy-MM'));
   const [selectedProgram, setSelectedProgram] = useState("");
@@ -75,6 +149,9 @@ export function BillingEntriesPage() {
   const [showHistory, setShowHistory] = useState(false);
   const [entryHistory, setEntryHistory] = useState<EntryHistory[]>([]);
   const [bulkEntryMode, setBulkEntryMode] = useState(false);
+  const [participants, setParticipants] = useState<Participant[]>([]);
+  const [autoCalculateMode, setAutoCalculateMode] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<string>('all');
 
   // Add ref for managing focus
   const tableRef = useRef<HTMLTableElement>(null);
@@ -163,18 +240,15 @@ export function BillingEntriesPage() {
         .or(
           `and(start_date.lte.${monthEnd.toISOString()},end_date.gte.${monthStart.toISOString()})`
         )
-        .order('start_date');
+        .order('start_date', { ascending: false });
 
       if (error) throw error;
       
-      // Filter programs that overlap with the selected month
+      // Filter programs that overlap with the selected month, but don't filter out completed programs
       const filteredPrograms = data?.filter(program => {
         const programStart = parseISO(program.start_date);
         const programEnd = parseISO(program.end_date);
-        return (
-          (programStart <= monthEnd && programEnd >= monthStart) &&
-          program.status !== 'Completed' // Only show Upcoming and Ongoing programs
-        );
+        return (programStart <= monthEnd && programEnd >= monthStart);
       });
 
       setPrograms(filteredPrograms || []);
@@ -247,8 +321,11 @@ export function BillingEntriesPage() {
     if (selectedPackage && dateRange.length > 0) {
       fetchProducts();
       fetchEntries();
+      if (selectedProgram) {
+        fetchParticipants(selectedProgram);
+      }
     }
-  }, [selectedPackage, dateRange]);
+  }, [selectedPackage, dateRange, selectedProgram]);
 
   const fetchEntries = async () => {
     try {
@@ -457,6 +534,150 @@ export function BillingEntriesPage() {
     };
   };
 
+  const fetchParticipants = async (programId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('participants')
+        .select(`
+          id,
+          attendee_name,
+          reception_checkin,
+          reception_checkout,
+          program_id
+        `)
+        .eq('program_id', programId);
+
+      if (error) throw error;
+      setParticipants(data || []);
+    } catch (error) {
+      console.error('Error fetching participants:', error);
+      toast.error('Failed to fetch participants');
+    }
+  };
+
+  const fetchProductRules = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('product_rules')
+        .select('*')
+        .eq('package_id', selectedPackage);
+
+      if (error) throw error;
+      return data || [];
+    } catch (error) {
+      console.error('Error fetching product rules:', error);
+      return [];
+    }
+  };
+
+  const calculateEntriesFromParticipants = async () => {
+    if (!selectedProgram || !selectedPackage || participants.length === 0) {
+      toast.error('No participants found or program/package not selected');
+      return;
+    }
+
+    try {
+      // Fetch product rules first
+      const { data: rules, error: rulesError } = await supabase
+        .from('product_rules')
+        .select('*')
+        .eq('package_id', selectedPackage);
+
+      if (rulesError) throw rulesError;
+
+      const newEntryData: EntryData = {};
+
+      // Initialize the structure
+      dateRange.forEach(date => {
+        const dateStr = format(date, 'yyyy-MM-dd');
+        newEntryData[dateStr] = {};
+        products.forEach(product => {
+          newEntryData[dateStr][product.id] = 0;
+        });
+      });
+
+      // Calculate quantities based on participants
+      participants.forEach(participant => {
+        const checkinDate = new Date(participant.reception_checkin);
+        const checkoutDate = new Date(participant.reception_checkout);
+
+        dateRange.forEach(date => {
+          const currentDate = new Date(date);
+          const dateStr = format(currentDate, 'yyyy-MM-dd');
+
+          if (isDateInRange(currentDate, checkinDate, checkoutDate)) {
+            products.forEach(product => {
+              const rule = rules?.find(r => r.product_id === product.id);
+              if (rule) {
+                const duration = calculateDuration(checkinDate, checkoutDate);
+                
+                switch (rule.allocation_type) {
+                  case 'per_day':
+                    newEntryData[dateStr][product.id] += rule.quantity;
+                    break;
+                  case 'per_stay':
+                    if (format(currentDate, 'yyyy-MM-dd') === format(checkinDate, 'yyyy-MM-dd')) {
+                      newEntryData[dateStr][product.id] += rule.quantity;
+                    }
+                    break;
+                  case 'per_hour':
+                    const hoursInDay = 24;
+                    newEntryData[dateStr][product.id] += Math.ceil(rule.quantity * (hoursInDay / duration.hours));
+                    break;
+                }
+              } else {
+                // Default behavior if no rule exists
+                switch (product.category) {
+                  case 'Meals':
+                    newEntryData[dateStr][product.id] += 3; // 3 meals per day
+                    break;
+                  case 'Drinks':
+                    newEntryData[dateStr][product.id] += 2; // 2 drinks per day
+                    break;
+                  default:
+                    newEntryData[dateStr][product.id] += 1; // 1 for other items
+                }
+              }
+            });
+          }
+        });
+      });
+
+      setEntryData(newEntryData);
+      toast.success('Entries calculated based on participant data');
+    } catch (error) {
+      console.error('Error calculating entries:', error);
+      toast.error('Failed to calculate entries');
+    }
+  };
+
+  // Add a helper function to get program status style
+  const getProgramStatusStyle = (status: string) => {
+    switch (status) {
+      case 'Completed':
+        return 'bg-gray-100 text-gray-800';
+      case 'Ongoing':
+        return 'bg-green-100 text-green-800';
+      case 'Upcoming':
+        return 'bg-blue-100 text-blue-800';
+      default:
+        return 'bg-gray-100 text-gray-800';
+    }
+  };
+
+  const filteredPrograms = programs.filter(program => 
+    statusFilter === 'all' || program.status === statusFilter
+  );
+
+  // Add this useEffect to fetch participants when program changes
+  useEffect(() => {
+    if (selectedProgram) {
+      fetchParticipants(selectedProgram);
+    } else {
+      setParticipants([]); // Clear participants when no program is selected
+    }
+  }, [selectedProgram]);
+
   return (
     <div className="p-4">
       {/* Filter Section */}
@@ -469,17 +690,21 @@ export function BillingEntriesPage() {
         />
 
         <select
-          value={selectedProgram}
-          onChange={(e) => setSelectedProgram(e.target.value)}
-          className="border rounded px-3 py-2 min-w-[200px]"
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value)}
+          className="border rounded px-3 py-2"
         >
-          <option value="">Select Program</option>
-          {programs.map(program => (
-            <option key={program.id} value={program.id}>
-              {program.name} ({format(parseISO(program.start_date), 'dd/MM/yyyy')} - {format(parseISO(program.end_date), 'dd/MM/yyyy')})
-            </option>
-          ))}
+          <option value="all">All Programs</option>
+          <option value="Upcoming">Upcoming</option>
+          <option value="Ongoing">Ongoing</option>
+          <option value="Completed">Completed</option>
         </select>
+
+        <ProgramSelect
+          value={selectedProgram}
+          onChange={setSelectedProgram}
+          programs={filteredPrograms}
+        />
 
         <select
           value={selectedPackage}
@@ -592,7 +817,7 @@ export function BillingEntriesPage() {
                   .map((product, rowIndex) => (
                     <tr key={product.id}>
                       <td className="border p-2 bg-gray-50 font-medium sticky left-0 z-10">
-                        {product.name} ({product.category})
+                        {product.name}
                       </td>
                       {dateRange.map((date, colIndex) => {
                         const dateStr = format(date, 'yyyy-MM-dd');
@@ -632,6 +857,38 @@ export function BillingEntriesPage() {
             </button>
           </div>
         </>
+      )}
+
+      <div className="flex items-center gap-4 mb-4">
+        <button
+          onClick={() => {
+            setAutoCalculateMode(!autoCalculateMode);
+            if (!autoCalculateMode) {
+              calculateEntriesFromParticipants();
+            }
+          }}
+          className={`flex items-center gap-2 px-4 py-2 rounded-md ${
+            autoCalculateMode 
+              ? 'bg-amber-100 text-amber-800' 
+              : 'bg-gray-100 text-gray-600'
+          }`}
+        >
+          <RiCalculatorLine className="w-5 h-5" />
+          {autoCalculateMode ? 'Auto-Calculate On' : 'Auto-Calculate Off'}
+        </button>
+
+        {autoCalculateMode && (
+          <div className="text-sm text-gray-500">
+            Entries are being automatically calculated based on participant check-in/out times
+          </div>
+        )}
+      </div>
+
+      {/* Add a warning message when selecting a completed program */}
+      {selectedProgram && programs.find(p => p.id === selectedProgram)?.status === 'Completed' && (
+        <div className="bg-amber-50 border border-amber-200 text-amber-800 px-4 py-2 rounded-md mt-2">
+          Note: You are viewing/editing entries for a completed program
+        </div>
       )}
     </div>
   );

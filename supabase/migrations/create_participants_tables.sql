@@ -18,4 +18,6 @@ CREATE TABLE check_in_records (
     reception_check_out TIMESTAMP WITH TIME ZONE,
     security_check_out TIMESTAMP WITH TIME ZONE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
-); 
+);
+
+ALTER TABLE participants ALTER COLUMN program_id DROP NOT NULL; 
