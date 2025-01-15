@@ -57,6 +57,17 @@ interface Product {
   category: string;
 }
 
+interface InvoiceConfig {
+  id: string;
+  company_name: string;
+  from_address: string[];
+  bill_to_address: string[];
+  gstin: string;
+  pan: string;
+  footer_note: string;
+  logo_url: string;
+}
+
 const Config = () => {
   const [categories, setCategories] = useState<Category[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -79,6 +90,16 @@ const Config = () => {
     allocation_type: "per_day",
     quantity: 1
   });
+  const [invoiceConfig, setInvoiceConfig] = useState<InvoiceConfig>({
+    id: '',
+    company_name: '',
+    from_address: [],
+    bill_to_address: [],
+    gstin: '',
+    pan: '',
+    footer_note: '',
+    logo_url: ''
+  });
 
   useEffect(() => {
     fetchCategories();
@@ -94,6 +115,10 @@ const Config = () => {
       fetchProductRules(selectedPackage);
     }
   }, [selectedPackage]);
+
+  useEffect(() => {
+    fetchInvoiceConfig();
+  }, []);
 
   const fetchCategories = async () => {
     try {
@@ -158,6 +183,70 @@ const Config = () => {
     } catch (error) {
       console.error('Error fetching product rules:', error);
       toast.error('Failed to fetch product rules');
+    }
+  };
+
+  const fetchInvoiceConfig = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('invoice_config')
+        .select('*')
+        .single();
+
+      if (error) throw error;
+      if (data) {
+        setInvoiceConfig({
+          ...data,
+          from_address: Array.isArray(data.from_address) 
+            ? data.from_address 
+            : typeof data.from_address === 'string'
+              ? data.from_address.split('\n').filter(Boolean)
+              : [],
+          bill_to_address: Array.isArray(data.bill_to_address)
+            ? data.bill_to_address
+            : typeof data.bill_to_address === 'string'
+              ? data.bill_to_address.split('\n').filter(Boolean)
+              : []
+        });
+      }
+    } catch (error) {
+      console.error('Error fetching invoice config:', error);
+      toast.error('Failed to fetch invoice configuration');
+    }
+  };
+
+  const saveInvoiceConfig = async () => {
+    try {
+      setIsLoading(true);
+      
+      // Create a clean config object
+      const cleanConfig = {
+        ...invoiceConfig,
+        // Ensure arrays are properly formatted
+        from_address: Array.isArray(invoiceConfig.from_address) 
+          ? invoiceConfig.from_address 
+          : invoiceConfig.from_address?.split('\n').filter(Boolean) || [],
+        bill_to_address: Array.isArray(invoiceConfig.bill_to_address)
+          ? invoiceConfig.bill_to_address
+          : invoiceConfig.bill_to_address?.split('\n').filter(Boolean) || []
+      };
+
+      const { error } = await supabase
+        .from('invoice_config')
+        .upsert([cleanConfig], {
+          onConflict: 'id'
+        });
+
+      if (error) throw error;
+      toast.success('Invoice configuration saved successfully');
+      
+      // Refresh the data
+      await fetchInvoiceConfig();
+    } catch (error) {
+      console.error('Error saving invoice config:', error);
+      toast.error('Failed to save invoice configuration');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -284,7 +373,7 @@ const Config = () => {
           <TabsList>
             <TabsTrigger value="categories">Categories</TabsTrigger>
             <TabsTrigger value="product-rules">Product Rules</TabsTrigger>
-            <TabsTrigger value="general">General</TabsTrigger>
+            <TabsTrigger value="general">Invoice</TabsTrigger>
             <TabsTrigger value="notifications">Notifications</TabsTrigger>
           </TabsList>
         </div>
@@ -496,8 +585,88 @@ const Config = () => {
 
         <TabsContent value="general">
           <div className="bg-white rounded-lg shadow p-6">
-            <h2 className="text-lg font-medium text-gray-900 mb-4">General Settings</h2>
-            <p className="text-gray-500">Coming soon...</p>
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-lg font-medium text-gray-900">Invoice Settings</h2>
+              <Button
+                onClick={saveInvoiceConfig}
+                disabled={isLoading}
+                className="flex items-center gap-2 bg-amber-600 hover:bg-amber-700"
+              >
+                {isLoading ? "Saving..." : "Save Changes"}
+              </Button>
+            </div>
+
+            <div className="space-y-6">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Company Name
+                </label>
+                <Input
+                  value={invoiceConfig.company_name}
+                  onChange={(e) => setInvoiceConfig({ ...invoiceConfig, company_name: e.target.value })}
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  From Address (one line per entry)
+                </label>
+                <textarea
+                  value={(invoiceConfig.from_address || []).join('\n')}
+                  onChange={(e) => setInvoiceConfig({ 
+                    ...invoiceConfig, 
+                    from_address: e.target.value.split('\n') 
+                  })}
+                  className="w-full rounded-md border border-gray-300 px-3 py-2 min-h-[100px]"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Bill To Address (one line per entry)
+                </label>
+                <textarea
+                  value={(invoiceConfig.bill_to_address || []).join('\n')}
+                  onChange={(e) => setInvoiceConfig({ 
+                    ...invoiceConfig, 
+                    bill_to_address: e.target.value.split('\n') 
+                  })}
+                  className="w-full rounded-md border border-gray-300 px-3 py-2 min-h-[100px]"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    GSTIN
+                  </label>
+                  <Input
+                    value={invoiceConfig.gstin}
+                    onChange={(e) => setInvoiceConfig({ ...invoiceConfig, gstin: e.target.value })}
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    PAN
+                  </label>
+                  <Input
+                    value={invoiceConfig.pan}
+                    onChange={(e) => setInvoiceConfig({ ...invoiceConfig, pan: e.target.value })}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Footer Note
+                </label>
+                <Input
+                  value={invoiceConfig.footer_note}
+                  onChange={(e) => setInvoiceConfig({ ...invoiceConfig, footer_note: e.target.value })}
+                  placeholder="e.g., This is a computer-generated invoice"
+                />
+              </div>
+            </div>
           </div>
         </TabsContent>
 
