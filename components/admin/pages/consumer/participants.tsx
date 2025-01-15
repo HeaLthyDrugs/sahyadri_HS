@@ -8,7 +8,8 @@ import {
   RiDownloadLine,
   RiUploadLine,
   RiAlertLine,
-  RiEditLine
+  RiEditLine,
+  RiFileTextLine
 } from "react-icons/ri";
 import { toast } from "react-hot-toast";
 import { format } from 'date-fns';
@@ -34,7 +35,6 @@ interface FormData {
   reception_checkin: string;
   reception_checkout: string;
   security_checkout: string;
-  program_id: string;
 }
 
 interface Program {
@@ -43,6 +43,17 @@ interface Program {
   start_date: string;
   end_date: string;
   status: 'completed' | 'ongoing' | 'upcoming';
+}
+
+interface ParticipantWithProgramStatus extends Participant {
+  programStatus: 'in_program' | 'early_arrival' | 'late_departure' | 'no_program';
+  daysEarly?: number;
+  daysLate?: number;
+}
+
+interface TimeValidationResult {
+  isValid: boolean;
+  message: string;
 }
 
 export function ParticipantsPage() {
@@ -60,7 +71,6 @@ export function ParticipantsPage() {
     reception_checkin: "",
     reception_checkout: "",
     security_checkout: "",
-    program_id: ""
   });
 
   const [editingParticipant, setEditingParticipant] = useState<Participant | null>(null);
@@ -176,9 +186,113 @@ export function ParticipantsPage() {
       reception_checkin: format(new Date(participant.reception_checkin), "yyyy-MM-dd'T'HH:mm"),
       reception_checkout: format(new Date(participant.reception_checkout), "yyyy-MM-dd'T'HH:mm"),
       security_checkout: participant.security_checkout ? format(new Date(participant.security_checkout), "yyyy-MM-dd'T'HH:mm") : "",
-      program_id: participant.program_id
     });
     setIsModalOpen(true);
+  };
+
+  const findMatchingProgram = (checkinDate: Date, checkoutDate: Date, programsList: Program[]): string | null => {
+    for (const program of programsList) {
+      const programStart = new Date(program.start_date);
+      const programEnd = new Date(program.end_date);
+
+      // Check if the participant's check-in/out period overlaps with the program
+      if (checkinDate <= programEnd && checkoutDate >= programStart) {
+        return program.id;
+      }
+    }
+    return null;
+  };
+
+  const validateCheckInOutTimes = (checkin: Date, checkout: Date): TimeValidationResult => {
+    if (checkin > checkout) {
+      return {
+        isValid: false,
+        message: 'Check-in time cannot be later than check-out time'
+      };
+    }
+
+    const diffInHours = (checkout.getTime() - checkin.getTime()) / (1000 * 60 * 60);
+    if (diffInHours > 24 * 30) { // More than 30 days
+      return {
+        isValid: false,
+        message: 'Stay duration cannot exceed 30 days'
+      };
+    }
+
+    return { isValid: true, message: '' };
+  };
+
+  const findProgramWithBuffer = (
+    checkinDate: Date, 
+    checkoutDate: Date, 
+    programsList: Program[]
+  ): { programId: string | null; status: 'in_program' | 'early_arrival' | 'late_departure' | 'no_program'; daysEarly?: number; daysLate?: number } => {
+    for (const program of programsList) {
+      const programStart = new Date(program.start_date);
+      const programEnd = new Date(program.end_date);
+      
+      // Allow buffer periods
+      const bufferStart = new Date(programStart);
+      bufferStart.setDate(bufferStart.getDate() - 5); // 5 days before
+      
+      const bufferEnd = new Date(programEnd);
+      bufferEnd.setDate(bufferEnd.getDate() + 5); // 5 days after
+
+      if (checkinDate <= bufferEnd && checkoutDate >= bufferStart) {
+        const daysEarly = checkinDate < programStart ? 
+          Math.ceil((programStart.getTime() - checkinDate.getTime()) / (1000 * 60 * 60 * 24)) : 0;
+        
+        const daysLate = checkoutDate > programEnd ?
+          Math.ceil((checkoutDate.getTime() - programEnd.getTime()) / (1000 * 60 * 60 * 24)) : 0;
+
+        if (checkinDate >= programStart && checkoutDate <= programEnd) {
+          return { programId: program.id, status: 'in_program' };
+        }
+        
+        if (daysEarly > 0) {
+          return { programId: program.id, status: 'early_arrival', daysEarly };
+        }
+        
+        if (daysLate > 0) {
+          return { programId: program.id, status: 'late_departure', daysLate };
+        }
+      }
+    }
+    
+    return { programId: null, status: 'no_program' };
+  };
+
+  const handleQuickAddDriver = async (date: string) => {
+    try {
+      const currentDate = new Date(date);
+      const nextDay = new Date(currentDate);
+      nextDay.setDate(nextDay.getDate() + 1);
+
+      const driverData = {
+        attendee_name: "Driver", // You might want to add a number or identifier
+        type: "driver",
+        reception_checkin: currentDate.toISOString(),
+        reception_checkout: nextDay.toISOString()
+      };
+
+      // Find matching program
+      const { programId, status } = findProgramWithBuffer(currentDate, nextDay, programs);
+      
+      if (programId) {
+        const { error } = await supabase
+          .from('participants')
+          .insert([{ ...driverData, program_id: programId }]);
+
+        if (error) throw error;
+        toast.success('Driver added successfully');
+        fetchParticipants();
+      } else {
+        toast.error('No matching program found for driver');
+      }
+    } catch (error) {
+      console.error('Error adding driver:', error);
+      toast.error('Failed to add driver');
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -186,27 +300,61 @@ export function ParticipantsPage() {
     setIsLoading(true);
 
     try {
-      if (!formData.program_id) {
-        toast.error('Please select a program');
+      const checkinDate = new Date(formData.reception_checkin);
+      const checkoutDate = new Date(formData.reception_checkout);
+
+      // Validate check-in/out times
+      const timeValidation = validateCheckInOutTimes(checkinDate, checkoutDate);
+      if (!timeValidation.isValid) {
+        toast.error(timeValidation.message);
+        setIsLoading(false);
         return;
+      }
+
+      // Find matching program with buffer period
+      const { programId, status, daysEarly, daysLate } = findProgramWithBuffer(checkinDate, checkoutDate, programs);
+
+      if (!programId) {
+        toast.error('No matching program found for these dates');
+        setIsLoading(false);
+        return;
+      }
+
+      // Show warnings for early arrival or late departure
+      if (status === 'early_arrival') {
+        toast(`Participant arriving ${daysEarly} days before program starts`, {
+          icon: '⚠️',
+          style: {
+            background: '#FEF3C7',
+            color: '#92400E'
+          }
+        });
+      }
+      if (status === 'late_departure') {
+        toast(`Participant leaving ${daysLate} days after program ends`, {
+          icon: '⚠️',
+          style: {
+            background: '#FEF3C7',
+            color: '#92400E'
+          }
+        });
       }
 
       const participantData = {
         attendee_name: formData.attendee_name,
         type: formData.type,
-        program_id: formData.program_id,
+        program_id: programId,
         ...(formData.security_checkin && {
           security_checkin: new Date(formData.security_checkin).toISOString()
         }),
-        reception_checkin: new Date(formData.reception_checkin).toISOString(),
-        reception_checkout: new Date(formData.reception_checkout).toISOString(),
+        reception_checkin: checkinDate.toISOString(),
+        reception_checkout: checkoutDate.toISOString(),
         ...(formData.security_checkout && {
           security_checkout: new Date(formData.security_checkout).toISOString()
         })
       };
 
       if (editingParticipant) {
-        // Update existing participant
         const { error } = await supabase
           .from('participants')
           .update(participantData)
@@ -215,12 +363,9 @@ export function ParticipantsPage() {
         if (error) throw error;
         toast.success('Participant updated successfully');
       } else {
-        // Create new participant
-        const { data, error } = await supabase
+        const { error } = await supabase
           .from('participants')
-          .insert([participantData])
-          .select()
-          .single();
+          .insert([participantData]);
 
         if (error) throw error;
         toast.success('Participant added successfully');
@@ -234,11 +379,10 @@ export function ParticipantsPage() {
         reception_checkin: "",
         reception_checkout: "",
         security_checkout: "",
-        program_id: ""
       });
       setEditingParticipant(null);
       setIsModalOpen(false);
-      fetchParticipants(); // Refresh the list
+      fetchParticipants();
     } catch (error) {
       console.error('Error saving participant:', error);
       toast.error('Failed to save participant');
@@ -354,20 +498,12 @@ export function ParticipantsPage() {
 
     parse(file, {
       header: true,
-      skipEmptyLines: true, // Skip empty lines
+      skipEmptyLines: true,
       complete: async (results) => {
         try {
           setIsLoading(true);
 
-          // Get default program_id
-          const defaultProgramId = await getDefaultProgramId();
-          if (!defaultProgramId) {
-            toast.error('No program found. Please create a program first.');
-            return;
-          }
-
           const importData = results.data
-            // Filter out empty rows or rows with only No. field
             .filter((row: any) => {
               const hasData = Object.entries(row).some(([key, value]) => {
                 return key !== 'No.' && value && String(value).trim() !== '';
@@ -376,24 +512,34 @@ export function ParticipantsPage() {
             })
             .map((row: any) => {
               try {
-                // Ensure all required fields are present
                 if (!row['Attendee Name'] || !row['Reception Check-In'] || !row['Reception Check-Out']) {
                   console.error('Missing required fields in row:', row);
                   return null;
                 }
 
+                const checkinDate = new Date(formatDate(row['Reception Check-In']));
+                const checkoutDate = new Date(formatDate(row['Reception Check-Out']));
+                
+                // Find matching program with buffer
+                const { programId, status } = findProgramWithBuffer(checkinDate, checkoutDate, programs);
+                
+                if (!programId) {
+                  console.error('No matching program found for:', row);
+                  return null;
+                }
+
                 return {
                   attendee_name: row['Attendee Name'].trim(),
-                  type: 'participant',
-                  reception_checkin: formatDate(row['Reception Check-In']),
-                  reception_checkout: formatDate(row['Reception Check-Out']),
+                  type: row['Type']?.toLowerCase() === 'driver' ? 'driver' : 'participant',
+                  program_id: programId,
+                  reception_checkin: checkinDate.toISOString(),
+                  reception_checkout: checkoutDate.toISOString(),
                   ...(row['Security Check-In'] && {
                     security_checkin: formatDate(row['Security Check-In'])
                   }),
                   ...(row['Security Check-Out'] && {
                     security_checkout: formatDate(row['Security Check-Out'])
-                  }),
-                  program_id: defaultProgramId
+                  })
                 };
               } catch (error) {
                 console.error('Error processing row:', row, error);
@@ -482,6 +628,20 @@ export function ParticipantsPage() {
     setSelectedProgramId(e.target.value);
   };
 
+  const checkParticipantsWithoutProgram = () => {
+    const participantsWithoutProgram = participants.filter(p => !p.program_id);
+    if (participantsWithoutProgram.length > 0) {
+      toast.error(`${participantsWithoutProgram.length} participants are not assigned to any program`);
+      console.warn('Participants without program:', participantsWithoutProgram);
+    }
+  };
+
+  useEffect(() => {
+    if (participants.length > 0) {
+      checkParticipantsWithoutProgram();
+    }
+  }, [participants]);
+
   return (
     <div>
       {/* Header with Actions */}
@@ -532,6 +692,14 @@ export function ParticipantsPage() {
             >
               <RiAddLine className="w-4 h-4" />
               Add Participant
+            </button>
+
+            <button
+              onClick={() => handleQuickAddDriver(new Date().toISOString())}
+              className="flex items-center gap-2 px-3 py-2 text-amber-600 bg-amber-50 rounded-lg hover:bg-amber-100 transition-colors text-sm"
+            >
+              <RiAddLine className="w-4 h-4" />
+              Quick Add Driver
             </button>
           </div>
         </div>
@@ -711,7 +879,6 @@ export function ParticipantsPage() {
                       reception_checkin: "",
                       reception_checkout: "",
                       security_checkout: "",
-                      program_id: ""
                     });
                   }}
                   className="text-gray-500 hover:text-gray-700"
@@ -775,25 +942,6 @@ export function ParticipantsPage() {
                   />
                 </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">
-                    Program
-                  </label>
-                  <select
-                    value={formData.program_id}
-                    onChange={(e) => setFormData({ ...formData, program_id: e.target.value })}
-                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-amber-500 focus:outline-none focus:ring-amber-500"
-                    required
-                  >
-                    <option value="">Select a program</option>
-                    {programs.map(program => (
-                      <option key={program.id} value={program.id}>
-                        {program.name} ({format(new Date(program.start_date), 'dd/MM/yyyy')})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
                 <div className="flex justify-end gap-3 mt-6">
                   <button
                     type="button"
@@ -807,7 +955,6 @@ export function ParticipantsPage() {
                         reception_checkin: "",
                         reception_checkout: "",
                         security_checkout: "",
-                        program_id: ""
                       });
                     }}
                     className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"

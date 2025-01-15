@@ -120,8 +120,8 @@ export function ProductsPage() {
     category: "",
     package_id: "",
     rate: "",
-    slot_start: "",
-    slot_end: ""
+    slot_start: "00:00",
+    slot_end: "12:00"
   });
   const [viewMode, setViewMode] = useState<'grid' | 'table'>('table');
   const [currentPage, setCurrentPage] = useState(1);
@@ -253,8 +253,8 @@ export function ProductsPage() {
         category: "",
         package_id: "",
         rate: "",
-        slot_start: "",
-        slot_end: ""
+        slot_start: "00:00",
+        slot_end: "12:00"
       });
       setEditingProduct(null);
       setIsModalOpen(false);
@@ -675,6 +675,32 @@ export function ProductsPage() {
     </DropdownMenu>
   );
 
+  // Add this useEffect to reset slot times when adding a new product
+  useEffect(() => {
+    if (!editingProduct && !isModalOpen) {
+      setFormData(prev => ({
+        ...prev,
+        slot_start: "00:00",
+        slot_end: "12:00"
+      }));
+    }
+  }, [isModalOpen, editingProduct]);
+
+  // Update the modal close handler to include default times
+  const handleCloseModal = () => {
+    setIsModalOpen(false);
+    setEditingProduct(null);
+    setFormData({
+      name: "",
+      description: "",
+      category: "",
+      package_id: "",
+      rate: "",
+      slot_start: "00:00",
+      slot_end: "12:00"
+    });
+  };
+
   return (
     <div>
       {/* Header */}
@@ -1061,19 +1087,7 @@ export function ProductsPage() {
                 {editingProduct ? "Edit Product" : "Add New Product"}
               </h2>
               <button
-                onClick={() => {
-                  setIsModalOpen(false);
-                  setEditingProduct(null);
-                  setFormData({
-                    name: "",
-                    description: "",
-                    category: "",
-                    package_id: "",
-                    rate: "",
-                    slot_start: "",
-                    slot_end: ""
-                  });
-                }}
+                onClick={handleCloseModal}
                 className="text-gray-500 hover:text-gray-700"
               >
                 <RiCloseLine className="w-6 h-6" />
@@ -1174,19 +1188,7 @@ export function ProductsPage() {
               <div className="flex justify-end gap-4 mt-6">
                 <button
                   type="button"
-                  onClick={() => {
-                    setIsModalOpen(false);
-                    setEditingProduct(null);
-                    setFormData({
-                      name: "",
-                      description: "",
-                      category: "",
-                      package_id: "",
-                      rate: "",
-                      slot_start: "",
-                      slot_end: ""
-                    });
-                  }}
+                  onClick={handleCloseModal}
                   className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
                 >
                   Cancel
