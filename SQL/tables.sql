@@ -250,18 +250,5 @@ create table
     )
   ) tablespace pg_default;
 
--- Add this trigger function
-CREATE OR REPLACE FUNCTION calculate_entries_on_participant_insert()
-RETURNS TRIGGER AS $$
-BEGIN
-  -- Insert logic to calculate and insert entries
-  -- This will be called whenever a new participant is added
-  RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
 
-CREATE TRIGGER participant_entry_calculator
-AFTER INSERT ON participants
-FOR EACH ROW
-EXECUTE FUNCTION calculate_entries_on_participant_insert();
 

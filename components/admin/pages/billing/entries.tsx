@@ -14,7 +14,8 @@ import {
   RiSave3Line,
   RiFilterLine,
   RiCalculatorLine,
-  RiArrowDownSLine
+  RiArrowDownSLine,
+  RiAddLine
 } from "react-icons/ri";
 import Papa from 'papaparse';
 import { calculateDuration, isDateInRange } from "@/lib/utils";
@@ -166,6 +167,7 @@ export function BillingEntriesPage() {
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [autoCalculateMode, setAutoCalculateMode] = useState(false);
   const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [productRules, setProductRules] = useState<ProductRule[]>([]);
 
   // Add ref for managing focus
   const tableRef = useRef<HTMLTableElement>(null);
@@ -343,7 +345,51 @@ export function BillingEntriesPage() {
 
   const fetchEntries = async () => {
     try {
-      const { data, error } = await supabase
+      console.log('Fetching entries for:', {
+        programId: selectedProgram,
+        packageId: selectedPackage,
+        dateRange: dateRange.map(d => format(d, 'yyyy-MM-dd'))
+      });
+
+      // Log participants
+      const { data: participants } = await supabase
+        .from('participants')
+        .select('*')
+        .eq('program_id', selectedProgram);
+      console.log('Participants:', participants);
+
+      // Log product rules
+      const { data: rules } = await supabase
+        .from('product_rules')
+        .select('*')
+        .eq('package_id', selectedPackage);
+      console.log('Product rules:', rules);
+
+      // First get all participants for this program
+      const { data: participantsData, error: participantError } = await supabase
+        .from('participants')
+        .select('*')
+        .eq('program_id', selectedProgram);
+
+      if (participantError) throw participantError;
+
+      // Then get all product rules for the package
+      const { data: rulesData, error: rulesError } = await supabase
+        .from('product_rules')
+        .select(`
+          *,
+          products (
+            id,
+            name,
+            category
+          )
+        `)
+        .eq('package_id', selectedPackage);
+
+      if (rulesError) throw rulesError;
+
+      // Get existing entries
+      const { data: existingEntries, error: entriesError } = await supabase
         .from('billing_entries')
         .select('*')
         .eq('program_id', selectedProgram)
@@ -351,7 +397,7 @@ export function BillingEntriesPage() {
         .gte('entry_date', format(dateRange[0], 'yyyy-MM-dd'))
         .lte('entry_date', format(dateRange[dateRange.length - 1], 'yyyy-MM-dd'));
 
-      if (error) throw error;
+      if (entriesError) throw entriesError;
 
       // Initialize empty data structure for all dates and products
       const transformedData: EntryData = {};
@@ -359,12 +405,38 @@ export function BillingEntriesPage() {
         const dateStr = format(date, 'yyyy-MM-dd');
         transformedData[dateStr] = {};
         products.forEach(product => {
-          transformedData[dateStr][product.id] = 0;
+          // Calculate default quantity based on rules and participants
+          const rule = rules?.find(r => r.product_id === product.id);
+          const participantsForDate = participants?.filter(p => 
+            isDateInRange(date, new Date(p.reception_checkin), new Date(p.reception_checkout))
+          );
+          
+          let defaultQuantity = 0;
+          if (rule && participantsForDate) {
+            switch (rule.allocation_type) {
+              case 'per_day':
+                defaultQuantity = rule.quantity * participantsForDate.length;
+                break;
+              case 'per_stay':
+                defaultQuantity = participantsForDate.filter(p => 
+                  format(new Date(p.reception_checkin), 'yyyy-MM-dd') === format(date, 'yyyy-MM-dd')
+                ).length * rule.quantity;
+                break;
+              case 'per_hour':
+                defaultQuantity = participantsForDate.reduce((sum, p) => {
+                  const hours = calculateDuration(p.reception_checkin, p.reception_checkout, 'hours');
+                  return sum + (rule.quantity * hours);
+                }, 0);
+                break;
+            }
+          }
+          
+          transformedData[dateStr][product.id] = defaultQuantity;
         });
       });
 
       // Fill in actual values from database
-      data?.forEach(entry => {
+      existingEntries?.forEach(entry => {
         if (!transformedData[entry.entry_date]) {
           transformedData[entry.entry_date] = {};
         }
@@ -617,6 +689,43 @@ export function BillingEntriesPage() {
     }
   }, [selectedProgram]);
 
+  const calculateDuration = (start: string, end: string, unit: 'hours' | 'days') => {
+    const startDate = new Date(start);
+    const endDate = new Date(end);
+    const diff = endDate.getTime() - startDate.getTime();
+    
+    if (unit === 'hours') {
+      return Math.ceil(diff / (1000 * 60 * 60));
+    }
+    return Math.ceil(diff / (1000 * 60 * 60 * 24));
+  };
+
+  // Add this to your useEffect that runs when package changes
+  useEffect(() => {
+    if (selectedPackage) {
+      // Fetch product rules
+      const fetchRules = async () => {
+        const { data, error } = await supabase
+          .from('product_rules')
+          .select(`
+            *,
+            products (
+              name
+            )
+          `)
+          .eq('package_id', selectedPackage);
+
+        if (error) {
+          console.error('Error fetching rules:', error);
+          return;
+        }
+        setProductRules(data || []);
+      };
+
+      fetchRules();
+    }
+  }, [selectedPackage]);
+
   return (
     <div className="p-4">
       {/* Filter Section */}
@@ -680,23 +789,103 @@ export function BillingEntriesPage() {
             />
           </label>
 
-          {/* <button
-            onClick={() => setBulkEntryMode(!bulkEntryMode)}
-            className={`flex items-center gap-2 px-4 py-2 rounded ${
-              bulkEntryMode ? 'bg-amber-500' : 'bg-gray-500'
-            } text-white hover:opacity-90`}
+          <button
+            onClick={async () => {
+              try {
+                // Call the recalculate function
+                const { error } = await supabase.rpc('recalculate_program_entries', {
+                  program_id_param: selectedProgram
+                });
+                
+                if (error) throw error;
+                
+                // Refresh entries
+                await fetchEntries();
+                toast.success('Entries recalculated successfully');
+              } catch (error) {
+                console.error('Error recalculating entries:', error);
+                toast.error('Failed to recalculate entries');
+              }
+            }}
+            className="flex items-center gap-2 px-4 py-2 bg-purple-500 text-white rounded hover:bg-purple-600"
           >
-            <RiFileExcelLine /> Bulk Entry Mode
-          </button> */}
+            <RiCalculatorLine /> Recalculate Entries
+          </button>
 
-          {/* <button
-            onClick={() => setShowSummary(!showSummary)}
-            className={`flex items-center gap-2 px-4 py-2 rounded ${
-              showSummary ? 'bg-purple-500' : 'bg-gray-500'
-            } text-white hover:opacity-90`}
+          <button
+            onClick={async () => {
+              try {
+                // Add a test participant
+                const { error } = await supabase
+                  .from('participants')
+                  .insert([{
+                    attendee_name: 'Test Participant',
+                    program_id: selectedProgram,
+                    reception_checkin: new Date().toISOString(),
+                    reception_checkout: new Date(Date.now() + 24*60*60*1000).toISOString(), // Next day
+                    type: 'participant'
+                  }]);
+
+                if (error) throw error;
+                
+                // Refresh entries after a short delay to allow trigger to complete
+                setTimeout(() => {
+                  fetchEntries();
+                }, 1000);
+                
+                toast.success('Test participant added');
+              } catch (error) {
+                console.error('Error adding test participant:', error);
+                toast.error('Failed to add test participant');
+              }
+            }}
+            className="flex items-center gap-2 px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600"
           >
-            <RiFilterLine /> Show Summary
-          </button> */}
+            <RiAddLine /> Add Test Participant
+          </button>
+
+          <button
+            onClick={async () => {
+              try {
+                // Log current state
+                console.log('Current State:', {
+                  selectedProgram,
+                  selectedPackage,
+                  dateRange: dateRange.map(d => format(d, 'yyyy-MM-dd')),
+                  participants,
+                  products,
+                  entryData
+                });
+
+                // Log database entries
+                const { data: entries, error: entriesError } = await supabase
+                  .from('billing_entries')
+                  .select('*')
+                  .eq('program_id', selectedProgram)
+                  .eq('package_id', selectedPackage);
+
+                if (entriesError) throw entriesError;
+                console.log('Database Entries:', entries);
+
+                // Log product rules
+                const { data: rules, error: rulesError } = await supabase
+                  .from('product_rules')
+                  .select('*')
+                  .eq('package_id', selectedPackage);
+
+                if (rulesError) throw rulesError;
+                console.log('Product Rules:', rules);
+
+                toast.success('Debug info logged to console');
+              } catch (error) {
+                console.error('Error fetching debug info:', error);
+                toast.error('Failed to fetch debug info');
+              }
+            }}
+            className="flex items-center gap-2 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+          >
+            <RiSearchLine /> Debug Info
+          </button>
         </div>
       )}
 
@@ -798,11 +987,24 @@ export function BillingEntriesPage() {
         </>
       )}
 
-
       {/* Add a warning message when selecting a completed program */}
       {selectedProgram && programs.find(p => p.id === selectedProgram)?.status === 'Completed' && (
         <div className="bg-amber-50 border border-amber-200 text-amber-800 px-4 py-2 rounded-md mt-2">
           Note: You are viewing/editing entries for a completed program
+        </div>
+      )}
+
+      {selectedPackage && productRules.length > 0 && (
+        <div className="mb-4 p-4 bg-gray-50 rounded-lg">
+          <h3 className="font-medium mb-2">Current Product Rules:</h3>
+          <div className="space-y-2">
+            {productRules.map(rule => (
+              <div key={rule.id} className="flex items-center gap-2 text-sm">
+                <span className="font-medium">{rule.products?.name}:</span>
+                <span>{rule.quantity} per {rule.allocation_type.replace('_', ' ')}</span>
+              </div>
+            ))}
+          </div>
         </div>
       )}
     </div>

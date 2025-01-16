@@ -368,7 +368,12 @@ const Config = () => {
           </div>
           <TabsList>
             <TabsTrigger value="categories">Categories</TabsTrigger>
-            <TabsTrigger value="product-rules">Product Rules</TabsTrigger>
+            <TabsTrigger 
+              value="product-rules" 
+              className="data-[state=active]:bg-amber-500 data-[state=active]:text-white hover:bg-amber-100"
+            >
+              Product Rules
+            </TabsTrigger>
             <TabsTrigger value="general">Invoice</TabsTrigger>
             <TabsTrigger value="notifications">Notifications</TabsTrigger>
           </TabsList>
@@ -481,13 +486,13 @@ const Config = () => {
 
             {selectedPackage && (
               <>
-                <form onSubmit={saveProductRule} className="mb-6 space-y-4">
+                <form onSubmit={saveProductRule} className="mb-6 space-y-4 p-4 bg-amber-50 rounded-lg">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700">Product</label>
+                    <label className="block text-sm font-medium text-amber-800">Product</label>
                     <select
                       value={ruleFormData.product_id}
                       onChange={(e) => setRuleFormData({ ...ruleFormData, product_id: e.target.value })}
-                      className="w-full rounded-md border border-gray-300 px-3 py-2"
+                      className="w-full rounded-md border border-amber-200 px-3 py-2 focus:border-amber-500 focus:ring-amber-500"
                       required
                     >
                       <option value="">Select a product</option>
@@ -500,14 +505,14 @@ const Config = () => {
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700">Allocation Type</label>
+                    <label className="block text-sm font-medium text-amber-800">Allocation Type</label>
                     <select
                       value={ruleFormData.allocation_type}
                       onChange={(e) => setRuleFormData({ 
                         ...ruleFormData, 
                         allocation_type: e.target.value as 'per_day' | 'per_stay' | 'per_hour' 
                       })}
-                      className="w-full rounded-md border border-gray-300 px-3 py-2"
+                      className="w-full rounded-md border border-amber-200 px-3 py-2 focus:border-amber-500 focus:ring-amber-500"
                       required
                     >
                       <option value="per_day">Per Day</option>
@@ -517,7 +522,7 @@ const Config = () => {
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700">Quantity</label>
+                    <label className="block text-sm font-medium text-amber-800">Quantity</label>
                     <input
                       type="number"
                       min="1"
@@ -526,12 +531,16 @@ const Config = () => {
                         ...ruleFormData, 
                         quantity: parseInt(e.target.value) || 1 
                       })}
-                      className="w-full rounded-md border border-gray-300 px-3 py-2"
+                      className="w-full rounded-md border border-amber-200 px-3 py-2 focus:border-amber-500 focus:ring-amber-500"
                       required
                     />
                   </div>
 
-                  <Button type="submit" disabled={isLoading}>
+                  <Button 
+                    type="submit" 
+                    disabled={isLoading} 
+                    className="bg-amber-500 hover:bg-amber-600 text-white w-full"
+                  >
                     {isLoading ? "Saving..." : "Add Rule"}
                   </Button>
                 </form>
@@ -539,27 +548,29 @@ const Config = () => {
                 <div className="mt-6">
                   <h3 className="text-lg font-medium text-gray-900 mb-4">Existing Rules</h3>
                   <table className="min-w-full divide-y divide-gray-200">
-                    <thead className="bg-gray-50">
+                    <thead className="bg-amber-50">
                       <tr>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                        <th className="px-6 py-3 text-left text-xs font-medium text-amber-800 uppercase">
                           Product
                         </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                        <th className="px-6 py-3 text-left text-xs font-medium text-amber-800 uppercase">
                           Type
                         </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                        <th className="px-6 py-3 text-left text-xs font-medium text-amber-800 uppercase">
                           Quantity
                         </th>
-                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">
+                        <th className="px-6 py-3 text-right text-xs font-medium text-amber-800 uppercase">
                           Actions
                         </th>
                       </tr>
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-200">
                       {productRules.map((rule) => (
-                        <tr key={rule.id}>
+                        <tr key={rule.id} className="hover:bg-amber-50">
                           <td className="px-6 py-4">{rule.products.name}</td>
-                          <td className="px-6 py-4">{rule.allocation_type}</td>
+                          <td className="px-6 py-4 capitalize">
+                            {rule.allocation_type.replace('_', ' ')}
+                          </td>
                           <td className="px-6 py-4">{rule.quantity}</td>
                           <td className="px-6 py-4 text-right">
                             <button
