@@ -9,7 +9,10 @@ import {
   RiDownloadLine,
   RiFilterLine,
   RiRefreshLine,
+  RiPrinterLine,
 } from "react-icons/ri";
+import html2canvas from 'html2canvas';
+import jsPDF from 'jspdf';
 
 interface Package {
   id: string;
@@ -183,6 +186,73 @@ export default function ReportPage() {
     link.click();
   };
 
+  const downloadAsPDF = async () => {
+    try {
+      toast.loading('Generating PDF...');
+      
+      const reportElement = document.getElementById('report-content');
+      if (!reportElement) {
+        throw new Error('Report element not found');
+      }
+  
+      const canvas = await html2canvas(reportElement, {
+        scale: 2,
+        useCORS: true,
+        logging: false,
+        backgroundColor: '#ffffff',
+      });
+  
+      const imgData = canvas.toDataURL('image/jpeg', 1.0);
+      const pdf = new jsPDF({
+        orientation: 'portrait',
+        unit: 'mm',
+        format: 'a4',
+        compress: true
+      });
+  
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = pdf.internal.pageSize.getHeight();
+      
+      const imgProps = pdf.getImageProperties(imgData);
+      const imgRatio = imgProps.width / imgProps.height;
+      
+      let imgWidth = pdfWidth;
+      let imgHeight = pdfWidth / imgRatio;
+      
+      const pageCount = Math.ceil(imgHeight / pdfHeight);
+      
+      for (let page = 0; page < pageCount; page++) {
+        if (page > 0) {
+          pdf.addPage();
+        }
+        
+        const position = -page * pdfHeight;
+        
+        pdf.addImage(
+          imgData,
+          'JPEG',
+          0,
+          position,
+          imgWidth,
+          imgHeight,
+          undefined,
+          'FAST'
+        );
+      }
+  
+      const fileName = `Report-${format(new Date(), 'yyyyMMdd')}.pdf`;
+      
+      pdf.save(fileName);
+      
+      toast.dismiss();
+      toast.success('PDF downloaded successfully');
+    } catch (error) {
+      console.error('Error generating PDF:', error);
+      toast.dismiss();
+      toast.error('Failed to generate PDF');
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Filters Section */}
@@ -258,6 +328,24 @@ export default function ReportPage() {
         </div>
       </div>
 
+      {/* Report Actions */}
+      <div className="print:hidden p-4 border-b flex justify-end space-x-4">
+        <button
+          onClick={() => window.print()}
+          className="flex items-center gap-2 px-4 py-2 text-gray-600 hover:text-gray-900"
+        >
+          <RiPrinterLine className="w-5 h-5" />
+          Print
+        </button>
+        <button
+          onClick={downloadAsPDF}
+          className="flex items-center gap-2 px-4 py-2 text-gray-600 hover:text-gray-900"
+        >
+          <RiDownloadLine className="w-5 h-5" />
+          Download PDF
+        </button>
+      </div>
+
       {/* Summary Cards */}
       {reportData.length > 0 && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -278,38 +366,34 @@ export default function ReportPage() {
 
       {/* Report Table */}
       {reportData.length > 0 && (
-        <div className="bg-white rounded-lg shadow-md overflow-hidden">
+        <div id="report-content" className="bg-white rounded-lg shadow-md overflow-hidden">
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
                 <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Program</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Package</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Product</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Quantity</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Rate</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Amount</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Sr. No</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Program Name</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Catering Package</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Extra Catering Package</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Cold Drink Package</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Gr. Total Per Prog.</th>
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
                 {reportData.map((row, index) => (
                   <tr key={index} className="hover:bg-gray-50">
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{row.date}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{index + 1}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{row.program}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{row.package}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{row.product}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{row.quantity}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">₹{row.rate.toFixed(2)}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">Extra Package Data</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">Cold Drink Data</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">₹{row.amount.toFixed(2)}</td>
                   </tr>
                 ))}
               </tbody>
               <tfoot className="bg-gray-50">
                 <tr>
-                  <td colSpan={4} className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">Totals</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{summary.totalQuantity}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">-</td>
+                  <td colSpan={5} className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">Totals</td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">₹{summary.totalAmount.toFixed(2)}</td>
                 </tr>
               </tfoot>
