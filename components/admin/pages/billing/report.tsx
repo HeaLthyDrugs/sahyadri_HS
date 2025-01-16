@@ -36,6 +36,130 @@ interface ReportData {
   amount: number;
 }
 
+const pdfStyles = `
+  @media print {
+    body * {
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
+      color-adjust: exact !important;
+    }
+  }
+
+  #report-content {
+    max-width: 1140px;
+    margin: 0 auto;
+    padding: 10px;
+    font-family: 'Arial', sans-serif;
+    font-size: 12px;
+    line-height: 1.5;
+    color: #1f2937;
+    background-color: white;
+  }
+
+  #report-content .page-header {
+    display: block !important;
+    margin-bottom: 16px;
+    text-align: center;
+    padding: 8px 0;
+    border-bottom: 2px solid #f59e0b;
+  }
+
+  #report-content .page-header h2 {
+    font-size: 18px !important;
+    font-weight: 800;
+    color: #1f2937 !important;
+    margin-bottom: 8px;
+  }
+
+  #report-content .page-header .subtitle {
+    font-size: 14px;
+    color: #4b5563;
+    margin-top: 4px;
+  }
+
+  #report-content .table-container {
+    margin: 16px 0;
+    overflow-x: visible;
+    page-break-inside: avoid;
+  }
+
+  #report-content table {
+    width: 100%;
+    border-collapse: collapse;
+    border: 1px solid #e5e7eb;
+    margin-bottom: 20px;
+  }
+
+  #report-content table th {
+    background-color: #f8fafc !important;
+    color: #1f2937 !important;
+    font-weight: 600;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 12px 8px;
+    border-bottom: 2px solid #e5e7eb;
+  }
+
+  #report-content table td {
+    padding: 10px 8px;
+    border-bottom: 1px solid #e5e7eb;
+    color: #374151;
+  }
+
+  #report-content table tr:nth-child(even) {
+    background-color: #f9fafb;
+  }
+
+  #report-content table tfoot {
+    font-weight: 600;
+    background-color: #f8fafc !important;
+    border-top: 2px solid #e5e7eb;
+  }
+
+  #report-content table tfoot td {
+    color: #1f2937 !important;
+  }
+
+  /* Page break and spacing */
+  #report-content .page-break-before {
+    page-break-before: always;
+    margin-top: 20mm;
+  }
+
+  /* Summary section */
+  #report-content .summary-section {
+    margin: 20px 0;
+    padding: 16px;
+    background-color: #f8fafc;
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+  }
+
+  /* Report metadata */
+  #report-content .report-metadata {
+    margin: 16px 0;
+    font-size: 11px;
+    color: #6b7280;
+  }
+
+  /* Page numbers */
+  #report-content .page-number {
+    position: running(pageNumber);
+    font-size: 10px;
+    color: #6b7280;
+    text-align: center;
+    margin-top: 8px;
+  }
+
+  @page {
+    margin: 20mm;
+    @bottom-center {
+      content: "Page " counter(page) " of " counter(pages);
+    }
+  }
+`;
+
 export default function ReportPage() {
   const [packages, setPackages] = useState<Package[]>([]);
   const [programs, setPrograms] = useState<Program[]>([]);
@@ -166,7 +290,7 @@ export default function ReportPage() {
     const headers = ['Date', 'Program', 'Package', 'Product', 'Quantity', 'Rate', 'Amount'];
     const csvContent = [
       headers.join(','),
-      ...reportData.map(row => 
+      ...reportData.map(row =>
         [
           row.date,
           `"${row.program}"`,
@@ -189,19 +313,32 @@ export default function ReportPage() {
   const downloadAsPDF = async () => {
     try {
       toast.loading('Generating PDF...');
-      
+
       const reportElement = document.getElementById('report-content');
       if (!reportElement) {
         throw new Error('Report element not found');
       }
-  
+
+      const pdfSpecificStyles = document.createElement('style');
+      pdfSpecificStyles.textContent = pdfStyles;
+      document.head.appendChild(pdfSpecificStyles);
+
       const canvas = await html2canvas(reportElement, {
         scale: 2,
         useCORS: true,
         logging: false,
         backgroundColor: '#ffffff',
+        onclone: (clonedDoc) => {
+          const clonedElement = clonedDoc.getElementById('report-content');
+          if (clonedElement) {
+            clonedElement.style.width = '210mm';
+            clonedElement.style.padding = '20mm';
+            clonedElement.style.boxSizing = 'border-box';
+            clonedElement.style.fontSize = '12px';
+          }
+        }
       });
-  
+
       const imgData = canvas.toDataURL('image/jpeg', 1.0);
       const pdf = new jsPDF({
         orientation: 'portrait',
@@ -209,25 +346,25 @@ export default function ReportPage() {
         format: 'a4',
         compress: true
       });
-  
+
       const pdfWidth = pdf.internal.pageSize.getWidth();
       const pdfHeight = pdf.internal.pageSize.getHeight();
-      
+
       const imgProps = pdf.getImageProperties(imgData);
       const imgRatio = imgProps.width / imgProps.height;
-      
+
       let imgWidth = pdfWidth;
       let imgHeight = pdfWidth / imgRatio;
-      
+
       const pageCount = Math.ceil(imgHeight / pdfHeight);
-      
+
       for (let page = 0; page < pageCount; page++) {
         if (page > 0) {
           pdf.addPage();
         }
-        
+
         const position = -page * pdfHeight;
-        
+
         pdf.addImage(
           imgData,
           'JPEG',
@@ -239,11 +376,13 @@ export default function ReportPage() {
           'FAST'
         );
       }
-  
+
       const fileName = `Report-${format(new Date(), 'yyyyMMdd')}.pdf`;
-      
+
       pdf.save(fileName);
-      
+
+      document.head.removeChild(pdfSpecificStyles);
+
       toast.dismiss();
       toast.success('PDF downloaded successfully');
     } catch (error) {
@@ -255,6 +394,7 @@ export default function ReportPage() {
 
   return (
     <div className="space-y-6">
+      <style>{pdfStyles}</style>
       {/* Filters Section */}
       <div className="bg-white p-6 rounded-lg shadow-md">
         <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
@@ -347,7 +487,7 @@ export default function ReportPage() {
       </div>
 
       {/* Summary Cards */}
-      {reportData.length > 0 && (
+      {/* {reportData.length > 0 && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <div className="bg-white p-6 rounded-lg shadow-md">
             <h3 className="text-sm font-medium text-gray-500">Total Quantity</h3>
@@ -362,42 +502,73 @@ export default function ReportPage() {
             <p className="text-2xl font-semibold mt-2">{summary.averagePerDay.toFixed(2)}</p>
           </div>
         </div>
-      )}
+      )} */}
 
       {/* Report Table */}
       {reportData.length > 0 && (
         <div id="report-content" className="bg-white rounded-lg shadow-md overflow-hidden">
+          <div className="page-header">
+            <h2 className="text-xl font-bold text-center text-amber-600">2025 Catering Services Report</h2>
+          </div>
           <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Sr. No</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Program Name</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Catering Package</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Extra Catering Package</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Cold Drink Package</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Gr. Total Per Prog.</th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {reportData.map((row, index) => (
-                  <tr key={index} className="hover:bg-gray-50">
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{index + 1}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{row.program}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{row.package}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">Extra Package Data</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">Cold Drink Data</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">₹{row.amount.toFixed(2)}</td>
-                  </tr>
-                ))}
-              </tbody>
-              <tfoot className="bg-gray-50">
-                <tr>
-                  <td colSpan={5} className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">Totals</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">₹{summary.totalAmount.toFixed(2)}</td>
-                </tr>
-              </tfoot>
-            </table>
+            {(() => {
+              const ITEMS_PER_PAGE = 20;
+              const totalPages = Math.ceil(reportData.length / ITEMS_PER_PAGE);
+
+              return Array.from({ length: totalPages }).map((_, pageIndex) => {
+                const startIndex = pageIndex * ITEMS_PER_PAGE;
+                const endIndex = Math.min(startIndex + ITEMS_PER_PAGE, reportData.length);
+                const pageEntries = reportData.slice(startIndex, endIndex);
+
+                return (
+                  <div
+                    key={pageIndex}
+                    className={`mb-8 overflow-x-auto ${pageIndex > 0 ? 'page-break-before' : ''}`}
+                  >
+                    {pageIndex > 0 && (
+                      <div className="page-header page-break-before">
+                        <h3 className="text-lg font-semibold text-center">
+                          Continued Report - Page {pageIndex + 1}
+                        </h3>
+                      </div>
+                    )}
+
+                    <table className="min-w-full divide-y divide-gray-200">
+                      <thead>
+                        <tr>
+                          <th scope="col">Sr. No</th>
+                          <th scope="col">Program Name</th>
+                          <th scope="col">Catering Package</th>
+                          <th scope="col">Extra Catering Package</th>
+                          <th scope="col">Cold Drink Package</th>
+                          <th scope="col" className="text-right">Gr. Total Per Prog.</th>
+                        </tr>
+                      </thead>
+                      <tbody className="bg-white divide-y divide-gray-200">
+                        {pageEntries.map((row, index) => (
+                          <tr key={index} className="hover:bg-gray-50">
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{startIndex + index + 1}</td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{row.program}</td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{row.package}</td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">Extra Package Data</td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">Cold Drink Data</td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">₹{row.amount.toFixed(2)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      {pageIndex === totalPages - 1 && (
+                        <tfoot className="bg-gray-50">
+                          <tr>
+                            <td colSpan={5} className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">Totals</td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">₹{summary.totalAmount.toFixed(2)}</td>
+                          </tr>
+                        </tfoot>
+                      )}
+                    </table>
+                  </div>
+                );
+              });
+            })()}
           </div>
         </div>
       )}
