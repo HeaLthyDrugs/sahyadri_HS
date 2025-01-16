@@ -179,3 +179,5 @@ input, textarea {
     margin: 2cm;
   }
 }
+
+@layer base { img { display: initial; }}
