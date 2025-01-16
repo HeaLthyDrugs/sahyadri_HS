@@ -199,14 +199,10 @@ const Config = () => {
           ...data,
           from_address: Array.isArray(data.from_address) 
             ? data.from_address 
-            : typeof data.from_address === 'string'
-              ? data.from_address.split('\n').filter(Boolean)
-              : [],
+            : (data.from_address as string)?.split('\n').filter(Boolean) || [],
           bill_to_address: Array.isArray(data.bill_to_address)
             ? data.bill_to_address
-            : typeof data.bill_to_address === 'string'
-              ? data.bill_to_address.split('\n').filter(Boolean)
-              : []
+            : (data.bill_to_address as string)?.split('\n').filter(Boolean) || []
         });
       }
     } catch (error) {
@@ -225,10 +221,10 @@ const Config = () => {
         // Ensure arrays are properly formatted
         from_address: Array.isArray(invoiceConfig.from_address) 
           ? invoiceConfig.from_address 
-          : invoiceConfig.from_address?.split('\n').filter(Boolean) || [],
+          : (invoiceConfig.from_address as string)?.split('\n').filter(Boolean) || [],
         bill_to_address: Array.isArray(invoiceConfig.bill_to_address)
           ? invoiceConfig.bill_to_address
-          : invoiceConfig.bill_to_address?.split('\n').filter(Boolean) || []
+          : (invoiceConfig.bill_to_address as string)?.split('\n').filter(Boolean) || []
       };
 
       const { error } = await supabase

@@ -34,7 +34,7 @@ interface BillingEntry {
   product_id: string;
   entry_date: string;
   quantity: number;
-  product: Product;
+  product: Product[];
 }
 
 interface InvoiceData {
@@ -578,16 +578,16 @@ export default function InvoicePage() {
                         {index + 1}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {entry.product?.name || 'Unknown Product'}
+                        {entry.product[0]?.name || 'Unknown Product'}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                         {entry.quantity}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        ₹{entry.product?.rate.toFixed(2) || '0.00'}
+                        ₹{entry.product[0]?.rate.toFixed(2) || '0.00'}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        ₹{((entry.quantity || 0) * (entry.product?.rate || 0)).toFixed(2)}
+                        ₹{((entry.quantity || 0) * (entry.product[0]?.rate || 0)).toFixed(2)}
                       </td>
                     </tr>
                   ))}
