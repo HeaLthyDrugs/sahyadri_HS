@@ -18,6 +18,7 @@ import {
 } from "react-icons/ri";
 import Papa from 'papaparse';
 import { calculateDuration, isDateInRange } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
 
 interface Program {
   id: string;
@@ -70,6 +71,19 @@ interface Participant {
   reception_checkin: string;
   reception_checkout: string;
   program_id: string;
+}
+
+interface ProductRule {
+  id: string;
+  package_id: string;
+  product_id: string;
+  allocation_type: 'per_day' | 'per_stay' | 'per_hour';
+  quantity: number;
+}
+
+interface TimeSlot {
+  start: string;
+  end: string;
 }
 
 const ProgramSelect = ({ 
@@ -434,7 +448,6 @@ export function BillingEntriesPage() {
       const csvData = products.map(product => {
         const row: any = {
           'Product Name': product.name,
-          'Category': product.category
         };
         dateRange.forEach(date => {
           const dateStr = format(date, 'dd-MM-yyyy');
@@ -570,85 +583,11 @@ export function BillingEntriesPage() {
     }
   };
 
-  const calculateEntriesFromParticipants = async () => {
-    if (!selectedProgram || !selectedPackage || participants.length === 0) {
-      toast.error('No participants found or program/package not selected');
-      return;
-    }
-
-    try {
-      // Fetch product rules first
-      const { data: rules, error: rulesError } = await supabase
-        .from('product_rules')
-        .select('*')
-        .eq('package_id', selectedPackage);
-
-      if (rulesError) throw rulesError;
-
-      const newEntryData: EntryData = {};
-
-      // Initialize the structure
-      dateRange.forEach(date => {
-        const dateStr = format(date, 'yyyy-MM-dd');
-        newEntryData[dateStr] = {};
-        products.forEach(product => {
-          newEntryData[dateStr][product.id] = 0;
-        });
-      });
-
-      // Calculate quantities based on participants
-      participants.forEach(participant => {
-        const checkinDate = new Date(participant.reception_checkin);
-        const checkoutDate = new Date(participant.reception_checkout);
-
-        dateRange.forEach(date => {
-          const currentDate = new Date(date);
-          const dateStr = format(currentDate, 'yyyy-MM-dd');
-
-          if (isDateInRange(currentDate, checkinDate, checkoutDate)) {
-            products.forEach(product => {
-              const rule = rules?.find(r => r.product_id === product.id);
-              if (rule) {
-                const duration = calculateDuration(checkinDate, checkoutDate);
-                
-                switch (rule.allocation_type) {
-                  case 'per_day':
-                    newEntryData[dateStr][product.id] += rule.quantity;
-                    break;
-                  case 'per_stay':
-                    if (format(currentDate, 'yyyy-MM-dd') === format(checkinDate, 'yyyy-MM-dd')) {
-                      newEntryData[dateStr][product.id] += rule.quantity;
-                    }
-                    break;
-                  case 'per_hour':
-                    const hoursInDay = 24;
-                    newEntryData[dateStr][product.id] += Math.ceil(rule.quantity * (hoursInDay / duration.hours));
-                    break;
-                }
-              } else {
-                // Default behavior if no rule exists
-                switch (product.category) {
-                  case 'Meals':
-                    newEntryData[dateStr][product.id] += 3; // 3 meals per day
-                    break;
-                  case 'Drinks':
-                    newEntryData[dateStr][product.id] += 2; // 2 drinks per day
-                    break;
-                  default:
-                    newEntryData[dateStr][product.id] += 1; // 1 for other items
-                }
-              }
-            });
-          }
-        });
-      });
-
-      setEntryData(newEntryData);
-      toast.success('Entries calculated based on participant data');
-    } catch (error) {
-      console.error('Error calculating entries:', error);
-      toast.error('Failed to calculate entries');
-    }
+  const isWithinTimeSlot = (checkTime: string, slot: TimeSlot): boolean => {
+    const time = new Date(`1970-01-01T${checkTime}`);
+    const start = new Date(`1970-01-01T${slot.start}`);
+    const end = new Date(`1970-01-01T${slot.end}`);
+    return time >= start && time <= end;
   };
 
   // Add a helper function to get program status style
@@ -741,23 +680,23 @@ export function BillingEntriesPage() {
             />
           </label>
 
-          <button
+          {/* <button
             onClick={() => setBulkEntryMode(!bulkEntryMode)}
             className={`flex items-center gap-2 px-4 py-2 rounded ${
               bulkEntryMode ? 'bg-amber-500' : 'bg-gray-500'
             } text-white hover:opacity-90`}
           >
             <RiFileExcelLine /> Bulk Entry Mode
-          </button>
+          </button> */}
 
-          <button
+          {/* <button
             onClick={() => setShowSummary(!showSummary)}
             className={`flex items-center gap-2 px-4 py-2 rounded ${
               showSummary ? 'bg-purple-500' : 'bg-gray-500'
             } text-white hover:opacity-90`}
           >
             <RiFilterLine /> Show Summary
-          </button>
+          </button> */}
         </div>
       )}
 
@@ -859,30 +798,6 @@ export function BillingEntriesPage() {
         </>
       )}
 
-      <div className="flex items-center gap-4 mb-4">
-        <button
-          onClick={() => {
-            setAutoCalculateMode(!autoCalculateMode);
-            if (!autoCalculateMode) {
-              calculateEntriesFromParticipants();
-            }
-          }}
-          className={`flex items-center gap-2 px-4 py-2 rounded-md ${
-            autoCalculateMode 
-              ? 'bg-amber-100 text-amber-800' 
-              : 'bg-gray-100 text-gray-600'
-          }`}
-        >
-          <RiCalculatorLine className="w-5 h-5" />
-          {autoCalculateMode ? 'Auto-Calculate On' : 'Auto-Calculate Off'}
-        </button>
-
-        {autoCalculateMode && (
-          <div className="text-sm text-gray-500">
-            Entries are being automatically calculated based on participant check-in/out times
-          </div>
-        )}
-      </div>
 
       {/* Add a warning message when selecting a completed program */}
       {selectedProgram && programs.find(p => p.id === selectedProgram)?.status === 'Completed' && (

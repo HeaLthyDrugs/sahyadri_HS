@@ -68,13 +68,14 @@ const pdfStyles = `
     margin: 0 auto;
     padding: 20px;
     font-size: 12px;
-    line-height: 1.2; /* Reduced line height */
+    line-height: 1.4;
     color: #1f2937;
   }
   
   #invoice-content .table-container {
-    margin: 8px 0; /* Reduced margin */
+    margin: 12px 0;
     overflow-x: visible;
+    page-break-inside: avoid;
   }
   
   #invoice-content table {
@@ -84,10 +85,10 @@ const pdfStyles = `
   
   #invoice-content table th,
   #invoice-content table td {
-    padding: 4px 8px; /* Reduced padding */
+    padding: 4px 8px;
     text-align: left;
     border-bottom: 1px solid #e5e7eb;
-    vertical-align: middle; /* Added for better vertical alignment */
+    vertical-align: middle;
   }
   
   #invoice-content table th {
@@ -100,8 +101,8 @@ const pdfStyles = `
     display: flex;
     justify-content: space-between;
     align-items: flex-start;
-    margin-bottom: 16px; /* Reduced margin */
-    padding-bottom: 8px; /* Reduced padding */
+    margin-bottom: 16px;
+    padding-bottom: 8px;
     border-bottom: 1px solid #e5e7eb;
   }
   
@@ -112,35 +113,35 @@ const pdfStyles = `
   
   #invoice-content .company-header h1 {
     font-size: 18px;
-    margin-bottom: 2px; /* Reduced margin */
+    margin-bottom: 2px;
   }
   
   #invoice-content .company-header p {
-    margin: 1px 0; /* Reduced margin */
+    margin: 1px 0;
     font-size: 11px;
   }
   
   #invoice-content .billing-details {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 16px; /* Reduced gap */
-    margin: 8px 0; /* Reduced margin */
+    gap: 16px;
+    margin: 8px 0;
   }
   
   #invoice-content .billing-details h3 {
     font-size: 14px;
-    margin-bottom: 2px; /* Reduced margin */
+    margin-bottom: 2px;
   }
   
   #invoice-content .billing-details p {
-    margin: 1px 0; /* Reduced margin */
+    margin: 1px 0;
     font-size: 11px;
   }
   
   #invoice-content .total-section {
-    margin-top: 8px; /* Reduced margin */
+    margin-top: 8px;
     border-top: 1px solid #e5e7eb;
-    padding-top: 8px; /* Reduced padding */
+    padding-top: 8px;
   }
   
   #invoice-content .total-section .total-amount {
@@ -149,26 +150,26 @@ const pdfStyles = `
   }
   
   #invoice-content .footer {
-    margin-top: 16px; /* Reduced margin */
-    padding-top: 8px; /* Reduced padding */
+    margin-top: 16px;
+    padding-top: 8px;
     border-top: 1px solid #e5e7eb;
     font-size: 11px;
   }
   
   #invoice-content .footer-note {
-    margin-top: 8px; /* Reduced margin */
+    margin-top: 8px;
     text-align: center;
     font-size: 10px;
     color: #6b7280;
   }
   
   #invoice-content .signature-section {
-    margin-top: 24px; /* Reduced margin */
+    margin-top: 24px;
     text-align: right;
   }
   
   #invoice-content .signature-line {
-    margin-top: 32px; /* Reduced margin */
+    margin-top: 32px;
     border-top: 1px solid #e5e7eb;
     width: 200px;
     display: inline-block;
@@ -178,23 +179,127 @@ const pdfStyles = `
     display: flex;
     justify-content: space-between;
     font-size: 11px;
-    margin: 6px 0; /* Reduced margin */
+    margin: 6px 0;
   }
   
   #invoice-content .company-details .detail-item {
-    margin: 1px 0; /* Reduced margin */
+    margin: 1px 0;
   }
   
   #invoice-content .invoice-info {
     text-align: right;
     font-size: 11px;
-    margin-bottom: 6px; /* Reduced margin */
+    margin-bottom: 6px;
   }
   
   #invoice-content .invoice-info h2 {
     font-size: 16px;
     color: #d97706;
-    margin-bottom: 2px; /* Reduced margin */
+    margin-bottom: 2px;
+  }
+  
+  #invoice-content .page-break-after {
+    page-break-after: always;
+  }
+  
+  #invoice-content .page-break-inside-avoid {
+    page-break-inside: avoid;
+  }
+  
+  /* Pagination styles */
+  #invoice-content .entries-table {
+    page-break-inside: auto;
+  }
+
+  #invoice-content .entries-table tr {
+    page-break-inside: avoid;
+    page-break-after: auto;
+  }
+
+  #invoice-content .entries-table thead {
+    display: table-header-group;
+  }
+
+  #invoice-content .entries-table tbody {
+    page-break-inside: avoid;
+  }
+
+  #invoice-content .page-header {
+    display: none;
+  }
+
+  @media print {
+    #invoice-content .page-header {
+      display: block;
+      margin-bottom: 20px;
+    }
+
+    #invoice-content .entries-table {
+      margin-bottom: 20px;
+    }
+  }
+
+  /* Column width styles */
+  #invoice-content table th,
+  #invoice-content table td {
+    padding: 4px 8px;
+    text-align: left;
+    border-bottom: 1px solid #e5e7eb;
+    vertical-align: middle;
+  }
+
+  /* Specific column widths */
+  #invoice-content table th:nth-child(1),
+  #invoice-content table td:nth-child(1) {
+    width: 10%; /* Sr. No column - reduced width */
+    padding-right: 4px;
+  }
+
+  #invoice-content table th:nth-child(2),
+  #invoice-content table td:nth-child(2) {
+    width: 45%; /* Product Name column - increased width */
+    padding-right: 24px; /* Add more spacing after product name */
+  }
+
+  #invoice-content table th:nth-child(3),
+  #invoice-content table td:nth-child(3) {
+    width: 15%; /* Quantity column */
+  }
+
+  #invoice-content table th:nth-child(4),
+  #invoice-content table td:nth-child(4) {
+    width: 17.5%; /* Basic Rate column */
+  }
+
+  #invoice-content table th:nth-child(5),
+  #invoice-content table td:nth-child(5) {
+    width: 17.5%; /* Total column */
+  }
+
+  /* Ensure table uses these fixed widths */
+  #invoice-content table {
+    table-layout: fixed;
+    width: 100%;
+  }
+
+  /* Prevent text overflow in cells */
+  #invoice-content table td {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* Page break and spacing styles */
+  #invoice-content .page-break-before {
+    page-break-before: always;
+    padding-top: 12mm; /* Add top padding for subsequent pages */
+  }
+
+  /* Page header spacing */
+  #invoice-content .page-header {
+    margin-bottom: 30px;
+    padding-bottom: 15px;
+    border-bottom: 1px solid #e5e7eb;
   }
 `;
 
@@ -362,38 +467,29 @@ export default function InvoicePage() {
       if (!invoiceElement) {
         throw new Error('Invoice element not found');
       }
-
+  
       // Apply specific styles for PDF generation
       const pdfSpecificStyles = document.createElement('style');
       pdfSpecificStyles.textContent = pdfStyles;
       document.head.appendChild(pdfSpecificStyles);
-
+  
       const canvas = await html2canvas(invoiceElement, {
-        scale: 2, // Increased scale for better quality
+        scale: 2,
         useCORS: true,
         logging: false,
         backgroundColor: '#ffffff',
         onclone: (clonedDoc) => {
           const clonedElement = clonedDoc.getElementById('invoice-content');
           if (clonedElement) {
-            // Apply additional PDF-specific styles
             clonedElement.style.width = '210mm';
-            clonedElement.style.marginBottom = '20mm';
             clonedElement.style.padding = '20mm';
             clonedElement.style.boxSizing = 'border-box';
             clonedElement.style.fontSize = '12px';
-            
-            // Ensure table cells have proper spacing
-            const tables = clonedElement.getElementsByTagName('table');
-            Array.from(tables).forEach(table => {
-              table.style.width = '100%';
-              table.style.tableLayout = 'fixed';
-            });
           }
         }
       });
-
-      // Create PDF with proper dimensions
+  
+      // Create PDF
       const imgData = canvas.toDataURL('image/jpeg', 1.0);
       const pdf = new jsPDF({
         orientation: 'portrait',
@@ -401,27 +497,42 @@ export default function InvoicePage() {
         format: 'a4',
         compress: true
       });
-
+  
       const pdfWidth = pdf.internal.pageSize.getWidth();
       const pdfHeight = pdf.internal.pageSize.getHeight();
-      const imgWidth = canvas.width;
-      const imgHeight = canvas.height;
-      const ratio = Math.min(pdfWidth / imgWidth, pdfHeight / imgHeight);
-
-      const imgX = (pdfWidth - imgWidth * ratio) / 2;
-      const imgY = 0;
-
-      pdf.addImage(
-        imgData, 
-        'JPEG', 
-        imgX, 
-        imgY, 
-        imgWidth * ratio, 
-        imgHeight * ratio, 
-        undefined, 
-        'FAST'
-      );
-
+      
+      // Calculate dimensions
+      const imgProps = pdf.getImageProperties(imgData);
+      const pdfRatio = pdfWidth / pdfHeight;
+      const imgRatio = imgProps.width / imgProps.height;
+      
+      let imgWidth = pdfWidth;
+      let imgHeight = pdfWidth / imgRatio;
+      
+      // Calculate number of pages needed
+      const pageCount = Math.ceil(imgHeight / pdfHeight);
+      
+      // Add pages one by one
+      for (let page = 0; page < pageCount; page++) {
+        if (page > 0) {
+          pdf.addPage();
+        }
+        
+        // Calculate the slice of the image to use for this page
+        const position = -page * pdfHeight;
+        
+        pdf.addImage(
+          imgData,
+          'JPEG',
+          0,
+          position,
+          imgWidth,
+          imgHeight,
+          undefined,
+          'FAST'
+        );
+      }
+  
       // Generate filename
       const fileName = `Invoice-${format(new Date(), 'yyyyMMdd')}-${invoiceData.packageDetails?.name || 'unknown'}.pdf`;
       
@@ -559,60 +670,91 @@ export default function InvoicePage() {
               </h3>
             </div>
 
-            {/* Entries Table - remains mostly same but with updated styling */}
-            <div className="mb-8 overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200 border-2 border-gray-200">
-                <thead className="bg-amber-50">
-                  <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase">Sr. No</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase">Product Name</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase">Quantity</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase">Basic Rate</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase">Total</th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {invoiceData.entries.map((entry, index) => (
-                    <tr key={entry.id}>
-                      <td className="px-6 py-1 whitespace-nowrap text-sm text-gray-500">
-                        {index + 1}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {entry.product[0]?.name || 'Unknown Product'}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {entry.quantity}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        ₹{entry.product[0]?.rate.toFixed(2) || '0.00'}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        ₹{((entry.quantity || 0) * (entry.product[0]?.rate || 0)).toFixed(2)}
-                      </td>
-                    </tr>
-                  ))}
-                  {invoiceData.entries.length === 0 && (
-                    <tr>
-                      <td colSpan={5} className="px-6 py-4 text-center text-sm text-gray-500">
-                        No entries found for the selected period
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
+            {/* Entries Tables with Pagination */}
+            {(() => {
+              const FIRST_PAGE_ITEMS = 25;
+              const OTHER_PAGES_ITEMS = 35;
+              
+              // Calculate total pages needed
+              const remainingItems = invoiceData.entries.length - FIRST_PAGE_ITEMS;
+              const additionalPages = Math.ceil(Math.max(0, remainingItems) / OTHER_PAGES_ITEMS);
+              const totalPages = 1 + additionalPages;
 
-            {/* Total */}
-            <div className="border-t pt-4">
-              <div className="flex justify-end">
-                <div className="w-64">
-                  <div className="flex justify-between py-2 text-lg font-bold">
-                    <span>Total Amount:</span>
-                    <span>₹{invoiceData.totalAmount.toFixed(2)}</span>
+              return Array.from({ length: totalPages }).map((_, pageIndex) => {
+                // Calculate start and end indices for each page
+                let startIndex, endIndex;
+                if (pageIndex === 0) {
+                  startIndex = 0;
+                  endIndex = Math.min(FIRST_PAGE_ITEMS, invoiceData.entries.length);
+                } else {
+                  startIndex = FIRST_PAGE_ITEMS + (pageIndex - 1) * OTHER_PAGES_ITEMS;
+                  endIndex = Math.min(startIndex + OTHER_PAGES_ITEMS, invoiceData.entries.length);
+                }
+                
+                const pageEntries = invoiceData.entries.slice(startIndex, endIndex);
+
+                return (
+                  <div 
+                    key={pageIndex} 
+                    className={`mb-8 overflow-x-auto ${pageIndex > 0 ? 'page-break-before' : ''}`}
+                  >
+                    {pageIndex > 0 && (
+                      <div className="page-header">
+                        <div className="flex justify-between items-center">
+                          <h3 className="text-lg font-semibold">
+                            Continued from previous page - {format(new Date(invoiceData.month), 'MMMM yyyy')}
+                          </h3>
+                          <p className="text-sm text-gray-600">Page {pageIndex + 1} of {totalPages}</p>
+                        </div>
+                      </div>
+                    )}
+                    
+                    <table className="min-w-full divide-y divide-gray-200 border-2 border-gray-200 entries-table">
+                      <thead className="bg-amber-50">
+                        <tr>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase">Sr. No</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase">Product Name</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase">Quantity</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase">Basic Rate</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase">Total</th>
+                        </tr>
+                      </thead>
+                      <tbody className="bg-white divide-y divide-gray-200">
+                        {pageEntries.map((entry, index) => (
+                          <tr key={entry.id}>
+                            <td className="px-6 py-1 whitespace-nowrap text-sm text-gray-500">
+                              {startIndex + index + 1}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                              {entry.product[0]?.name || 'Unknown Product'}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                              {entry.quantity}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                              ₹{entry.product[0]?.rate.toFixed(2) || '0.00'}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                              ₹{((entry.quantity || 0) * (entry.product[0]?.rate || 0)).toFixed(2)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      {pageIndex === totalPages - 1 && (
+                        <tfoot className="bg-gray-50">
+                          <tr>
+                            <td colSpan={4} className="px-6 py-4 text-right font-semibold">Total Amount:</td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm font-bold">
+                              ₹{invoiceData.totalAmount.toFixed(2)}
+                            </td>
+                          </tr>
+                        </tfoot>
+                      )}
+                    </table>
                   </div>
-                </div>
-              </div>
-            </div>
+                );
+              });
+            })()}
 
             {/* Updated Footer */}
             <div className="mt-8 pt-8 border-t grid grid-cols-2 gap-8">
@@ -620,6 +762,7 @@ export default function InvoicePage() {
                 <h4 className="font-semibold text-gray-900">Company Details:</h4>
                 <div className="text-sm text-gray-600 space-y-0.5">
                   <p>PAN: {invoiceConfig.pan}</p>
+                  <p>GSTIN: {invoiceConfig.gstin}</p>
                 </div>
               </div>
               <div className="space-y-2">

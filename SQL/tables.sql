@@ -14,63 +14,7 @@ create table
     constraint billing_entries_program_id_fkey foreign key (program_id) references programs (id)
   ) tablespace pg_default;
 
--- participants table 
-create table
-  public.participants (
-    id uuid not null default extensions.uuid_generate_v4 (),
-    attendee_name text not null,
-    security_checkin timestamp with time zone null,
-    reception_checkin timestamp with time zone not null,
-    reception_checkout timestamp with time zone not null,
-    security_checkout timestamp with time zone null,
-    created_at timestamp with time zone not null default now(),
-    type text null default 'participant'::text,
-    program_id uuid null,
-    constraint participants_pkey primary key (id),
-    constraint participants_program_id_fkey foreign key (program_id) references programs (id) on delete cascade
-  ) tablespace pg_default;
-
-create index if not exists participants_created_at_idx on public.participants using btree (created_at desc) tablespace pg_default;
-
-create index if not exists participants_attendee_name_idx on public.participants using btree (attendee_name) tablespace pg_default;
-
--- programs table 
-create table
-  public.programs (
-    id uuid not null default gen_random_uuid (),
-    name character varying(255) not null,
-    start_date date not null,
-    start_time time without time zone not null default '09:00:00'::time without time zone,
-    end_date date not null,
-    end_time time without time zone not null default '17:00:00'::time without time zone,
-    days integer not null,
-    total_participants integer not null,
-    status character varying(20) not null,
-    created_at timestamp with time zone null default now(),
-    updated_at timestamp with time zone null default now(),
-    customer_name character varying(255) not null,
-    constraint programs_pkey primary key (id),
-    constraint programs_status_check check (
-      (
-        (status)::text = any (
-          (
-            array[
-              'Upcoming'::character varying,
-              'Ongoing'::character varying,
-              'Completed'::character varying
-            ]
-          )::text[]
-        )
-      )
-    )
-  ) tablespace pg_default;
-
-create trigger update_programs_updated_at before
-update on programs for each row
-execute function update_updated_at_column ();
-
-
--- categories table 
+  -- categories table 
 create table
   public.categories (
     id uuid not null default extensions.uuid_generate_v4 (),
@@ -83,7 +27,42 @@ create table
     constraint categories_pkey primary key (id)
   ) tablespace pg_default;
 
--- invoices table 
+
+  -- invoice_config table 
+  create table
+  public.invoice_config (
+    id uuid not null default extensions.uuid_generate_v4 (),
+    company_name text not null,
+    from_address text[] null default '{}'::text[],
+    gstin text null,
+    pan text null,
+    footer_note text null,
+    logo_url text null,
+    created_at timestamp with time zone not null default timezone ('utc'::text, now()),
+    updated_at timestamp with time zone not null default timezone ('utc'::text, now()),
+    bill_to_address text[] null default '{}'::text[],
+    constraint invoice_config_pkey primary key (id)
+  ) tablespace pg_default;
+
+
+
+-- invoice_items table 
+create table
+  public.invoice_items (
+    id uuid not null default gen_random_uuid (),
+    invoice_id uuid not null,
+    product_id uuid not null,
+    quantity integer not null,
+    rate numeric(10, 2) not null,
+    amount numeric(10, 2) not null,
+    created_at timestamp with time zone null default now(),
+    constraint invoice_items_pkey primary key (id),
+    constraint invoice_items_invoice_id_fkey foreign key (invoice_id) references invoices (id),
+    constraint invoice_items_product_id_fkey foreign key (product_id) references products (id)
+  ) tablespace pg_default;
+
+
+  -- invoices table 
 create table
   public.invoices (
     id uuid not null default gen_random_uuid (),
@@ -139,6 +118,55 @@ update on packages for each row
 execute function update_updated_at_column ();
 
 
+-- participants table 
+create table
+  public.participants (
+    id uuid not null default extensions.uuid_generate_v4 (),
+    attendee_name text not null,
+    security_checkin timestamp with time zone null,
+    reception_checkin timestamp with time zone not null,
+    reception_checkout timestamp with time zone not null,
+    security_checkout timestamp with time zone null,
+    created_at timestamp with time zone not null default now(),
+    type text null default 'participant'::text,
+    program_id uuid null,
+    constraint participants_pkey primary key (id),
+    constraint participants_program_id_fkey foreign key (program_id) references programs (id) on delete cascade
+  ) tablespace pg_default;
+
+create index if not exists participants_created_at_idx on public.participants using btree (created_at desc) tablespace pg_default;
+
+create index if not exists participants_attendee_name_idx on public.participants using btree (attendee_name) tablespace pg_default;
+
+
+-- product_rules table 
+create table
+  public.product_rules (
+    id uuid not null default extensions.uuid_generate_v4 (),
+    package_id uuid null,
+    product_id uuid null,
+    allocation_type text null,
+    quantity integer not null,
+    created_at timestamp with time zone null default timezone ('utc'::text, now()),
+    updated_at timestamp with time zone null default timezone ('utc'::text, now()),
+    constraint product_rules_pkey primary key (id),
+    constraint product_rules_package_id_fkey foreign key (package_id) references packages (id) on delete cascade,
+    constraint product_rules_product_id_fkey foreign key (product_id) references products (id) on delete cascade,
+    constraint product_rules_allocation_type_check check (
+      (
+        allocation_type = any (
+          array[
+            'per_day'::text,
+            'per_stay'::text,
+            'per_hour'::text
+          ]
+        )
+      )
+    ),
+    constraint product_rules_quantity_check check ((quantity > 0))
+  ) tablespace pg_default;
+
+
 -- products table 
 create table
   public.products (
@@ -163,4 +191,77 @@ create trigger update_products_updated_at before
 update on products for each row
 execute function update_updated_at_column ();
 
+
+-- programs table 
+create table
+  public.programs (
+    id uuid not null default gen_random_uuid (),
+    name character varying(255) not null,
+    start_date date not null,
+    start_time time without time zone not null default '09:00:00'::time without time zone,
+    end_date date not null,
+    end_time time without time zone not null default '17:00:00'::time without time zone,
+    days integer not null,
+    total_participants integer not null,
+    status character varying(20) not null,
+    created_at timestamp with time zone null default now(),
+    updated_at timestamp with time zone null default now(),
+    customer_name character varying(255) not null,
+    constraint programs_pkey primary key (id),
+    constraint programs_status_check check (
+      (
+        (status)::text = any (
+          (
+            array[
+              'Upcoming'::character varying,
+              'Ongoing'::character varying,
+              'Completed'::character varying
+            ]
+          )::text[]
+        )
+      )
+    )
+  ) tablespace pg_default;
+
+create trigger update_programs_updated_at before
+update on programs for each row
+execute function update_updated_at_column ();
+
+
+-- profiles table 
+create table
+  public.profiles (
+    id uuid not null,
+    username text not null,
+    role text not null default 'staff'::text,
+    full_name text null,
+    avatar_url text null,
+    created_at timestamp with time zone null default now(),
+    updated_at timestamp with time zone null default now(),
+    constraint profiles_pkey primary key (id),
+    constraint profiles_username_key unique (username),
+    constraint profiles_id_fkey foreign key (id) references auth.users (id) on delete cascade,
+    constraint profiles_role_check check (
+      (
+        role = any (
+          array['admin'::text, 'staff'::text, 'owner'::text]
+        )
+      )
+    )
+  ) tablespace pg_default;
+
+-- Add this trigger function
+CREATE OR REPLACE FUNCTION calculate_entries_on_participant_insert()
+RETURNS TRIGGER AS $$
+BEGIN
+  -- Insert logic to calculate and insert entries
+  -- This will be called whenever a new participant is added
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER participant_entry_calculator
+AFTER INSERT ON participants
+FOR EACH ROW
+EXECUTE FUNCTION calculate_entries_on_participant_insert();
 
