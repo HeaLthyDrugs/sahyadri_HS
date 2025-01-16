@@ -37,6 +37,8 @@ interface Product {
   category: 'Meals' | 'Drinks';
   rate: number;
   package_id: string;
+  slot_start: string;
+  slot_end: string;
 }
 
 interface Package {
@@ -167,7 +169,6 @@ export function BillingEntriesPage() {
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [autoCalculateMode, setAutoCalculateMode] = useState(false);
   const [statusFilter, setStatusFilter] = useState<string>('all');
-  const [productRules, setProductRules] = useState<ProductRule[]>([]);
 
   // Add ref for managing focus
   const tableRef = useRef<HTMLTableElement>(null);
@@ -296,15 +297,36 @@ export function BillingEntriesPage() {
 
   const fetchProducts = async () => {
     try {
+      console.log('Fetching products for package:', selectedPackage); // Debug log
+
       const { data, error } = await supabase
         .from('products')
         .select('*')
-        .eq('package_id', selectedPackage)
-        .order('category', { ascending: true })
-        .order('name', { ascending: true });
+        .eq('package_id', selectedPackage);
 
       if (error) throw error;
+
+      console.log('Fetched products:', data); // Debug log
       setProducts(data || []);
+
+      // Initialize entry data for these products if needed
+      if (data && data.length > 0) {
+        setEntryData(prev => {
+          const newData = { ...prev };
+          dateRange.forEach(date => {
+            const dateStr = format(date, 'yyyy-MM-dd');
+            if (!newData[dateStr]) {
+              newData[dateStr] = {};
+            }
+            data.forEach(product => {
+              if (newData[dateStr][product.id] === undefined) {
+                newData[dateStr][product.id] = 0;
+              }
+            });
+          });
+          return newData;
+        });
+      }
     } catch (error) {
       console.error('Error fetching products:', error);
       toast.error('Failed to fetch products');
@@ -334,62 +356,76 @@ export function BillingEntriesPage() {
 
   // Fetch entries when package is selected
   useEffect(() => {
-    if (selectedPackage && dateRange.length > 0) {
+    if (selectedPackage) {
       fetchProducts();
-      fetchEntries();
-      if (selectedProgram) {
-        fetchParticipants(selectedProgram);
-      }
+    } else {
+      setProducts([]); // Clear products when no package is selected
     }
-  }, [selectedPackage, dateRange, selectedProgram]);
+  }, [selectedPackage]);
+
+  // Fetch entries when package is selected
+  useEffect(() => {
+    if (selectedProgram && selectedPackage && dateRange.length > 0 && products.length > 0) {
+      fetchEntries();
+    }
+  }, [selectedProgram, selectedPackage, dateRange, products.length]);
+
+  const calculateQuantityForSlot = (
+    product: Product,
+    date: Date,
+    participants: Participant[]
+  ): number => {
+    // Convert slot times to Date objects for comparison
+    const slotStart = new Date(date);
+    const [startHours, startMinutes] = product.slot_start.split(':');
+    slotStart.setHours(parseInt(startHours), parseInt(startMinutes), 0);
+
+    const slotEnd = new Date(date);
+    const [endHours, endMinutes] = product.slot_end.split(':');
+    slotEnd.setHours(parseInt(endHours), parseInt(endMinutes), 0);
+
+    // Count participants present during this slot
+    const count = participants.filter(participant => {
+      const checkin = new Date(participant.reception_checkin);
+      const checkout = new Date(participant.reception_checkout);
+      
+      // Check if participant was present during the slot
+      const isPresent = (
+        format(date, 'yyyy-MM-dd') === format(checkin, 'yyyy-MM-dd') &&
+        checkin.getTime() <= slotEnd.getTime() &&
+        checkout.getTime() >= slotStart.getTime()
+      );
+
+      // Debug logs
+      console.log({
+        product: product.name,
+        date: format(date, 'yyyy-MM-dd'),
+        participant: participant.attendee_name,
+        checkin: format(checkin, 'yyyy-MM-dd HH:mm'),
+        checkout: format(checkout, 'yyyy-MM-dd HH:mm'),
+        slotStart: format(slotStart, 'yyyy-MM-dd HH:mm'),
+        slotEnd: format(slotEnd, 'yyyy-MM-dd HH:mm'),
+        isPresent
+      });
+
+      return isPresent;
+    }).length;
+
+    return count;
+  };
 
   const fetchEntries = async () => {
     try {
-      console.log('Fetching entries for:', {
+      setIsLoading(true);
+      
+      // Debug logs
+      console.log('Fetching entries with params:', {
         programId: selectedProgram,
         packageId: selectedPackage,
         dateRange: dateRange.map(d => format(d, 'yyyy-MM-dd'))
       });
 
-      // Log participants
-      const { data: participants } = await supabase
-        .from('participants')
-        .select('*')
-        .eq('program_id', selectedProgram);
-      console.log('Participants:', participants);
-
-      // Log product rules
-      const { data: rules } = await supabase
-        .from('product_rules')
-        .select('*')
-        .eq('package_id', selectedPackage);
-      console.log('Product rules:', rules);
-
-      // First get all participants for this program
-      const { data: participantsData, error: participantError } = await supabase
-        .from('participants')
-        .select('*')
-        .eq('program_id', selectedProgram);
-
-      if (participantError) throw participantError;
-
-      // Then get all product rules for the package
-      const { data: rulesData, error: rulesError } = await supabase
-        .from('product_rules')
-        .select(`
-          *,
-          products (
-            id,
-            name,
-            category
-          )
-        `)
-        .eq('package_id', selectedPackage);
-
-      if (rulesError) throw rulesError;
-
-      // Get existing entries
-      const { data: existingEntries, error: entriesError } = await supabase
+      const { data: billingEntries, error: entriesError } = await supabase
         .from('billing_entries')
         .select('*')
         .eq('program_id', selectedProgram)
@@ -399,54 +435,36 @@ export function BillingEntriesPage() {
 
       if (entriesError) throw entriesError;
 
-      // Initialize empty data structure for all dates and products
-      const transformedData: EntryData = {};
+      console.log('Fetched billing entries:', billingEntries);
+
+      // Initialize entry data structure
+      const newEntryData: EntryData = {};
+      
+      // Initialize all dates with 0 quantities for all products
       dateRange.forEach(date => {
         const dateStr = format(date, 'yyyy-MM-dd');
-        transformedData[dateStr] = {};
+        newEntryData[dateStr] = {};
         products.forEach(product => {
-          // Calculate default quantity based on rules and participants
-          const rule = rules?.find(r => r.product_id === product.id);
-          const participantsForDate = participants?.filter(p => 
-            isDateInRange(date, new Date(p.reception_checkin), new Date(p.reception_checkout))
-          );
-          
-          let defaultQuantity = 0;
-          if (rule && participantsForDate) {
-            switch (rule.allocation_type) {
-              case 'per_day':
-                defaultQuantity = rule.quantity * participantsForDate.length;
-                break;
-              case 'per_stay':
-                defaultQuantity = participantsForDate.filter(p => 
-                  format(new Date(p.reception_checkin), 'yyyy-MM-dd') === format(date, 'yyyy-MM-dd')
-                ).length * rule.quantity;
-                break;
-              case 'per_hour':
-                defaultQuantity = participantsForDate.reduce((sum, p) => {
-                  const hours = calculateDuration(p.reception_checkin, p.reception_checkout, 'hours');
-                  return sum + (rule.quantity * hours);
-                }, 0);
-                break;
-            }
-          }
-          
-          transformedData[dateStr][product.id] = defaultQuantity;
+          newEntryData[dateStr][product.id] = 0;
         });
       });
 
-      // Fill in actual values from database
-      existingEntries?.forEach(entry => {
-        if (!transformedData[entry.entry_date]) {
-          transformedData[entry.entry_date] = {};
+      // Fill in the actual quantities from billing entries
+      billingEntries?.forEach(entry => {
+        const dateStr = format(new Date(entry.entry_date), 'yyyy-MM-dd');
+        if (newEntryData[dateStr]) {
+          newEntryData[dateStr][entry.product_id] = entry.quantity;
         }
-        transformedData[entry.entry_date][entry.product_id] = entry.quantity;
       });
 
-      setEntryData(transformedData);
+      console.log('Transformed entry data:', newEntryData);
+      setEntryData(newEntryData);
+
     } catch (error) {
       console.error('Error fetching entries:', error);
       toast.error('Failed to fetch entries');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -640,21 +658,6 @@ export function BillingEntriesPage() {
     }
   };
 
-  const fetchProductRules = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('product_rules')
-        .select('*')
-        .eq('package_id', selectedPackage);
-
-      if (error) throw error;
-      return data || [];
-    } catch (error) {
-      console.error('Error fetching product rules:', error);
-      return [];
-    }
-  };
-
   const isWithinTimeSlot = (checkTime: string, slot: TimeSlot): boolean => {
     const time = new Date(`1970-01-01T${checkTime}`);
     const start = new Date(`1970-01-01T${slot.start}`);
@@ -699,32 +702,6 @@ export function BillingEntriesPage() {
     }
     return Math.ceil(diff / (1000 * 60 * 60 * 24));
   };
-
-  // Add this to your useEffect that runs when package changes
-  useEffect(() => {
-    if (selectedPackage) {
-      // Fetch product rules
-      const fetchRules = async () => {
-        const { data, error } = await supabase
-          .from('product_rules')
-          .select(`
-            *,
-            products (
-              name
-            )
-          `)
-          .eq('package_id', selectedPackage);
-
-        if (error) {
-          console.error('Error fetching rules:', error);
-          return;
-        }
-        setProductRules(data || []);
-      };
-
-      fetchRules();
-    }
-  }, [selectedPackage]);
 
   return (
     <div className="p-4">
@@ -867,15 +844,6 @@ export function BillingEntriesPage() {
                 if (entriesError) throw entriesError;
                 console.log('Database Entries:', entries);
 
-                // Log product rules
-                const { data: rules, error: rulesError } = await supabase
-                  .from('product_rules')
-                  .select('*')
-                  .eq('package_id', selectedPackage);
-
-                if (rulesError) throw rulesError;
-                console.log('Product Rules:', rules);
-
                 toast.success('Debug info logged to console');
               } catch (error) {
                 console.error('Error fetching debug info:', error);
@@ -994,17 +962,18 @@ export function BillingEntriesPage() {
         </div>
       )}
 
-      {selectedPackage && productRules.length > 0 && (
-        <div className="mb-4 p-4 bg-gray-50 rounded-lg">
-          <h3 className="font-medium mb-2">Current Product Rules:</h3>
-          <div className="space-y-2">
-            {productRules.map(rule => (
-              <div key={rule.id} className="flex items-center gap-2 text-sm">
-                <span className="font-medium">{rule.products?.name}:</span>
-                <span>{rule.quantity} per {rule.allocation_type.replace('_', ' ')}</span>
-              </div>
-            ))}
-          </div>
+      {/* Loading indicator */}
+      {isLoading && (
+        <div className="text-center py-4">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-amber-500 mx-auto"></div>
+          <p className="mt-2 text-gray-600">Loading...</p>
+        </div>
+      )}
+
+      {/* Error message if no products */}
+      {selectedPackage && !isLoading && products.length === 0 && (
+        <div className="bg-yellow-50 border border-yellow-200 text-yellow-800 px-4 py-3 rounded relative" role="alert">
+          <p>No products found for this package. Please check the package configuration.</p>
         </div>
       )}
     </div>

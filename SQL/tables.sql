@@ -1,17 +1,13 @@
 -- billing_entries table 
 create table
   public.billing_entries (
-    id uuid not null,
-    program_id uuid null,
-    package_id uuid null,
-    product_id uuid null,
-    entry_date date not null,
-    quantity integer not null,
-    constraint billing_entries_pkey primary key (id),
-    constraint billing_entries_program_id_package_id_product_id_entry_date_key unique (program_id, package_id, product_id, entry_date),
-    constraint billing_entries_package_id_fkey foreign key (package_id) references packages (id),
-    constraint billing_entries_product_id_fkey foreign key (product_id) references products (id),
-    constraint billing_entries_program_id_fkey foreign key (program_id) references programs (id)
+    id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+    program_id uuid REFERENCES programs(id),
+    package_id uuid REFERENCES packages(id),
+    product_id uuid REFERENCES products(id),
+    entry_date date NOT NULL,
+    quantity integer NOT NULL DEFAULT 0,
+    UNIQUE(program_id, package_id, product_id, entry_date)
   ) tablespace pg_default;
 
   -- categories table 
@@ -139,34 +135,6 @@ create index if not exists participants_created_at_idx on public.participants us
 create index if not exists participants_attendee_name_idx on public.participants using btree (attendee_name) tablespace pg_default;
 
 
--- product_rules table 
-create table
-  public.product_rules (
-    id uuid not null default extensions.uuid_generate_v4 (),
-    package_id uuid null,
-    product_id uuid null,
-    allocation_type text null,
-    quantity integer not null,
-    created_at timestamp with time zone null default timezone ('utc'::text, now()),
-    updated_at timestamp with time zone null default timezone ('utc'::text, now()),
-    constraint product_rules_pkey primary key (id),
-    constraint product_rules_package_id_fkey foreign key (package_id) references packages (id) on delete cascade,
-    constraint product_rules_product_id_fkey foreign key (product_id) references products (id) on delete cascade,
-    constraint product_rules_allocation_type_check check (
-      (
-        allocation_type = any (
-          array[
-            'per_day'::text,
-            'per_stay'::text,
-            'per_hour'::text
-          ]
-        )
-      )
-    ),
-    constraint product_rules_quantity_check check ((quantity > 0))
-  ) tablespace pg_default;
-
-
 -- products table 
 create table
   public.products (
@@ -249,6 +217,13 @@ create table
       )
     )
   ) tablespace pg_default;
+
+-- Remove product_rules table if it exists
+DROP TABLE IF EXISTS product_rules;
+
+-- Ensure products table has slot_start and slot_end
+ALTER TABLE products ADD COLUMN IF NOT EXISTS slot_start time without time zone NOT NULL DEFAULT '00:00:00';
+ALTER TABLE products ADD COLUMN IF NOT EXISTS slot_end time without time zone NOT NULL DEFAULT '23:59:59';
 
 
 

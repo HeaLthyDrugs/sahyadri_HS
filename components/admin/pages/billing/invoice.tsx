@@ -29,12 +29,16 @@ interface Product {
 
 interface BillingEntry {
   id: string;
-  program_id: string | null;
+  program_id: string;
   package_id: string;
   product_id: string;
   entry_date: string;
   quantity: number;
-  product: Product[];
+  product: {
+    id: string;
+    name: string;
+    rate: number;
+  };
 }
 
 interface InvoiceData {
@@ -387,14 +391,7 @@ export default function InvoicePage() {
         .eq('id', selectedPackage)
         .single();
 
-      if (packageError) {
-        console.error('Package error:', packageError);
-        throw new Error('Failed to fetch package details');
-      }
-
-      if (!packageData) {
-        throw new Error('Package not found');
-      }
+      if (packageError) throw packageError;
 
       // Get start and end dates for the selected month
       const startDate = `${selectedMonth}-01`;
@@ -403,7 +400,7 @@ export default function InvoicePage() {
       endDate.setDate(endDate.getDate() - 1);
       const endDateStr = format(endDate, 'yyyy-MM-dd');
 
-      // Fetch entries for the selected month and package
+      // Updated query with proper join
       const { data: entriesData, error: entriesError } = await supabase
         .from('billing_entries')
         .select(`
@@ -413,7 +410,7 @@ export default function InvoicePage() {
           product_id,
           entry_date,
           quantity,
-          product:products (
+          product:products!inner (
             id,
             name,
             rate
@@ -424,24 +421,26 @@ export default function InvoicePage() {
         .lte('entry_date', endDateStr)
         .order('entry_date', { ascending: true });
 
-      if (entriesError) {
-        console.error('Entries error:', entriesError);
-        throw new Error('Failed to fetch billing entries');
-      }
+      if (entriesError) throw entriesError;
 
-      if (!entriesData) {
+      if (!entriesData?.length) {
         throw new Error('No entries found for the selected period');
       }
 
-      // Calculate total amount
+      // Fixed total calculation
       const total = entriesData.reduce((sum, entry) => {
-        return sum + (entry.quantity * (entry.product[0]?.rate || 0));
+        const rate = entry.product?.rate || 0;
+        const quantity = entry.quantity || 0;
+        return sum + (rate * quantity);
       }, 0);
+
+      console.log('Entries Data:', entriesData); // Debug log
+      console.log('Calculated Total:', total); // Debug log
 
       setInvoiceData({
         packageDetails: packageData,
         month: selectedMonth,
-        entries: entriesData,
+        entries: entriesData as unknown as BillingEntry[],
         totalAmount: total
       });
 
@@ -720,25 +719,31 @@ export default function InvoicePage() {
                         </tr>
                       </thead>
                       <tbody className="bg-white divide-y divide-gray-200">
-                        {pageEntries.map((entry, index) => (
-                          <tr key={entry.id}>
-                            <td className="px-6 py-1 whitespace-nowrap text-sm text-gray-500">
-                              {startIndex + index + 1}
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                              {entry.product[0]?.name || 'Unknown Product'}
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                              {entry.quantity}
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                              ₹{entry.product[0]?.rate.toFixed(2) || '0.00'}
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                              ₹{((entry.quantity || 0) * (entry.product[0]?.rate || 0)).toFixed(2)}
-                            </td>
-                          </tr>
-                        ))}
+                        {pageEntries.map((entry, index) => {
+                          const rate = entry.product?.rate || 0;
+                          const quantity = entry.quantity || 0;
+                          const lineTotal = rate * quantity;
+
+                          return (
+                            <tr key={entry.id}>
+                              <td className="px-6 py-1 whitespace-nowrap text-sm text-gray-500">
+                                {startIndex + index + 1}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                {entry.product?.name || 'Unknown Product'}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                {quantity}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                ₹{rate.toFixed(2)}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                ₹{lineTotal.toFixed(2)}
+                              </td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
                       {pageIndex === totalPages - 1 && (
                         <tfoot className="bg-gray-50">
