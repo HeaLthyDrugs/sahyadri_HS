@@ -31,11 +31,10 @@ interface Program {
 interface ReportData {
   date: string;
   program: string;
-  package: string;
-  product: string;
-  quantity: number;
-  rate: number;
-  amount: number;
+  cateringTotal: number;
+  extraTotal: number;
+  coldDrinkTotal: number;
+  grandTotal: number;
 }
 
 interface ProgramReport {
@@ -58,6 +57,14 @@ interface ProgramReport {
     };
   };
   grandTotal: number;
+}
+
+interface BillingEntry {
+  entry_date: string;
+  quantity: number;
+  programs: { id: string; name: string; }[];
+  packages: { id: string; name: string; type: string; }[];
+  products: { name: string; rate: number; }[];
 }
 
 const pdfStyles = `
@@ -252,53 +259,92 @@ export default function ReportPage() {
       endDate.setDate(endDate.getDate() - 1);
       const endDateStr = format(endDate, 'yyyy-MM-dd');
 
-      // Build query
+      // Build query to get program-wise package totals - Updated query structure
       let query = supabase
         .from('billing_entries')
         .select(`
           entry_date,
           quantity,
-          programs (name),
-          packages (name),
-          products (name, rate)
+          programs:program_id (
+            id,
+            name
+          ),
+          packages:package_id (
+            id,
+            name,
+            type
+          ),
+          products:product_id (
+            name,
+            rate
+          )
         `)
         .gte('entry_date', startDate)
         .lte('entry_date', endDateStr);
 
-      // Add filters if selected
-      if (selectedPackage) {
-        query = query.eq('package_id', selectedPackage);
-      }
       if (selectedProgram) {
         query = query.eq('program_id', selectedProgram);
       }
 
-      const { data, error } = await query.order('entry_date', { ascending: true });
+      const { data, error } = await query;
 
       if (error) throw error;
 
-      // Transform data
-      const formattedData: ReportData[] = (data || []).map(entry => ({
-        date: format(new Date(entry.entry_date), 'dd/MM/yyyy'),
-        program: entry.programs[0]?.name || 'N/A',
-        package: entry.packages[0]?.name || 'N/A',
-        product: entry.products[0]?.name || 'N/A',
-        quantity: entry.quantity,
-        rate: entry.products[0]?.rate || 0,
-        amount: entry.quantity * (entry.products[0]?.rate || 0)
-      }));
+      // Debug log to check the raw data
+      console.log('Raw data from query:', data);
+
+      // Group and transform data by program
+      const programTotals = new Map();
+
+      (data || []).forEach((entry: BillingEntry) => {
+        const programId = entry.programs?.[0]?.id || 'unknown';
+        const programName = entry.programs?.[0]?.name || 'N/A';
+        const packageType = entry.packages?.[0]?.type?.toLowerCase() || 'unknown';
+        const amount = entry.quantity * (entry.products?.[0]?.rate || 0);
+
+        if (!programTotals.has(programId)) {
+          programTotals.set(programId, {
+            date: selectedMonth,
+            program: programName,
+            cateringTotal: 0,
+            extraTotal: 0,
+            coldDrinkTotal: 0,
+            grandTotal: 0
+          });
+        }
+
+        const programData = programTotals.get(programId);
+        
+        switch (packageType) {
+          case 'catering':
+            programData.cateringTotal = (programData.cateringTotal || 0) + amount;
+            break;
+          case 'extra':
+            programData.extraTotal = (programData.extraTotal || 0) + amount;
+            break;
+          case 'cold drink':
+            programData.coldDrinkTotal = (programData.coldDrinkTotal || 0) + amount;
+            break;
+        }
+        
+        programData.grandTotal = (programData.grandTotal || 0) + amount;
+      });
+
+      // Convert to array and ensure all values are numbers
+      const formattedData: ReportData[] = Array.from(programTotals.values());
+
+      // Debug log to check the transformed data
+      console.log('Transformed data:', formattedData);
 
       // Calculate summary
-      const totalQuantity = formattedData.reduce((sum, item) => sum + item.quantity, 0);
-      const totalAmount = formattedData.reduce((sum, item) => sum + item.amount, 0);
-      const averagePerDay = totalQuantity / formattedData.length || 0;
+      const summary = {
+        totalQuantity: data?.length || 0,
+        totalAmount: formattedData.reduce((sum, item) => sum + (Number(item.grandTotal) || 0), 0),
+        averagePerDay: formattedData.length ? (data?.length || 0) / formattedData.length : 0
+      };
 
       setReportData(formattedData);
-      setSummary({
-        totalQuantity,
-        totalAmount,
-        averagePerDay
-      });
+      setSummary(summary);
 
       toast.success('Report generated successfully');
     } catch (error) {
@@ -326,40 +372,51 @@ export default function ReportPage() {
 
       if (programError) throw programError;
 
-      // Fetch billing entries grouped by package
-      const { data: billingData, error: billingError } = await supabase
+      // Build query for billing entries
+      let query = supabase
         .from('billing_entries')
         .select(`
           quantity,
-          packages (id, name),
+          packages (id, name, type),
           products (name, rate)
         `)
         .eq('program_id', selectedProgram);
 
+      // Add package filter if selected
+      if (selectedPackage) {
+        query = query.eq('package_id', selectedPackage);
+      }
+
+      const { data: billingData, error: billingError } = await query;
+
       if (billingError) throw billingError;
 
-      // Process and group data by package
+      // Process and group data by package type
       const packageGroups: ProgramReport['packages'] = {};
       let grandTotal = 0;
 
       billingData.forEach(entry => {
-        const packageName = entry.packages[0]?.name || 'Unknown';
-        if (!packageGroups[packageName]) {
-          packageGroups[packageName] = {
-            packageName,
+        const packageType = entry.packages?.[0]?.type?.toLowerCase() || 'unknown';
+        const quantity = entry.quantity || 0;
+        const rate = entry.products?.[0]?.rate || 0;
+        const total = quantity * rate;
+
+        if (!packageGroups[packageType]) {
+          packageGroups[packageType] = {
+            packageName: packageType,
             items: [],
             packageTotal: 0
           };
         }
 
-        const total = entry.quantity * (entry.products[0]?.rate || 0);
-        packageGroups[packageName].items.push({
-          productName: entry.products[0]?.name || 'Unknown',
-          quantity: entry.quantity,
-          rate: entry.products[0]?.rate || 0,
+        packageGroups[packageType].items.push({
+          productName: entry.products?.[0]?.name || 'Unknown',
+          quantity,
+          rate,
           total
         });
-        packageGroups[packageName].packageTotal += total;
+
+        packageGroups[packageType].packageTotal += total;
         grandTotal += total;
       });
 
@@ -389,18 +446,17 @@ export default function ReportPage() {
       return;
     }
 
-    const headers = ['Date', 'Program', 'Package', 'Product', 'Quantity', 'Rate', 'Amount'];
+    const headers = ['Date', 'Program', 'Catering Total', 'Extra Total', 'Cold Drink Total', 'Grand Total'];
     const csvContent = [
       headers.join(','),
       ...reportData.map(row =>
         [
           row.date,
           `"${row.program}"`,
-          `"${row.package}"`,
-          `"${row.product}"`,
-          row.quantity,
-          row.rate,
-          row.amount
+          row.cateringTotal,
+          row.extraTotal,
+          row.coldDrinkTotal,
+          row.grandTotal
         ].join(',')
       )
     ].join('\n');
@@ -503,57 +559,97 @@ export default function ReportPage() {
   const ProgramReportView = () => {
     if (!programReport) return null;
 
+    // Helper function to format currency
+    const formatCurrency = (amount: number) => `₹${amount.toFixed(2)}`;
+
+    // Filter packages based on selection
+    const getFilteredPackages = () => {
+      if (!selectedPackage) return Object.keys(programReport.packages);
+      const pkg = packages.find(p => p.id === selectedPackage);
+      return pkg ? [pkg.type] : [];
+    };
+
+    // Package table component
+    const PackageTable = ({ packageType, packageData }: { 
+      packageType: string, 
+      packageData: ProgramReport['packages'][string] 
+    }) => {
+      if (!packageData?.items || packageData.items.length === 0) return null;
+
+      return (
+        <div className="mb-8">
+          <h3 className="text-xl font-semibold mb-4">{packageType.toUpperCase()} PACKAGE</h3>
+          <div className="border border-gray-300 rounded-lg overflow-hidden">
+            <table className="min-w-full">
+              <thead>
+                <tr className="border-b border-gray-300">
+                  <th className="text-left p-4 w-1/3">product name</th>
+                  <th className="text-left p-4 w-1/4">Quantity</th>
+                  <th className="text-left p-4 w-1/4">rate</th>
+                  <th className="text-left p-4 w-1/4">Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {packageData.items.map((item, index) => (
+                  <tr key={index} className="border-b border-gray-300">
+                    <td className="p-4">{item.productName}</td>
+                    <td className="p-4">{item.quantity}</td>
+                    <td className="p-4">{formatCurrency(item.rate)}</td>
+                    <td className="p-4">{formatCurrency(item.total)}</td>
+                  </tr>
+                ))}
+                {/* Package Total */}
+                <tr className="bg-gray-50">
+                  <td colSpan={3} className="p-4 font-semibold text-right">
+                    Package Total:
+                  </td>
+                  <td className="p-4 font-semibold">
+                    {formatCurrency(packageData.packageTotal)}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      );
+    };
+
     return (
-      <div id="report-content" className="bg-white rounded-lg shadow-md overflow-hidden">
-        <div className="page-header">
-          <h2 className="text-xl font-bold text-center text-amber-600">Program Report</h2>
-          <div className="mt-4 grid grid-cols-2 gap-4 text-sm">
-            <div>
-              <p><strong>Program Name:</strong> {programReport.programDetails.name}</p>
-              <p><strong>Duration:</strong> {format(new Date(programReport.programDetails.startDate), 'dd/MM/yyyy')} - {format(new Date(programReport.programDetails.endDate), 'dd/MM/yyyy')}</p>
-            </div>
-            <div>
-              <p><strong>Total Participants:</strong> {programReport.programDetails.totalParticipants}</p>
-            </div>
+      <div id="report-content" className="bg-white rounded-lg shadow-md overflow-hidden p-8">
+        {/* Program Header */}
+        <div className="flex justify-between mb-8 text-lg">
+          <div>
+            <span className="font-semibold">Program name: </span>
+            <span>{programReport.programDetails.name}</span>
+          </div>
+          <div>
+            <span className="font-semibold">from to duration: </span>
+            <span>
+              {format(new Date(programReport.programDetails.startDate), 'dd/MM/yyyy')} - {format(new Date(programReport.programDetails.endDate), 'dd/MM/yyyy')}
+            </span>
+          </div>
+          <div>
+            <span className="font-semibold">No. of people: </span>
+            <span>{programReport.programDetails.totalParticipants}</span>
           </div>
         </div>
 
-        {Object.values(programReport.packages).map((packageData, index) => (
-          <div key={index} className={`mb-8 ${index > 0 ? 'mt-8' : ''}`}>
-            <h3 className="text-lg font-semibold mb-4 px-6">{packageData.packageName}</h3>
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead>
-                  <tr>
-                    <th scope="col">Product Name</th>
-                    <th scope="col">Quantity</th>
-                    <th scope="col">Rate</th>
-                    <th scope="col">Total</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {packageData.items.map((item, itemIndex) => (
-                    <tr key={itemIndex}>
-                      <td className="px-6 py-4">{item.productName}</td>
-                      <td className="px-6 py-4">{item.quantity}</td>
-                      <td className="px-6 py-4">₹{item.rate.toFixed(2)}</td>
-                      <td className="px-6 py-4">₹{item.total.toFixed(2)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-                <tfoot>
-                  <tr>
-                    <td colSpan={3} className="px-6 py-4 font-semibold">Package Total</td>
-                    <td className="px-6 py-4 font-semibold">₹{packageData.packageTotal.toFixed(2)}</td>
-                  </tr>
-                </tfoot>
-              </table>
-            </div>
-          </div>
-        ))}
+        {/* Package Tables */}
+        <div className="space-y-6">
+          {getFilteredPackages().map(packageType => (
+            <PackageTable
+              key={packageType}
+              packageType={packageType}
+              packageData={programReport.packages[packageType.toLowerCase()]}
+            />
+          ))}
+        </div>
 
-        <div className="mt-8 px-6 py-4 bg-gray-50">
-          <p className="text-xl font-bold">Grand Total: ₹{programReport.grandTotal.toFixed(2)}</p>
+        {/* Grand Total */}
+        <div className="mt-8 text-right">
+          <p className="text-xl font-bold">
+            Grand Total: {formatCurrency(programReport.grandTotal)}
+          </p>
         </div>
       </div>
     );
@@ -572,7 +668,7 @@ export default function ReportPage() {
   };
 
   const MonthlyReportContent = () => {
-    const ITEMS_PER_PAGE = 25; // Adjust based on your needs
+    const ITEMS_PER_PAGE = 25;
     const totalPages = Math.ceil(reportData.length / ITEMS_PER_PAGE);
 
     return (
@@ -589,9 +685,6 @@ export default function ReportPage() {
             </div>
             <div className="text-right">
               <p><strong>Date Generated:</strong> {format(new Date(), 'dd/MM/yyyy')}</p>
-              {selectedPackage && (
-                <p><strong>Package:</strong> {packages.find(p => p.id === selectedPackage)?.name}</p>
-              )}
             </div>
           </div>
         </div>
@@ -612,88 +705,67 @@ export default function ReportPage() {
           </div>
         </div>
 
-        {/* Entries Table */}
-        {Array.from({ length: totalPages }).map((_, pageIndex) => {
-          const startIndex = pageIndex * ITEMS_PER_PAGE;
-          const endIndex = Math.min(startIndex + ITEMS_PER_PAGE, reportData.length);
-          const pageEntries = reportData.slice(startIndex, endIndex);
-
-          return (
-            <div 
-              key={pageIndex}
-              className={`mb-8 ${pageIndex > 0 ? 'page-break-before' : ''}`}
-            >
-              {pageIndex > 0 && (
-                <div className="page-header">
-                  <h3 className="text-lg font-semibold mb-4">
-                    Continued - Page {pageIndex + 1}
-                  </h3>
-                </div>
-              )}
-
-              <table className="min-w-full divide-y divide-gray-200 entries-table">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th scope="col" className="px-4 py-3 text-xs font-medium text-gray-500 uppercase">
-                      Sr. No
-                    </th>
-                    <th scope="col" className="px-4 py-3 text-xs font-medium text-gray-500 uppercase text-left">
-                      Program
-                    </th>
-                    <th scope="col" className="px-4 py-3 text-xs font-medium text-gray-500 uppercase text-left">
-                      Package
-                    </th>
-                    <th scope="col" className="px-4 py-3 text-xs font-medium text-gray-500 uppercase text-left">
-                      Product
-                    </th>
-                    <th scope="col" className="px-4 py-3 text-xs font-medium text-gray-500 uppercase text-right">
-                      Quantity
-                    </th>
-                    <th scope="col" className="px-4 py-3 text-xs font-medium text-gray-500 uppercase text-right">
-                      Amount
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {pageEntries.map((row, index) => (
-                    <tr key={index}>
-                      <td className="px-4 py-2 text-sm text-gray-500 text-center">
-                        {startIndex + index + 1}
-                      </td>
-                      <td className="px-4 py-2 text-sm text-gray-900">
-                        {row.program}
-                      </td>
-                      <td className="px-4 py-2 text-sm text-gray-900">
-                        {row.package}
-                      </td>
-                      <td className="px-4 py-2 text-sm text-gray-900">
-                        {row.product}
-                      </td>
-                      <td className="px-4 py-2 text-sm text-gray-900 text-right">
-                        {row.quantity}
-                      </td>
-                      <td className="px-4 py-2 text-sm text-gray-900 text-right">
-                        ₹{row.amount.toFixed(2)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-                {pageIndex === totalPages - 1 && (
-                  <tfoot className="bg-gray-50">
-                    <tr>
-                      <td colSpan={5} className="px-4 py-3 text-sm font-medium text-gray-900">
-                        Grand Total
-                      </td>
-                      <td className="px-4 py-3 text-sm font-medium text-gray-900 text-right">
-                        ₹{summary.totalAmount.toFixed(2)}
-                      </td>
-                    </tr>
-                  </tfoot>
-                )}
-              </table>
-            </div>
-          );
-        })}
+        {/* Data Table */}
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-gray-200 entries-table">
+            <thead className="bg-gray-50">
+              <tr>
+                <th scope="col" className="px-4 py-3 text-xs font-medium text-gray-500 uppercase text-center">
+                  Sr. No
+                </th>
+                <th scope="col" className="px-4 py-3 text-xs font-medium text-gray-500 uppercase text-left">
+                  Program Name
+                </th>
+                <th scope="col" className="px-4 py-3 text-xs font-medium text-gray-500 uppercase text-right">
+                  Catering Total
+                </th>
+                <th scope="col" className="px-4 py-3 text-xs font-medium text-gray-500 uppercase text-right">
+                  Extra Total
+                </th>
+                <th scope="col" className="px-4 py-3 text-xs font-medium text-gray-500 uppercase text-right">
+                  Cold Drink Total
+                </th>
+                <th scope="col" className="px-4 py-3 text-xs font-medium text-gray-500 uppercase text-right">
+                  Grand Total
+                </th>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {reportData.map((row, index) => (
+                <tr key={index}>
+                  <td className="px-4 py-2 text-sm text-gray-500 text-center">
+                    {index + 1}
+                  </td>
+                  <td className="px-4 py-2 text-sm text-gray-900">
+                    {row.program}
+                  </td>
+                  <td className="px-4 py-2 text-sm text-gray-900 text-right">
+                    ₹{row.cateringTotal.toFixed(2)}
+                  </td>
+                  <td className="px-4 py-2 text-sm text-gray-900 text-right">
+                    ₹{row.extraTotal.toFixed(2)}
+                  </td>
+                  <td className="px-4 py-2 text-sm text-gray-900 text-right">
+                    ₹{row.coldDrinkTotal.toFixed(2)}
+                  </td>
+                  <td className="px-4 py-2 text-sm text-gray-900 text-right font-medium">
+                    ₹{row.grandTotal.toFixed(2)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot className="bg-gray-50">
+              <tr>
+                <td colSpan={5} className="px-4 py-3 text-sm font-medium text-gray-900 text-right">
+                  Grand Total
+                </td>
+                <td className="px-4 py-3 text-sm font-medium text-gray-900 text-right">
+                  ₹{summary.totalAmount.toFixed(2)}
+                </td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
       </div>
     );
   };
@@ -829,69 +901,42 @@ export default function ReportPage() {
         </div>
       </div>
 
-      {/* Render appropriate report view */}
-      {reportType === 'monthly' ? (
-        <>
-          {reportData.length > 0 && (
-            <div className="bg-white rounded-lg shadow-md">
-              {/* Report Actions */}
-              <div className="print:hidden p-4 border-b flex justify-end space-x-4">
-                <button
-                  onClick={handlePrint}
-                  className="flex items-center gap-2 px-4 py-2 text-gray-600 hover:text-gray-900"
-                >
-                  <RiPrinterLine className="w-5 h-5" />
-                  Print
-                </button>
-                <button
-                  onClick={handleDownloadPDF}
-                  className="flex items-center gap-2 px-4 py-2 text-gray-600 hover:text-gray-900"
-                >
-                  <RiDownloadLine className="w-5 h-5" />
-                  Download PDF
-                </button>
-              </div>
+      {/* Report Content */}
+      {reportData.length > 0 && (
+        <div className="bg-white rounded-lg shadow-md">
+          {/* Report Actions */}
+          <div className="print:hidden p-4 border-b flex justify-end space-x-4">
+            <button
+              onClick={handlePrint}
+              className="flex items-center gap-2 px-4 py-2 text-gray-600 hover:text-gray-900"
+            >
+              <RiPrinterLine className="w-5 h-5" />
+              Print
+            </button>
+            <button
+              onClick={handleDownloadPDF}
+              className="flex items-center gap-2 px-4 py-2 text-gray-600 hover:text-gray-900"
+            >
+              <RiDownloadLine className="w-5 h-5" />
+              Download PDF
+            </button>
+          </div>
 
-              <MonthlyReportContent />
-            </div>
-          )}
+          {/* Monthly Report Content */}
+          {reportType === 'monthly' && <MonthlyReportContent />}
+          
+          {/* Program Report Content */}
+          {reportType === 'program' && programReport && <ProgramReportView />}
+        </div>
+      )}
 
-          {/* No Data Message */}
-          {!isLoading && reportData.length === 0 && (
-            <div className="text-center py-12 bg-white rounded-lg shadow-md">
-              <RiFileChartLine className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-              <h3 className="text-lg font-medium text-gray-900 mb-2">No Report Data</h3>
-              <p className="text-gray-500">Select filters and generate report to view data</p>
-            </div>
-          )}
-        </>
-      ) : (
-        <>
-          {programReport && (
-            <div className="bg-white rounded-lg shadow-md">
-              {/* Report Actions for Program Report */}
-              <div className="print:hidden p-4 border-b flex justify-end space-x-4">
-                <button
-                  onClick={handlePrint}
-                  className="flex items-center gap-2 px-4 py-2 text-gray-600 hover:text-gray-900"
-                >
-                  <RiPrinterLine className="w-5 h-5" />
-                  Print
-                </button>
-                <button
-                  onClick={handleDownloadPDF}
-                  className="flex items-center gap-2 px-4 py-2 text-gray-600 hover:text-gray-900"
-                >
-                  <RiDownloadLine className="w-5 h-5" />
-                  Download PDF
-                </button>
-              </div>
-
-              {/* Program Report Content */}
-              <ProgramReportView />
-            </div>
-          )}
-        </>
+      {/* No Data Message */}
+      {!isLoading && reportData.length === 0 && (
+        <div className="text-center py-12 bg-white rounded-lg shadow-md">
+          <RiFileChartLine className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+          <h3 className="text-lg font-medium text-gray-900 mb-2">No Report Data</h3>
+          <p className="text-gray-500">Select filters and generate report to view data</p>
+        </div>
       )}
     </div>
   );
