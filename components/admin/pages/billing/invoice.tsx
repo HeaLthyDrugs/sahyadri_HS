@@ -29,16 +29,10 @@ interface Product {
 
 interface BillingEntry {
   id: string;
-  program_id: string;
-  package_id: string;
-  product_id: string;
   entry_date: string;
   quantity: number;
-  product: {
-    id: string;
-    name: string;
-    rate: number;
-  };
+  programs: { id: string; name: string; }[];
+  products: { id: string; name: string; rate: number; }[];
 }
 
 interface InvoiceData {
@@ -329,6 +323,8 @@ export default function InvoicePage() {
     logo_url: '/logo.png'
   });
 
+  const currentMonth = format(new Date(), 'yyyy-MM');
+
   useEffect(() => {
     fetchPackages();
   }, []);
@@ -384,7 +380,17 @@ export default function InvoicePage() {
 
     setIsLoading(true);
     try {
-      // Fetch package details
+      // Get start and end dates for the selected month
+      const startDate = `${selectedMonth}-01`;
+      const endDate = new Date(selectedMonth + '-01');
+      endDate.setMonth(endDate.getMonth() + 1);
+      endDate.setDate(endDate.getDate() - 1);
+      const endDateStr = format(endDate, 'yyyy-MM-dd');
+
+      // Debug log the date range
+      console.log('Date Range:', { startDate, endDateStr });
+
+      // First get package details
       const { data: packageData, error: packageError } = await supabase
         .from('packages')
         .select('*')
@@ -393,24 +399,25 @@ export default function InvoicePage() {
 
       if (packageError) throw packageError;
 
-      // Get start and end dates for the selected month
-      const startDate = `${selectedMonth}-01`;
-      const endDate = new Date(selectedMonth + '-01');
-      endDate.setMonth(endDate.getMonth() + 1);
-      endDate.setDate(endDate.getDate() - 1);
-      const endDateStr = format(endDate, 'yyyy-MM-dd');
+      // Debug log package data
+      console.log('Package Data:', packageData);
 
-      // Updated query with proper join
-      const { data: entriesData, error: entriesError } = await supabase
+      // Update the billing entries query with debug logging
+      const entriesQuery = supabase
         .from('billing_entries')
         .select(`
           id,
+          entry_date,
+          quantity,
           program_id,
           package_id,
           product_id,
-          entry_date,
-          quantity,
-          product:products!inner (
+          programs:program_id (
+            id,
+            name,
+            customer_name
+          ),
+          products:product_id (
             id,
             name,
             rate
@@ -418,29 +425,67 @@ export default function InvoicePage() {
         `)
         .eq('package_id', selectedPackage)
         .gte('entry_date', startDate)
-        .lte('entry_date', endDateStr)
-        .order('entry_date', { ascending: true });
+        .lte('entry_date', endDateStr);
 
-      if (entriesError) throw entriesError;
+      // Simply execute the query without toSQL()
+      const { data: entriesData, error: entriesError } = await entriesQuery;
 
-      if (!entriesData?.length) {
-        throw new Error('No entries found for the selected period');
+      if (entriesError) {
+        console.error('Entries Error:', entriesError);
+        throw entriesError;
       }
 
-      // Fixed total calculation
-      const total = entriesData.reduce((sum, entry) => {
-        const rate = entry.product?.rate || 0;
+      // Debug log the raw entries data
+      console.log('Raw Entries Data:', entriesData);
+
+      if (!entriesData || entriesData.length === 0) {
+        throw new Error(`No entries found for package ${selectedPackage} between ${startDate} and ${endDateStr}`);
+      }
+
+      // Transform and aggregate the entries by product
+      const transformedEntries = entriesData.reduce((acc: any[], entry) => {
+        // Check if we have valid product data
+        if (!entry.products || !entry.products.name) {
+          console.error('Invalid product data:', entry);
+          return acc;
+        }
+
+        // Find if this product already exists in our accumulated array
+        const existingEntry = acc.find(e => e.products.id === entry.products.id);
+
+        if (existingEntry) {
+          // If it exists, add to its quantity
+          existingEntry.quantity += entry.quantity || 0;
+        } else {
+          // If it doesn't exist, create a new entry
+          acc.push({
+            id: entry.id,
+            entry_date: entry.entry_date,
+            quantity: entry.quantity || 0,
+            programs: entry.programs,
+            products: entry.products // This contains {id, name, rate}
+          });
+        }
+
+        return acc;
+      }, []);
+
+      // Sort entries by product name
+      transformedEntries.sort((a, b) => 
+        (a.products.name || '').localeCompare(b.products.name || '')
+      );
+
+      // Calculate total with null checks
+      const total = transformedEntries.reduce((sum, entry) => {
+        const rate = entry.products.rate || 0;
         const quantity = entry.quantity || 0;
         return sum + (rate * quantity);
       }, 0);
 
-      console.log('Entries Data:', entriesData); // Debug log
-      console.log('Calculated Total:', total); // Debug log
-
       setInvoiceData({
         packageDetails: packageData,
         month: selectedMonth,
-        entries: entriesData as unknown as BillingEntry[],
+        entries: transformedEntries,
         totalAmount: total
       });
 
@@ -580,6 +625,7 @@ export default function InvoicePage() {
             type="month"
             value={selectedMonth}
             onChange={(e) => setSelectedMonth(e.target.value)}
+            max={currentMonth}
             className="w-full rounded-md border border-gray-300 px-3 py-2 focus:border-amber-500 focus:ring-amber-500"
           />
         </div>
@@ -671,94 +717,56 @@ export default function InvoicePage() {
 
             {/* Entries Tables with Pagination */}
             {(() => {
-              const FIRST_PAGE_ITEMS = 25;
-              const OTHER_PAGES_ITEMS = 35;
+              const ITEMS_PER_PAGE = 25;
               
-              // Calculate total pages needed
-              const remainingItems = invoiceData.entries.length - FIRST_PAGE_ITEMS;
-              const additionalPages = Math.ceil(Math.max(0, remainingItems) / OTHER_PAGES_ITEMS);
-              const totalPages = 1 + additionalPages;
+              return (
+                <table className="min-w-full divide-y divide-gray-200 border-2 border-gray-200 entries-table">
+                  <thead className="bg-amber-50">
+                    <tr>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase">Sr. No</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase">Product Name</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase">Quantity</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase">Basic Rate</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase">Total</th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {invoiceData.entries.map((entry, index) => {
+                      const rate = entry.products.rate || 0;
+                      const quantity = entry.quantity || 0;
+                      const lineTotal = rate * quantity;
 
-              return Array.from({ length: totalPages }).map((_, pageIndex) => {
-                // Calculate start and end indices for each page
-                let startIndex, endIndex;
-                if (pageIndex === 0) {
-                  startIndex = 0;
-                  endIndex = Math.min(FIRST_PAGE_ITEMS, invoiceData.entries.length);
-                } else {
-                  startIndex = FIRST_PAGE_ITEMS + (pageIndex - 1) * OTHER_PAGES_ITEMS;
-                  endIndex = Math.min(startIndex + OTHER_PAGES_ITEMS, invoiceData.entries.length);
-                }
-                
-                const pageEntries = invoiceData.entries.slice(startIndex, endIndex);
-
-                return (
-                  <div 
-                    key={pageIndex} 
-                    className={`mb-8 overflow-x-auto ${pageIndex > 0 ? 'page-break-before' : ''}`}
-                  >
-                    {pageIndex > 0 && (
-                      <div className="page-header">
-                        <div className="flex justify-between items-center">
-                          <h3 className="text-lg font-semibold">
-                            Continued from previous page - {format(new Date(invoiceData.month), 'MMMM yyyy')}
-                          </h3>
-                          <p className="text-sm text-gray-600">Page {pageIndex + 1} of {totalPages}</p>
-                        </div>
-                      </div>
-                    )}
-                    
-                    <table className="min-w-full divide-y divide-gray-200 border-2 border-gray-200 entries-table">
-                      <thead className="bg-amber-50">
-                        <tr>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase">Sr. No</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase">Product Name</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase">Quantity</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase">Basic Rate</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase">Total</th>
+                      return (
+                        <tr key={entry.id}>
+                          <td className="px-6 py-1 whitespace-nowrap text-sm text-gray-500">
+                            {index + 1}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                            {entry.products.name}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                            {quantity}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                            ₹{rate.toFixed(2)}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                            ₹{lineTotal.toFixed(2)}
+                          </td>
                         </tr>
-                      </thead>
-                      <tbody className="bg-white divide-y divide-gray-200">
-                        {pageEntries.map((entry, index) => {
-                          const rate = entry.product?.rate || 0;
-                          const quantity = entry.quantity || 0;
-                          const lineTotal = rate * quantity;
-
-                          return (
-                            <tr key={entry.id}>
-                              <td className="px-6 py-1 whitespace-nowrap text-sm text-gray-500">
-                                {startIndex + index + 1}
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                {entry.product?.name || 'Unknown Product'}
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                {quantity}
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                ₹{rate.toFixed(2)}
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                ₹{lineTotal.toFixed(2)}
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                      {pageIndex === totalPages - 1 && (
-                        <tfoot className="bg-gray-50">
-                          <tr>
-                            <td colSpan={4} className="px-6 py-4 text-right font-semibold">Total Amount:</td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm font-bold">
-                              ₹{invoiceData.totalAmount.toFixed(2)}
-                            </td>
-                          </tr>
-                        </tfoot>
-                      )}
-                    </table>
-                  </div>
-                );
-              });
+                      );
+                    })}
+                  </tbody>
+                  <tfoot className="bg-gray-50">
+                    <tr>
+                      <td colSpan={4} className="px-6 py-4 text-right font-semibold">Total Amount:</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-bold">
+                        ₹{invoiceData.totalAmount.toFixed(2)}
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+              );
             })()}
 
             {/* Updated Footer */}

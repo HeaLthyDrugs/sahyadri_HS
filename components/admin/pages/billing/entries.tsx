@@ -34,11 +34,11 @@ interface Program {
 interface Product {
   id: string;
   name: string;
-  category: 'Meals' | 'Drinks';
   rate: number;
   package_id: string;
-  slot_start: string;
-  slot_end: string;
+  category?: string;
+  slot_start?: string;
+  slot_end?: string;
 }
 
 interface Package {
@@ -281,6 +281,7 @@ export function BillingEntriesPage() {
 
   const fetchPackages = async (programId: string) => {
     try {
+      console.log('Fetching packages for program:', programId);
       // For now, fetch all packages since there's no direct relation to programs
       const { data, error } = await supabase
         .from('packages')
@@ -288,6 +289,7 @@ export function BillingEntriesPage() {
         .order('name');
 
       if (error) throw error;
+      console.log('Fetched packages:', data);
       setPackages(data || []);
     } catch (error) {
       console.error('Error fetching packages:', error);
@@ -295,38 +297,25 @@ export function BillingEntriesPage() {
     }
   };
 
-  const fetchProducts = async () => {
+  const fetchProducts = async (packageId: string) => {
     try {
-      console.log('Fetching products for package:', selectedPackage); // Debug log
-
+      console.log('Fetching products for package:', packageId);
       const { data, error } = await supabase
         .from('products')
-        .select('*')
-        .eq('package_id', selectedPackage);
+        .select(`
+          id,
+          name,
+          rate,
+          package_id,
+          slot_start,
+          slot_end
+        `)
+        .eq('package_id', packageId)
+        .order('name');
 
       if (error) throw error;
-
-      console.log('Fetched products:', data); // Debug log
+      console.log('Fetched products:', data);
       setProducts(data || []);
-
-      // Initialize entry data for these products if needed
-      if (data && data.length > 0) {
-        setEntryData(prev => {
-          const newData = { ...prev };
-          dateRange.forEach(date => {
-            const dateStr = format(date, 'yyyy-MM-dd');
-            if (!newData[dateStr]) {
-              newData[dateStr] = {};
-            }
-            data.forEach(product => {
-              if (newData[dateStr][product.id] === undefined) {
-                newData[dateStr][product.id] = 0;
-              }
-            });
-          });
-          return newData;
-        });
-      }
     } catch (error) {
       console.error('Error fetching products:', error);
       toast.error('Failed to fetch products');
@@ -357,7 +346,7 @@ export function BillingEntriesPage() {
   // Fetch entries when package is selected
   useEffect(() => {
     if (selectedPackage) {
-      fetchProducts();
+      fetchProducts(selectedPackage);
     } else {
       setProducts([]); // Clear products when no package is selected
     }
@@ -377,11 +366,11 @@ export function BillingEntriesPage() {
   ): number => {
     // Convert slot times to Date objects for comparison
     const slotStart = new Date(date);
-    const [startHours, startMinutes] = product.slot_start.split(':');
+    const [startHours, startMinutes] = product.slot_start?.split(':') || ['00', '00'];
     slotStart.setHours(parseInt(startHours), parseInt(startMinutes), 0);
 
     const slotEnd = new Date(date);
-    const [endHours, endMinutes] = product.slot_end.split(':');
+    const [endHours, endMinutes] = product.slot_end?.split(':') || ['00', '00'];
     slotEnd.setHours(parseInt(endHours), parseInt(endMinutes), 0);
 
     // Count participants present during this slot
@@ -427,7 +416,15 @@ export function BillingEntriesPage() {
 
       const { data: billingEntries, error: entriesError } = await supabase
         .from('billing_entries')
-        .select('*')
+        .select(`
+          *,
+          products!billing_entries_product_id_fkey (
+            id,
+            name,
+            rate,
+            package_id
+          )
+        `)
         .eq('program_id', selectedProgram)
         .eq('package_id', selectedPackage)
         .gte('entry_date', format(dateRange[0], 'yyyy-MM-dd'))
@@ -452,12 +449,15 @@ export function BillingEntriesPage() {
       // Fill in the actual quantities from billing entries
       billingEntries?.forEach(entry => {
         const dateStr = format(new Date(entry.entry_date), 'yyyy-MM-dd');
-        if (newEntryData[dateStr]) {
+        if (newEntryData[dateStr] && entry.product_id) {
           newEntryData[dateStr][entry.product_id] = entry.quantity;
         }
       });
 
       console.log('Transformed entry data:', newEntryData);
+      console.log('Current products:', products);
+      console.log('Current date range:', dateRange);
+      
       setEntryData(newEntryData);
 
     } catch (error) {
