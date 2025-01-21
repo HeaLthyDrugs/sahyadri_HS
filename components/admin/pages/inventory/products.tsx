@@ -42,8 +42,6 @@ interface Product {
   index: number;
   name: string;
   description: string;
-  category: string;
-  category_name?: string;
   package_id: string;
   rate: number;
   slot_start: string;
@@ -55,24 +53,6 @@ interface Package {
   name: string;
   type: string;
 }
-
-interface Category {
-  id: string;
-  name: string;
-  description?: string;
-}
-
-const categoryColors = [
-  { bg: 'bg-amber-100 text-amber-800' },
-  { bg: 'bg-blue-100 text-blue-800' },
-  { bg: 'bg-green-100 text-green-800' },
-  { bg: 'bg-purple-100 text-purple-800' },
-  { bg: 'bg-pink-100 text-pink-800' },
-];
-
-const getCategoryColor = (index: number) => {
-  return categoryColors[Math.abs(index) % categoryColors.length].bg;
-};
 
 const formatTime = (time: string) => {
   if (!time) return '';
@@ -112,12 +92,10 @@ export function ProductsPage() {
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [products, setProducts] = useState<Product[]>([]);
   const [packages, setPackages] = useState<Package[]>([]);
-  const [activeCategory, setActiveCategory] = useState<string>("all");
   const [activePackage, setActivePackage] = useState<string>("all");
   const [formData, setFormData] = useState({
     name: "",
     description: "",
-    category: "",
     package_id: "",
     rate: "",
     slot_start: "00:00",
@@ -125,19 +103,17 @@ export function ProductsPage() {
   });
   const [viewMode, setViewMode] = useState<'grid' | 'table'>('table');
   const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage] = useState(10);
+  const [itemsPerPage] = useState(100);
   const [selectedProducts, setSelectedProducts] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [isSelectMode, setIsSelectMode] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [productsToDelete, setProductsToDelete] = useState<string[]>([]);
-  const [categories, setCategories] = useState<Category[]>([]);
 
   // Fetch products and packages on component mount
   useEffect(() => {
     fetchProducts();
     fetchPackages();
-    fetchCategories();
   }, []);
 
   const fetchPackages = async () => {
@@ -163,9 +139,6 @@ export function ProductsPage() {
           packages:package_id (
             name,
             type
-          ),
-          categories:category (
-            name
           )
         `)
         .order('index', { ascending: true });
@@ -174,7 +147,6 @@ export function ProductsPage() {
 
       const productsWithIndex = (data || []).map((product, idx) => ({
         ...product,
-        category_name: product.categories?.name,
         index: product.index || idx + 1
       }));
 
@@ -182,21 +154,6 @@ export function ProductsPage() {
     } catch (error) {
       console.error('Error fetching products:', error);
       toast.error('Failed to fetch products');
-    }
-  };
-
-  const fetchCategories = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('categories')
-        .select('*')
-        .order('name');
-
-      if (error) throw error;
-      setCategories(data || []);
-    } catch (error) {
-      console.error('Error fetching categories:', error);
-      toast.error('Failed to fetch categories');
     }
   };
 
@@ -222,7 +179,6 @@ export function ProductsPage() {
       const productData = {
         name: formData.name,
         description: formData.description,
-        category: formData.category,
         package_id: formData.package_id,
         rate: parseFloat(formData.rate),
         slot_start: formData.slot_start,
@@ -250,7 +206,6 @@ export function ProductsPage() {
       setFormData({
         name: "",
         description: "",
-        category: "",
         package_id: "",
         rate: "",
         slot_start: "00:00",
@@ -328,9 +283,8 @@ export function ProductsPage() {
       product.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       product.description?.toLowerCase().includes(searchQuery.toLowerCase()) ||
       product.index.toString().includes(searchQuery);
-    const categoryMatch = activeCategory === "all" || product.category === activeCategory;
     const packageMatch = activePackage === "all" || product.package_id === activePackage;
-    return searchMatch && categoryMatch && packageMatch;
+    return searchMatch && packageMatch;
   });
 
   const handleExportCSV = () => {
@@ -338,7 +292,6 @@ export function ProductsPage() {
       const exportData = filteredProducts.map(product => ({
         Name: product.name,
         Description: product.description,
-        Category: product.category_name,
         Package: (product as any).packages?.name,
         Rate: product.rate,
         Slot_Start: product.slot_start,
@@ -346,10 +299,6 @@ export function ProductsPage() {
       }));
 
       let filename = 'products';
-      if (activeCategory !== 'all') {
-        const categoryName = categories.find(c => c.id === activeCategory)?.name;
-        if (categoryName) filename += `_${categoryName}`;
-      }
       if (activePackage !== 'all') {
         const packageName = packages.find(p => p.id === activePackage)?.name;
         if (packageName) filename += `_${packageName}`;
@@ -399,15 +348,12 @@ export function ProductsPage() {
             : 1;
 
           const importData = results.data.map((row: any, idx) => {
-            // Find category ID by name
-            const category = categories.find(c => c.name === row.Category);
             // Find package ID by name
             const pkg = packages.find(p => p.name === row.Package);
 
             return {
               name: row.Name,
               description: row.Description,
-              category: category?.id, // Use category ID instead of name
               package_id: pkg?.id,
               rate: parseFloat(row.Rate),
               slot_start: row.Slot_Start,
@@ -416,7 +362,6 @@ export function ProductsPage() {
             };
           }).filter(item => 
             item.name && 
-            item.category && 
             item.package_id && 
             !isNaN(item.rate)
           );
@@ -452,7 +397,6 @@ export function ProductsPage() {
       {
         Name: 'Sample Product',
         Description: 'Product description',
-        Category: 'Meals',
         Package: 'Package Name',
         Rate: '100'
       }
@@ -627,7 +571,7 @@ export function ProductsPage() {
   // Add this useEffect to clear selections when filters change
   useEffect(() => {
     setSelectedProducts([]);
-  }, [activeCategory, activePackage]);
+  }, [activePackage]);
 
   const DeleteDialog = () => (
     <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
@@ -675,32 +619,6 @@ export function ProductsPage() {
     </DropdownMenu>
   );
 
-  // Add this useEffect to reset slot times when adding a new product
-  useEffect(() => {
-    if (!editingProduct && !isModalOpen) {
-      setFormData(prev => ({
-        ...prev,
-        slot_start: "00:00",
-        slot_end: "12:00"
-      }));
-    }
-  }, [isModalOpen, editingProduct]);
-
-  // Update the modal close handler to include default times
-  const handleCloseModal = () => {
-    setIsModalOpen(false);
-    setEditingProduct(null);
-    setFormData({
-      name: "",
-      description: "",
-      category: "",
-      package_id: "",
-      rate: "",
-      slot_start: "00:00",
-      slot_end: "12:00"
-    });
-  };
-
   return (
     <div>
       {/* Header */}
@@ -743,23 +661,6 @@ export function ProductsPage() {
             </button>
           </div>
 
-          {/* Category Filter */}
-          <div className="flex items-center gap-2 bg-white rounded-lg shadow px-3 py-2">
-            <RiFilterLine className="text-gray-500" />
-            <select
-              value={activeCategory}
-              onChange={(e) => setActiveCategory(e.target.value)}
-              className="text-sm border-none focus:ring-0"
-            >
-              <option value="all">All Categories</option>
-              {categories.map((category) => (
-                <option key={category.id} value={category.id}>
-                  {category.name}
-                </option>
-              ))}
-            </select>
-          </div>
-
           {/* Package Filter */}
           <div className="flex items-center gap-2 bg-white rounded-lg shadow px-3 py-2">
             <RiFilterLine className="text-gray-500" />
@@ -778,11 +679,10 @@ export function ProductsPage() {
           </div>
 
           {/* Filter Summary */}
-          {(activeCategory !== "all" || activePackage !== "all") && (
+          {activePackage !== "all" && (
             <div className="flex items-center gap-2">
               <button
                 onClick={() => {
-                  setActiveCategory("all");
                   setActivePackage("all");
                 }}
                 className="text-xs text-amber-600 hover:text-amber-700"
@@ -879,7 +779,6 @@ export function ProductsPage() {
                           setFormData({
                             name: product.name,
                             description: product.description,
-                            category: product.category,
                             package_id: product.package_id,
                             rate: product.rate.toString(),
                             slot_start: product.slot_start,
@@ -901,14 +800,6 @@ export function ProductsPage() {
                   </div>
 
                   <div className="space-y-2">
-                    <div className="flex justify-between text-sm">
-                      <span className="text-gray-500">Category:</span>
-                      <span className={`font-medium px-2 py-1 rounded-full text-xs ${
-                        getCategoryColor(categories.findIndex(cat => cat.id === product.category))
-                      }`}>
-                        {product.category_name}
-                      </span>
-                    </div>
                     <div className="flex justify-between text-sm">
                       <span className="text-gray-500">Package:</span>
                       <span className="font-medium text-amber-600">
@@ -965,9 +856,6 @@ export function ProductsPage() {
                       Name
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Category
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Package
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -1011,13 +899,6 @@ export function ProductsPage() {
                           </div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
-                          <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                            getCategoryColor(categories.findIndex(cat => cat.id === product.category))
-                          }`}>
-                            {product.category_name}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
                           <span className="text-sm font-medium text-amber-600">
                             {(product as any).packages?.name}
                           </span>
@@ -1042,7 +923,6 @@ export function ProductsPage() {
                               setFormData({
                                 name: product.name,
                                 description: product.description,
-                                category: product.category,
                                 package_id: product.package_id,
                                 rate: product.rate.toString(),
                                 slot_start: product.slot_start,
@@ -1087,7 +967,18 @@ export function ProductsPage() {
                 {editingProduct ? "Edit Product" : "Add New Product"}
               </h2>
               <button
-                onClick={handleCloseModal}
+                onClick={() => {
+                  setIsModalOpen(false);
+                  setEditingProduct(null);
+                  setFormData({
+                    name: "",
+                    description: "",
+                    package_id: "",
+                    rate: "",
+                    slot_start: "00:00",
+                    slot_end: "12:00"
+                  });
+                }}
                 className="text-gray-500 hover:text-gray-700"
               >
                 <RiCloseLine className="w-6 h-6" />
@@ -1114,23 +1005,6 @@ export function ProductsPage() {
                   rows={3}
                   className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-amber-500 focus:outline-none focus:ring-amber-500"
                 />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Category</label>
-                <select
-                  value={formData.category}
-                  onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-                  className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-amber-500 focus:outline-none focus:ring-amber-500"
-                  required
-                >
-                  <option value="">Select a category</option>
-                  {categories.map((category) => (
-                    <option key={category.id} value={category.id}>
-                      {category.name}
-                    </option>
-                  ))}
-                </select>
               </div>
 
               <div>
@@ -1188,7 +1062,18 @@ export function ProductsPage() {
               <div className="flex justify-end gap-4 mt-6">
                 <button
                   type="button"
-                  onClick={handleCloseModal}
+                  onClick={() => {
+                    setIsModalOpen(false);
+                    setEditingProduct(null);
+                    setFormData({
+                      name: "",
+                      description: "",
+                      package_id: "",
+                      rate: "",
+                      slot_start: "00:00",
+                      slot_end: "12:00"
+                    });
+                  }}
                   className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
                 >
                   Cancel

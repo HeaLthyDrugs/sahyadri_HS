@@ -177,7 +177,7 @@ export function AdminDashboard() {
                           <span className="text-gray-500 group-hover:text-amber-600 transition-colors">
                             {item.icon}
                           </span>
-                          <span>{item.title}</span>
+                          <span className="text-gray-500 group-hover:text-amber-600 transition-colors font-bold">{item.title}</span>
                         </div>
                         {openMenus.includes(item.title) ? (
                           <FiChevronDown className="w-4 h-4" />
