@@ -15,11 +15,16 @@ import {
   RiFilterLine,
   RiCalculatorLine,
   RiArrowDownSLine,
-  RiAddLine
+  RiAddLine,
+  RiArrowUpLine,
+  RiArrowDownLine,
+  RiArrowLeftLine,
+  RiArrowRightLine,
+  RiKeyboardLine,
 } from "react-icons/ri";
 import Papa from 'papaparse';
-import { calculateDuration, isDateInRange } from "@/lib/utils";
-import { Button } from "@/components/ui/button";
+import {CiEdit} from "react-icons/ci";
+import { IoExitOutline } from "react-icons/io5";
 
 interface Program {
   id: string;
@@ -89,6 +94,12 @@ interface TimeSlot {
   end: string;
 }
 
+// Add new interfaces for product search
+interface ProductChip {
+  id: string;
+  name: string;
+}
+
 const ProgramSelect = ({ 
   value, 
   onChange, 
@@ -123,7 +134,7 @@ const ProgramSelect = ({
       </button>
 
       {isOpen && (
-        <div className="absolute z-10 w-full mt-1 bg-white border rounded-md shadow-lg max-h-60 overflow-auto">
+        <div className="absolute z-[100] w-full mt-1 bg-white border rounded-md shadow-lg max-h-60 overflow-auto">
           {programs.map(program => (
             <button
               key={program.id}
@@ -151,6 +162,123 @@ const ProgramSelect = ({
   );
 };
 
+const ProductSearch = ({ 
+  products, 
+  selectedProducts, 
+  onProductSelect, 
+  onProductRemove 
+}: { 
+  products: Product[];
+  selectedProducts: ProductChip[];
+  onProductSelect: (product: Product) => void;
+  onProductRemove: (productId: string) => void;
+}) => {
+  const [searchQuery, setSearchQuery] = useState("");
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [selectedIndex, setSelectedIndex] = useState(0);
+
+  const filteredProducts = products.filter(product => 
+    product.name.toLowerCase().includes(searchQuery.toLowerCase()) &&
+    !selectedProducts.some(sp => sp.id === product.id)
+  );
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (!showSuggestions || filteredProducts.length === 0) return;
+
+    switch (e.key) {
+      case 'ArrowDown':
+        e.preventDefault();
+        setSelectedIndex(prev => (prev + 1) % filteredProducts.length);
+        break;
+      case 'ArrowUp':
+        e.preventDefault();
+        setSelectedIndex(prev => (prev - 1 + filteredProducts.length) % filteredProducts.length);
+        break;
+      case 'Enter':
+        e.preventDefault();
+        if (filteredProducts[selectedIndex]) {
+          onProductSelect(filteredProducts[selectedIndex]);
+          setSearchQuery("");
+          setShowSuggestions(false);
+          setSelectedIndex(0);
+        }
+        break;
+      case 'Escape':
+        setShowSuggestions(false);
+        setSelectedIndex(0);
+        break;
+    }
+  };
+
+  return (
+    <div className="mb-6">
+      {/* Search input with suggestions */}
+      <div className="relative">
+        <div className="relative">
+          <RiSearchLine className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+          <input
+            type="text"
+            placeholder="Search and select products..."
+            value={searchQuery}
+            onChange={(e) => {
+              setSearchQuery(e.target.value);
+              setShowSuggestions(true);
+              setSelectedIndex(0);
+            }}
+            onKeyDown={handleKeyDown}
+            onFocus={() => setShowSuggestions(true)}
+            className="pl-10 pr-4 py-2 border rounded w-full max-w-md"
+          />
+        </div>
+
+        {/* Suggestions dropdown */}
+        {showSuggestions && searchQuery && (
+          <div className="absolute z-50 w-full max-w-md mt-1 bg-white border rounded-md shadow-lg max-h-60 overflow-auto">
+            {filteredProducts.map((product, index) => (
+              <button
+                key={product.id}
+                className={`w-full px-4 py-2 text-left hover:bg-gray-50 ${
+                  index === selectedIndex ? 'bg-amber-50' : ''
+                }`}
+                onClick={() => {
+                  onProductSelect(product);
+                  setSearchQuery("");
+                  setShowSuggestions(false);
+                  setSelectedIndex(0);
+                }}
+                onMouseEnter={() => setSelectedIndex(index)}
+              >
+                {product.name}
+              </button>
+            ))}
+            {filteredProducts.length === 0 && (
+              <div className="px-4 py-2 text-gray-500">No products found</div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Selected products chips */}
+      <div className="flex flex-wrap gap-2 mt-3">
+        {selectedProducts.map(product => (
+          <div
+            key={product.id}
+            className="flex items-center gap-1 px-3 py-1 bg-amber-100 text-amber-800 rounded-full"
+          >
+            <span>{product.name}</span>
+            <button
+              onClick={() => onProductRemove(product.id)}
+              className="ml-1 text-amber-600 hover:text-amber-800"
+            >
+              ×
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
 export function BillingEntriesPage() {
   const [selectedMonth, setSelectedMonth] = useState(format(new Date(), 'yyyy-MM'));
   const [selectedProgram, setSelectedProgram] = useState("");
@@ -169,12 +297,14 @@ export function BillingEntriesPage() {
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [autoCalculateMode, setAutoCalculateMode] = useState(false);
   const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [selectedProducts, setSelectedProducts] = useState<ProductChip[]>([]);
+  const [isFullScreenMode, setIsFullScreenMode] = useState(false);
 
   // Add ref for managing focus
   const tableRef = useRef<HTMLTableElement>(null);
   const [focusedCell, setFocusedCell] = useState<{ row: number; col: number } | null>(null);
 
-  // Handle keyboard navigation
+  // Modify the handleKeyDown function for table cells
   const handleKeyDown = (
     e: React.KeyboardEvent<HTMLInputElement>,
     rowIndex: number,
@@ -209,9 +339,27 @@ export function BillingEntriesPage() {
         }
         break;
       case 'Enter':
-        // Move down on Enter
-        if (rowIndex < totalRows - 1) {
-          focusCell(rowIndex + 1, colIndex);
+        e.preventDefault();
+        if (isFullScreenMode) {
+          // Save the current value before saving all entries
+          const currentValue = e.currentTarget.value;
+          handleSave().then(() => {
+            // After saving, restore focus and value
+            setTimeout(() => {
+              focusCell(rowIndex, colIndex);
+              const input = tableRef.current?.querySelector(
+                `input[data-row="${rowIndex}"][data-col="${colIndex}"]`
+              ) as HTMLInputElement;
+              if (input) {
+                input.value = currentValue;
+              }
+            }, 100);
+          });
+        } else {
+          // Regular enter behavior - move down
+          if (rowIndex < totalRows - 1) {
+            focusCell(rowIndex + 1, colIndex);
+          }
         }
         break;
       case 'Tab':
@@ -479,15 +627,29 @@ export function BillingEntriesPage() {
     }));
   };
 
+  // Modify the keyboard shortcuts effect
+  useEffect(() => {
+    const handleKeyboardShortcuts = (e: KeyboardEvent) => {
+      if (isFullScreenMode && e.key === 'Escape') {
+        e.preventDefault();
+        setIsFullScreenMode(false);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyboardShortcuts);
+    return () => window.removeEventListener('keydown', handleKeyboardShortcuts);
+  }, [isFullScreenMode]);
+
+  // Make handleSave return a promise
   const handleSave = async () => {
     setIsLoading(true);
     try {
       // Create entries array with only the fields that exist in the table
       const entries = Object.entries(entryData).flatMap(([date, products]) =>
         Object.entries(products)
-          .filter(([_, quantity]) => quantity > 0) // Only include entries with quantity > 0
+          .filter(([_, quantity]) => quantity > 0)
           .map(([productId, quantity]) => ({
-            id: crypto.randomUUID(), // Generate UUID for new entries
+            id: crypto.randomUUID(),
             program_id: selectedProgram,
             package_id: selectedPackage,
             product_id: productId,
@@ -501,7 +663,6 @@ export function BillingEntriesPage() {
         return;
       }
 
-      // First, delete existing entries for this date range and program/package
       const { error: deleteError } = await supabase
         .from('billing_entries')
         .delete()
@@ -512,7 +673,6 @@ export function BillingEntriesPage() {
 
       if (deleteError) throw deleteError;
 
-      // Then insert new entries
       const { error: insertError } = await supabase
         .from('billing_entries')
         .insert(entries);
@@ -521,8 +681,8 @@ export function BillingEntriesPage() {
 
       toast.success('Entries saved successfully');
       
-      // Refresh entries after save
-      fetchEntries();
+      // Don't fetch entries here as it will reset the form
+      // await fetchEntries();
     } catch (error: any) {
       console.error('Error saving entries:', error);
       toast.error(error.message || 'Failed to save entries');
@@ -703,279 +863,246 @@ export function BillingEntriesPage() {
     return Math.ceil(diff / (1000 * 60 * 60 * 24));
   };
 
+  // Add handlers for product selection
+  const handleProductSelect = (product: Product) => {
+    setSelectedProducts(prev => [...prev, { id: product.id, name: product.name }]);
+  };
+
+  const handleProductRemove = (productId: string) => {
+    setSelectedProducts(prev => prev.filter(p => p.id !== productId));
+  };
+
   return (
-    <div className="p-4">
-      {/* Filter Section */}
-      <div className="flex flex-wrap gap-4 mb-6 items-center bg-white p-4 rounded-lg shadow">
-        <input
-          type="month"
-          value={selectedMonth}
-          onChange={(e) => setSelectedMonth(e.target.value)}
-          className="border rounded px-3 py-2"
-        />
-
-        <select
-          value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value)}
-          className="border rounded px-3 py-2"
-        >
-          <option value="all">All Programs</option>
-          <option value="Upcoming">Upcoming</option>
-          <option value="Ongoing">Ongoing</option>
-          <option value="Completed">Completed</option>
-        </select>
-
-        <ProgramSelect
-          value={selectedProgram}
-          onChange={setSelectedProgram}
-          programs={filteredPrograms}
-        />
-
-        <select
-          value={selectedPackage}
-          onChange={(e) => setSelectedPackage(e.target.value)}
-          className="border rounded px-3 py-2 min-w-[200px]"
-          disabled={!selectedProgram}
-        >
-          <option value="">Select Package</option>
-          {packages.map(pkg => (
-            <option key={pkg.id} value={pkg.id}>
-              {pkg.name} ({pkg.type})
-            </option>
-          ))}
-        </select>
-      </div>
-
-      {/* Action Buttons */}
+    <div className={`${isFullScreenMode ? 'fixed inset-0 bg-white z-50' : 'p-4'}`}>
+      {/* Toggle Full Screen Button - Only show when table is ready */}
       {selectedPackage && dateRange.length > 0 && (
-        <div className="flex flex-wrap gap-4 mb-4">
-          <button
-            onClick={handleExport}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
-          >
-            <RiDownloadLine /> Export CSV
-          </button>
-          
-          <label className="flex items-center gap-2 px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600 cursor-pointer">
-            <RiUploadLine /> Import CSV
-            <input
-              type="file"
-              accept=".csv"
-              className="hidden"
-              onChange={handleImport}
-            />
-          </label>
-
-          <button
-            onClick={async () => {
-              try {
-                // Call the recalculate function
-                const { error } = await supabase.rpc('recalculate_program_entries', {
-                  program_id_param: selectedProgram
-                });
-                
-                if (error) throw error;
-                
-                // Refresh entries
-                await fetchEntries();
-                toast.success('Entries recalculated successfully');
-              } catch (error) {
-                console.error('Error recalculating entries:', error);
-                toast.error('Failed to recalculate entries');
-              }
-            }}
-            className="flex items-center gap-2 px-4 py-2 bg-purple-500 text-white rounded hover:bg-purple-600"
-          >
-            <RiCalculatorLine /> Recalculate Entries
-          </button>
-
-          <button
-            onClick={async () => {
-              try {
-                // Add a test participant
-                const { error } = await supabase
-                  .from('participants')
-                  .insert([{
-                    attendee_name: 'Test Participant',
-                    program_id: selectedProgram,
-                    reception_checkin: new Date().toISOString(),
-                    reception_checkout: new Date(Date.now() + 24*60*60*1000).toISOString(), // Next day
-                    type: 'participant'
-                  }]);
-
-                if (error) throw error;
-                
-                // Refresh entries after a short delay to allow trigger to complete
-                setTimeout(() => {
-                  fetchEntries();
-                }, 1000);
-                
-                toast.success('Test participant added');
-              } catch (error) {
-                console.error('Error adding test participant:', error);
-                toast.error('Failed to add test participant');
-              }
-            }}
-            className="flex items-center gap-2 px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600"
-          >
-            <RiAddLine /> Add Test Participant
-          </button>
-
-          <button
-            onClick={async () => {
-              try {
-                // Log current state
-                console.log('Current State:', {
-                  selectedProgram,
-                  selectedPackage,
-                  dateRange: dateRange.map(d => format(d, 'yyyy-MM-dd')),
-                  participants,
-                  products,
-                  entryData
-                });
-
-                // Log database entries
-                const { data: entries, error: entriesError } = await supabase
-                  .from('billing_entries')
-                  .select('*')
-                  .eq('program_id', selectedProgram)
-                  .eq('package_id', selectedPackage);
-
-                if (entriesError) throw entriesError;
-                console.log('Database Entries:', entries);
-
-                toast.success('Debug info logged to console');
-              } catch (error) {
-                console.error('Error fetching debug info:', error);
-                toast.error('Failed to fetch debug info');
-              }
-            }}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
-          >
-            <RiSearchLine /> Debug Info
-          </button>
-        </div>
+        <button
+          onClick={() => setIsFullScreenMode(!isFullScreenMode)}
+          className="fixed top-4 right-4 z-50 bg-amber-500 text-white px-4 py-2 rounded-lg shadow-lg hover:bg-amber-600 flex items-center gap-2"
+        >
+          {isFullScreenMode ? (
+            <>Exit Edit Mode <IoExitOutline /></>
+          ) : (
+            <>Edit Mode <CiEdit /></>
+          )}
+        </button>
       )}
 
-      {/* Product Search */}
-      {selectedPackage && (
-        <div className="mb-4">
-          <div className="relative">
-            <RiSearchLine className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+      <div className={`${isFullScreenMode ? 'h-screen flex flex-col overflow-hidden' : ''}`}>
+        {/* Filter Section - Hide in full screen mode */}
+        {!isFullScreenMode && (
+          <div className="flex flex-wrap gap-4 mb-6 items-center bg-white p-4 rounded-lg shadow">
             <input
-              type="text"
-              placeholder="Search products..."
-              value={productFilter}
-              onChange={(e) => setProductFilter(e.target.value)}
-              className="pl-10 pr-4 py-2 border rounded w-full max-w-md"
+              type="month"
+              value={selectedMonth}
+              onChange={(e) => setSelectedMonth(e.target.value)}
+              className="border rounded px-3 py-2"
             />
-          </div>
-        </div>
-      )}
 
-      {/* Entries Table */}
-      {selectedPackage && dateRange.length > 0 && (
-        <>
-          <div className="bg-white rounded-lg shadow overflow-x-auto">
-            <table ref={tableRef} className="w-full">
-              <thead>
-                <tr>
-                  <th className="border p-2 bg-gray-50 sticky left-0 z-10">Product Name</th>
-                  {dateRange.map(date => (
-                    <th key={date.toISOString()} className="border p-2 bg-gray-50 min-w-[100px]">
-                      <div className="flex flex-col">
-                        {format(date, 'dd-MM-yyyy')}
-                        <button
-                          onClick={() => handleCopyPrevious(date)}
-                          className="text-xs text-blue-500 hover:text-blue-700"
-                          title="Copy previous day's entries"
-                        >
-                          <RiCalendarLine />
-                        </button>
-                      </div>
-                    </th>
-                  ))}
-                  {showSummary && (
-                    <>
-                      <th className="border p-2 bg-gray-50">Total</th>
-                      <th className="border p-2 bg-gray-50">Average</th>
-                      <th className="border p-2 bg-gray-50">Max</th>
-                      <th className="border p-2 bg-gray-50">Min</th>
-                    </>
-                  )}
-                </tr>
-              </thead>
-              <tbody>
-                {products
-                  .filter(product => 
-                    product.name.toLowerCase().includes(productFilter.toLowerCase())
-                  )
-                  .map((product, rowIndex) => (
-                    <tr key={product.id}>
-                      <td className="border p-2 bg-gray-50 font-medium sticky left-0 z-10">
-                        {product.name}
-                      </td>
-                      {dateRange.map((date, colIndex) => {
-                        const dateStr = format(date, 'yyyy-MM-dd');
-                        return (
-                          <td key={dateStr} className="border p-2">
-                            <input
-                              type="number"
-                              value={entryData[dateStr]?.[product.id] || ''}
-                              onChange={(e) => handleQuantityChange(dateStr, product.id, e.target.value)}
-                              onKeyDown={(e) => handleKeyDown(e, rowIndex, colIndex)}
-                              data-row={rowIndex}
-                              data-col={colIndex}
-                              className={`w-full text-center border rounded p-1 focus:outline-none focus:ring-2 focus:ring-amber-500 ${
-                                focusedCell?.row === rowIndex && focusedCell?.col === colIndex
-                                  ? 'ring-2 ring-amber-500'
-                                  : ''
-                              }`}
-                              min="0"
-                            />
-                          </td>
-                        );
-                      })}
-                    </tr>
-                  ))}
-              </tbody>
-            </table>
-          </div>
-
-          {/* Save Button */}
-          <div className="mt-4 flex justify-end">
-            <button
-              onClick={handleSave}
-              disabled={isLoading}
-              className="bg-green-500 text-white px-6 py-2 rounded hover:bg-green-600 disabled:opacity-50"
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="border rounded px-3 py-2"
             >
-              {isLoading ? 'Saving...' : 'Save'}
-            </button>
+              <option value="all">All Programs</option>
+              <option value="Upcoming">Upcoming</option>
+              <option value="Ongoing">Ongoing</option>
+              <option value="Completed">Completed</option>
+            </select>
+
+            <ProgramSelect
+              value={selectedProgram}
+              onChange={setSelectedProgram}
+              programs={filteredPrograms}
+            />
+
+            <select
+              value={selectedPackage}
+              onChange={(e) => setSelectedPackage(e.target.value)}
+              className="border rounded px-3 py-2 min-w-[200px]"
+              disabled={!selectedProgram}
+            >
+              <option value="">Select Package</option>
+              {packages.map(pkg => (
+                <option key={pkg.id} value={pkg.id}>
+                  {pkg.name} ({pkg.type})
+                </option>
+              ))}
+            </select>
           </div>
-        </>
-      )}
+        )}
 
-      {/* Add a warning message when selecting a completed program */}
-      {selectedProgram && programs.find(p => p.id === selectedProgram)?.status === 'Completed' && (
-        <div className="bg-amber-50 border border-amber-200 text-amber-800 px-4 py-2 rounded-md mt-2">
-          Note: You are viewing/editing entries for a completed program
-        </div>
-      )}
+        {/* Full Screen Mode Content */}
+        {selectedPackage && (
+          <div className={`
+            ${isFullScreenMode ? 'flex-1 flex flex-col h-full overflow-hidden p-4' : ''}
+          `}>
+            {/* Search Component - Sticky in full screen mode */}
+            <div className={`
+              ${isFullScreenMode ? 'sticky top-0 bg-white z-30 py-4 border-b' : ''}
+            `}>
+              <ProductSearch
+                products={products}
+                selectedProducts={selectedProducts}
+                onProductSelect={handleProductSelect}
+                onProductRemove={handleProductRemove}
+              />
+            </div>
 
-      {/* Loading indicator */}
-      {isLoading && (
-        <div className="text-center py-4">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-amber-500 mx-auto"></div>
-          <p className="mt-2 text-gray-600">Loading...</p>
-        </div>
-      )}
+            {/* Table Container */}
+            {dateRange.length > 0 && (
+              <div className={`
+                bg-white rounded-lg shadow overflow-hidden max-w-[90vw] mx-auto
+                ${isFullScreenMode ? 'flex-1 flex flex-col' : ''}
+              `}>
+                <div className={`
+                  overflow-auto
+                  ${isFullScreenMode ? 'flex-1' : ''}
+                `}>
+                  <table ref={tableRef} className="w-full border-collapse">
+                    <thead className="sticky top-0 bg-white z-20">
+                      <tr>
+                        <th className="border p-2 bg-gray-50 sticky left-0 z-30 min-w-[200px] max-w-[300px]">
+                          Product Name
+                        </th>
+                        {dateRange.map(date => (
+                          <th 
+                            key={date.toISOString()} 
+                            className="border p-2 bg-gray-50 min-w-[80px] max-w-[100px] sticky top-0"
+                          >
+                            <div className="flex flex-col">
+                              {format(date, 'dd-MM-yyyy')}
+                              <button
+                                onClick={() => handleCopyPrevious(date)}
+                                className="text-xs text-blue-500 hover:text-blue-700"
+                                title="Copy previous day's entries"
+                              >
+                                <RiCalendarLine />
+                              </button>
+                            </div>
+                          </th>
+                        ))}
+                        {showSummary && (
+                          <>
+                            <th className="border p-2 bg-gray-50 sticky top-0">Total</th>
+                            <th className="border p-2 bg-gray-50 sticky top-0">Average</th>
+                            <th className="border p-2 bg-gray-50 sticky top-0">Max</th>
+                            <th className="border p-2 bg-gray-50 sticky top-0">Min</th>
+                          </>
+                        )}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {products
+                        .filter(product => 
+                          selectedProducts.length === 0 || 
+                          selectedProducts.some(sp => sp.id === product.id)
+                        )
+                        .map((product, rowIndex) => (
+                          <tr key={product.id}>
+                            <td className="border p-2 bg-gray-50 font-medium sticky left-0 z-10 whitespace-nowrap">
+                              {product.name}
+                            </td>
+                            {dateRange.map((date, colIndex) => {
+                              const dateStr = format(date, 'yyyy-MM-dd');
+                              return (
+                                <td key={dateStr} className="border p-2">
+                                  <input
+                                    type="number"
+                                    value={entryData[dateStr]?.[product.id] || ''}
+                                    onChange={(e) => handleQuantityChange(dateStr, product.id, e.target.value)}
+                                    onKeyDown={(e) => handleKeyDown(e, rowIndex, colIndex)}
+                                    data-row={rowIndex}
+                                    data-col={colIndex}
+                                    className={`w-full text-center border rounded p-1 focus:outline-none focus:ring-2 focus:ring-amber-500 ${
+                                      focusedCell?.row === rowIndex && focusedCell?.col === colIndex
+                                        ? 'ring-2 ring-amber-500'
+                                        : ''
+                                    }`}
+                                    min="0"
+                                  />
+                                </td>
+                              );
+                            })}
+                          </tr>
+                        ))}
+                    </tbody>
+                  </table>
+                </div>
 
-      {/* Error message if no products */}
-      {selectedPackage && !isLoading && products.length === 0 && (
-        <div className="bg-yellow-50 border border-yellow-200 text-yellow-800 px-4 py-3 rounded relative" role="alert">
-          <p>No products found for this package. Please check the package configuration.</p>
-        </div>
-      )}
+                {/* Save Button - Sticky in full screen mode */}
+                <div className={`
+                  flex justify-end gap-4 p-4
+                  ${isFullScreenMode ? 'sticky bottom-0 bg-white border-t shadow-lg' : 'mt-4'}
+                `}>
+                  {isFullScreenMode && (
+                    <button
+                      onClick={() => setIsFullScreenMode(false)}
+                      className="px-6 py-2 rounded text-gray-600 hover:bg-gray-100"
+                    >
+                      Cancel
+                    </button>
+                  )}
+                  <button
+                    onClick={handleSave}
+                    disabled={isLoading}
+                    className="bg-green-500 text-white px-6 py-2 rounded hover:bg-green-600 disabled:opacity-50"
+                  >
+                    {isLoading ? 'Saving...' : 'Save'}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Keyboard Controls Guide - Only show in full screen mode */}
+        {isFullScreenMode && (
+          <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 bg-gray-800 text-white px-6 py-3 rounded-lg shadow-lg flex items-center gap-6 z-50">
+            <div className="flex items-center gap-2">
+              <RiKeyboardLine className="w-5 h-5" />
+              <span className="font-medium">Keyboard Controls:</span>
+            </div>
+
+            <div className="flex items-center gap-6 text-sm">
+              <div className="flex items-center gap-2">
+                <div className="flex gap-1">
+                  <kbd className="px-2 py-1 bg-gray-700 rounded">↑</kbd>
+                  <kbd className="px-2 py-1 bg-gray-700 rounded">↓</kbd>
+                  <kbd className="px-2 py-1 bg-gray-700 rounded">←</kbd>
+                  <kbd className="px-2 py-1 bg-gray-700 rounded">→</kbd>
+                </div>
+                <span>Navigate cells</span>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <div className="flex gap-1">
+                  <kbd className="px-2 py-1 bg-gray-700 rounded">Enter</kbd>
+                </div>
+                <span>Save entries</span>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <div className="flex gap-1">
+                  <kbd className="px-2 py-1 bg-gray-700 rounded">Esc</kbd>
+                </div>
+                <span>Exit edit mode</span>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Loading indicator */}
+        {isLoading && (
+          <div className="fixed bottom-20 right-4 bg-white rounded-lg shadow-lg px-4 py-3 flex items-center gap-3 z-50 border border-amber-100">
+            <div className="relative">
+              <div className="w-6 h-6 border-4 border-amber-200 border-t-amber-500 rounded-full animate-spin"></div>
+              <div className="absolute inset-0 border-2 border-amber-100 rounded-full animate-pulse"></div>
+            </div>
+            <span className="text-sm font-medium text-amber-700">Saving entries...</span>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
