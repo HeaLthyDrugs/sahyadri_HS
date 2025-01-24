@@ -28,6 +28,7 @@ import { parse, unparse } from 'papaparse';
 
 interface Program {
   id: string;
+  program_number: number;
   name: string;
   customer_name: string;
   start_date: string;
@@ -138,7 +139,7 @@ export function ProgramsPage() {
   const [viewMode, setViewMode] = useState<'table' | 'grid'>('table');
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<Program['status'] | 'all'>('all');
-  const [sortField, setSortField] = useState<'start_date' | 'name' | 'total_participants'>('start_date');
+  const [sortField, setSortField] = useState<'start_date' | 'name' | 'total_participants' | 'program_number'>('start_date');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage] = useState(10);
@@ -312,6 +313,11 @@ export function ProgramsPage() {
             ? a.total_participants - b.total_participants
             : b.total_participants - a.total_participants;
         }
+        if (sortField === 'program_number') {
+          return sortDirection === 'asc'
+            ? (a.program_number || 0) - (b.program_number || 0)
+            : (b.program_number || 0) - (a.program_number || 0);
+        }
         return sortDirection === 'asc'
           ? a.name.localeCompare(b.name)
           : b.name.localeCompare(a.name);
@@ -333,6 +339,7 @@ export function ProgramsPage() {
   const handleExportCSV = () => {
     try {
       const exportData = filteredAndSortedPrograms().map(program => ({
+        'Program No.': program.program_number || 0,
         Name: program.name,
         'Start Date': program.start_date,
         'Start Time': program.start_time,
@@ -432,31 +439,6 @@ export function ProgramsPage() {
     });
   };
 
-  const downloadTemplate = () => {
-    const template = [
-      {
-        Name: 'Sample Program',
-        'Start Date': format(new Date(), 'yyyy-MM-dd'),
-        'Start Time': '09:00',
-        'End Date': format(addDays(new Date(), 7), 'yyyy-MM-dd'),
-        'End Time': '17:00',
-        'Total Participants': '50'
-      }
-    ];
-
-    const csv = unparse(template);
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    const url = URL.createObjectURL(blob);
-    
-    link.setAttribute('href', url);
-    link.setAttribute('download', 'programs_template.csv');
-    link.style.visibility = 'hidden';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
-
   return (
     <div>
       {/* Header with Search and Filters */}
@@ -469,7 +451,7 @@ export function ProgramsPage() {
               onClick={handleExportCSV}
               className="flex items-center gap-2 px-3 py-2 text-amber-600 bg-amber-50 rounded-lg hover:bg-amber-100 transition-colors text-sm"
             >
-              <RiDownloadLine className="w-4 h-4" />
+              <RiUploadLine className="w-4 h-4" />
               Export
             </button>
 
@@ -486,18 +468,10 @@ export function ProgramsPage() {
                 htmlFor="csv-upload"
                 className="flex items-center gap-2 px-3 py-2 text-amber-600 bg-amber-50 rounded-lg hover:bg-amber-100 transition-colors cursor-pointer text-sm"
               >
-                <RiUploadLine className="w-4 h-4" />
+                <RiDownloadLine className="w-4 h-4" />
                 Import
               </label>
             </div>
-
-            {/* Template Download */}
-            <button
-              onClick={downloadTemplate}
-              className="text-xs text-amber-600 hover:text-amber-700"
-            >
-              Download Template
-            </button>
 
             {/* Add Program Button */}
             <button
@@ -629,6 +603,9 @@ export function ProgramsPage() {
               <div key={program.id} className="bg-white rounded-lg shadow p-4">
                 <div className="flex justify-between items-start mb-3">
                   <div>
+                    <div className="text-xs text-gray-500 mb-1">
+                      {program.program_number || 0}
+                    </div>
                     <h3 className="font-medium text-gray-900">{program.name}</h3>
                     <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full mt-1 ${getStatusColor(program.status)}`}>
                       {program.status}
@@ -714,6 +691,26 @@ export function ProgramsPage() {
                 <thead className="bg-gray-50">
                   <tr>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => {
+                            setSortField('program_number');
+                            setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
+                          }}
+                          className="text-gray-500 hover:text-amber-600 flex items-center gap-1"
+                        >
+                          No.
+                          {sortField === 'program_number' && (
+                            sortDirection === 'asc' ? (
+                              <RiSortAsc className="w-4 h-4" />
+                            ) : (
+                              <RiSortDesc className="w-4 h-4" />
+                            )
+                          )}
+                        </button>
+                      </div>
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Customer Name
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -742,6 +739,9 @@ export function ProgramsPage() {
                 <tbody className="bg-white divide-y divide-gray-200">
                   {paginatedPrograms().map((program) => (
                     <tr key={program.id} className="hover:bg-gray-50">
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {program.program_number || 0}
+                      </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                         {program.customer_name}
                       </td>

@@ -18,37 +18,22 @@ import { supabase } from "@/lib/supabase";
 
 interface Participant {
   id: string;
+  program_id?: string;
   attendee_name: string;
-  type: string;
   security_checkin?: string;
   reception_checkin: string;
   reception_checkout: string;
   security_checkout?: string;
   created_at: string;
-  program_id: string;
 }
 
 interface FormData {
   attendee_name: string;
-  type: string;
-  security_checkin: string;
+  program_id?: string;
+  security_checkin?: string;
   reception_checkin: string;
   reception_checkout: string;
-  security_checkout: string;
-}
-
-interface Program {
-  id: string;
-  name: string;
-  start_date: string;
-  end_date: string;
-  status: 'completed' | 'ongoing' | 'upcoming';
-}
-
-interface ParticipantWithProgramStatus extends Participant {
-  programStatus: 'in_program' | 'early_arrival' | 'late_departure' | 'no_program';
-  daysEarly?: number;
-  daysLate?: number;
+  security_checkout?: string;
 }
 
 interface TimeValidationResult {
@@ -56,52 +41,49 @@ interface TimeValidationResult {
   message: string;
 }
 
+interface ImportRow {
+  'No.': string | null;
+  'Attendee Name': string | null;
+  'Security Check-In': string | null;
+  'Reception Check-In': string | null;
+  'Reception Check-Out': string | null;
+  'Security Check-Out': string | null;
+}
+
+interface Program {
+  id: string;
+  name: string;
+  customer_name: string;
+}
+
 export function ParticipantsPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
   const [isDeleteAllModalOpen, setIsDeleteAllModalOpen] = useState(false);
   const [participants, setParticipants] = useState<Participant[]>([]);
+  const [programs, setPrograms] = useState<Program[]>([]);
+  const [selectedProgramId, setSelectedProgramId] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState("");
+  const [searchSuggestions, setSearchSuggestions] = useState<string[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage] = useState(10);
-  const [formData, setFormData] = useState({
+  const [itemsPerPage] = useState(100);
+  const [formData, setFormData] = useState<FormData>({
     attendee_name: "",
-    type: "participant",
+    program_id: "all",
     security_checkin: "",
     reception_checkin: "",
     reception_checkout: "",
     security_checkout: "",
   });
-
   const [editingParticipant, setEditingParticipant] = useState<Participant | null>(null);
-  const [programs, setPrograms] = useState<Program[]>([]);
-  const [selectedMonth, setSelectedMonth] = useState<string>(
-    format(new Date(), 'yyyy-MM')
-  );
-  const [filteredPrograms, setFilteredPrograms] = useState<Program[]>([]);
-  const [selectedProgramId, setSelectedProgramId] = useState<string>("");
 
   const fetchParticipants = async () => {
     try {
-      let query = supabase
+      const { data, error } = await supabase
         .from('participants')
         .select('*')
         .order('created_at', { ascending: false });
-
-      if (selectedProgramId) {
-        // Get the selected program's dates
-        const selectedProgram = programs.find(p => p.id === selectedProgramId);
-        if (selectedProgram) {
-          const programStart = new Date(selectedProgram.start_date);
-          const programEnd = new Date(selectedProgram.end_date);
-
-          // Filter participants whose check-in/check-out dates fall within the program duration
-          query = query.filter('reception_checkin', 'gte', programStart.toISOString())
-            .filter('reception_checkout', 'lte', programEnd.toISOString());
-        }
-      }
-
-      const { data, error } = await query;
 
       if (error) throw error;
       setParticipants(data || []);
@@ -111,189 +93,40 @@ export function ParticipantsPage() {
     }
   };
 
-  useEffect(() => {
-    fetchParticipants();
-  }, [selectedProgramId]);
-
   const fetchPrograms = async () => {
     try {
       const { data, error } = await supabase
         .from('programs')
-        .select('*')
-        .order('start_date', { ascending: false });
+        .select('id, name, customer_name')
+        .order('name');
 
       if (error) throw error;
       setPrograms(data || []);
-      
-      // Filter programs for the selected month
-      filterProgramsByMonth(data || [], selectedMonth);
     } catch (error) {
       console.error('Error fetching programs:', error);
       toast.error('Failed to fetch programs');
     }
   };
 
-  const getProgramStatus = (startDate: string, endDate: string): 'completed' | 'ongoing' | 'upcoming' => {
-    const now = new Date();
-    const start = new Date(startDate);
-    const end = new Date(endDate);
-
-    if (end < now) return 'completed';
-    if (start > now) return 'upcoming';
-    return 'ongoing';
-  };
-
-  const filterProgramsByMonth = (programsList: Program[], monthYear: string) => {
-    const [year, month] = monthYear.split('-');
-    const startOfMonth = new Date(parseInt(year), parseInt(month) - 1, 1);
-    const endOfMonth = new Date(parseInt(year), parseInt(month), 0); // Last day of month
-
-    const filtered = programsList.filter(program => {
-      const programStart = new Date(program.start_date);
-      const programEnd = new Date(program.end_date);
-
-      // Show program if it overlaps with selected month
-      return (
-        (programStart <= endOfMonth && programEnd >= startOfMonth) ||
-        format(programStart, 'yyyy-MM') === monthYear ||
-        format(programEnd, 'yyyy-MM') === monthYear
-      );
-    });
-
-    // Sort programs by start date
-    const sorted = filtered.sort((a, b) => 
-      new Date(a.start_date).getTime() - new Date(b.start_date).getTime()
-    );
-
-    setFilteredPrograms(sorted);
-  };
-
   useEffect(() => {
     fetchPrograms();
+    fetchParticipants();
   }, []);
 
+  // Update search suggestions when search query changes
   useEffect(() => {
-    filterProgramsByMonth(programs, selectedMonth);
-    setSelectedProgramId(""); // Reset program selection when month changes
-  }, [selectedMonth, programs]);
-
-  const handleEdit = (participant: Participant) => {
-    setEditingParticipant(participant);
-    setFormData({
-      attendee_name: participant.attendee_name,
-      type: participant.type,
-      security_checkin: participant.security_checkin ? format(new Date(participant.security_checkin), "yyyy-MM-dd'T'HH:mm") : "",
-      reception_checkin: format(new Date(participant.reception_checkin), "yyyy-MM-dd'T'HH:mm"),
-      reception_checkout: format(new Date(participant.reception_checkout), "yyyy-MM-dd'T'HH:mm"),
-      security_checkout: participant.security_checkout ? format(new Date(participant.security_checkout), "yyyy-MM-dd'T'HH:mm") : "",
-    });
-    setIsModalOpen(true);
-  };
-
-  const findMatchingProgram = (checkinDate: Date, checkoutDate: Date, programsList: Program[]): string | null => {
-    for (const program of programsList) {
-      const programStart = new Date(program.start_date);
-      const programEnd = new Date(program.end_date);
-
-      // Check if the participant's check-in/out period overlaps with the program
-      if (checkinDate <= programEnd && checkoutDate >= programStart) {
-        return program.id;
-      }
+    if (searchQuery.length > 0) {
+      const suggestions = participants
+        .map(p => p.attendee_name)
+        .filter(name => 
+          name.toLowerCase().includes(searchQuery.toLowerCase())
+        )
+        .slice(0, 5); // Limit to 5 suggestions
+      setSearchSuggestions(suggestions);
+    } else {
+      setSearchSuggestions([]);
     }
-    return null;
-  };
-
-  const validateCheckInOutTimes = (checkin: Date, checkout: Date): TimeValidationResult => {
-    if (checkin > checkout) {
-      return {
-        isValid: false,
-        message: 'Check-in time cannot be later than check-out time'
-      };
-    }
-
-    const diffInHours = (checkout.getTime() - checkin.getTime()) / (1000 * 60 * 60);
-    if (diffInHours > 24 * 30) { // More than 30 days
-      return {
-        isValid: false,
-        message: 'Stay duration cannot exceed 30 days'
-      };
-    }
-
-    return { isValid: true, message: '' };
-  };
-
-  const findProgramWithBuffer = (
-    checkinDate: Date, 
-    checkoutDate: Date, 
-    programsList: Program[]
-  ): { programId: string | null; status: 'in_program' | 'early_arrival' | 'late_departure' | 'no_program'; daysEarly?: number; daysLate?: number } => {
-    for (const program of programsList) {
-      const programStart = new Date(program.start_date);
-      const programEnd = new Date(program.end_date);
-      
-      // Allow buffer periods
-      const bufferStart = new Date(programStart);
-      bufferStart.setDate(bufferStart.getDate() - 5); // 5 days before
-      
-      const bufferEnd = new Date(programEnd);
-      bufferEnd.setDate(bufferEnd.getDate() + 5); // 5 days after
-
-      if (checkinDate <= bufferEnd && checkoutDate >= bufferStart) {
-        const daysEarly = checkinDate < programStart ? 
-          Math.ceil((programStart.getTime() - checkinDate.getTime()) / (1000 * 60 * 60 * 24)) : 0;
-        
-        const daysLate = checkoutDate > programEnd ?
-          Math.ceil((checkoutDate.getTime() - programEnd.getTime()) / (1000 * 60 * 60 * 24)) : 0;
-
-        if (checkinDate >= programStart && checkoutDate <= programEnd) {
-          return { programId: program.id, status: 'in_program' };
-        }
-        
-        if (daysEarly > 0) {
-          return { programId: program.id, status: 'early_arrival', daysEarly };
-        }
-        
-        if (daysLate > 0) {
-          return { programId: program.id, status: 'late_departure', daysLate };
-        }
-      }
-    }
-    
-    return { programId: null, status: 'no_program' };
-  };
-
-  const handleQuickAddDriver = async (date: string) => {
-    try {
-      const currentDate = new Date(date);
-      const nextDay = new Date(currentDate);
-      nextDay.setDate(nextDay.getDate() + 1);
-
-      const driverData = {
-        attendee_name: "Driver", // You might want to add a number or identifier
-        type: "driver",
-        reception_checkin: currentDate.toISOString(),
-        reception_checkout: nextDay.toISOString()
-      };
-
-      // Find matching program
-      const { programId, status } = findProgramWithBuffer(currentDate, nextDay, programs);
-      
-      if (programId) {
-        const { error } = await supabase
-          .from('participants')
-          .insert([{ ...driverData, program_id: programId }]);
-
-        if (error) throw error;
-        toast.success('Driver added successfully');
-        fetchParticipants();
-      } else {
-        toast.error('No matching program found for driver');
-      }
-    } catch (error) {
-      console.error('Error adding driver:', error);
-      toast.error('Failed to add driver');
-    }
-  };
+  }, [searchQuery, participants]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -303,47 +136,15 @@ export function ParticipantsPage() {
       const checkinDate = new Date(formData.reception_checkin);
       const checkoutDate = new Date(formData.reception_checkout);
 
-      // Validate check-in/out times
-      const timeValidation = validateCheckInOutTimes(checkinDate, checkoutDate);
-      if (!timeValidation.isValid) {
-        toast.error(timeValidation.message);
+      if (checkinDate > checkoutDate) {
+        toast.error('Check-in time cannot be later than check-out time');
         setIsLoading(false);
         return;
-      }
-
-      // Find matching program with buffer period
-      const { programId, status, daysEarly, daysLate } = findProgramWithBuffer(checkinDate, checkoutDate, programs);
-
-      if (!programId) {
-        toast.error('No matching program found for these dates');
-        setIsLoading(false);
-        return;
-      }
-
-      // Show warnings for early arrival or late departure
-      if (status === 'early_arrival') {
-        toast(`Participant arriving ${daysEarly} days before program starts`, {
-          icon: '⚠️',
-          style: {
-            background: '#FEF3C7',
-            color: '#92400E'
-          }
-        });
-      }
-      if (status === 'late_departure') {
-        toast(`Participant leaving ${daysLate} days after program ends`, {
-          icon: '⚠️',
-          style: {
-            background: '#FEF3C7',
-            color: '#92400E'
-          }
-        });
       }
 
       const participantData = {
         attendee_name: formData.attendee_name,
-        type: formData.type,
-        program_id: programId,
+        program_id: formData.program_id === 'all' ? null : formData.program_id,
         ...(formData.security_checkin && {
           security_checkin: new Date(formData.security_checkin).toISOString()
         }),
@@ -371,10 +172,9 @@ export function ParticipantsPage() {
         toast.success('Participant added successfully');
       }
 
-      // Reset form
       setFormData({
         attendee_name: "",
-        type: "participant",
+        program_id: "all",
         security_checkin: "",
         reception_checkin: "",
         reception_checkout: "",
@@ -389,6 +189,185 @@ export function ParticipantsPage() {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const formatExcelDate = (dateString: string) => {
+    try {
+      if (!dateString || dateString === '&nbsp;') return null;
+
+      // Remove any HTML entities and trim
+      dateString = dateString.replace(/&nbsp;/g, '').trim();
+      if (!dateString) return null;
+
+      // Parse the date string (format: DD/MM/YYYY HH:mmAM/PM)
+      const [datePart, timePart] = dateString.split(/\s+/); // Split by any number of spaces
+      if (!datePart || !timePart) {
+        console.warn('Invalid date format:', dateString);
+        return null;
+      }
+
+      // Parse date part (DD/MM/YYYY)
+      const [day, month, year] = datePart.split('/');
+      if (!day || !month || !year) {
+        console.warn('Invalid date parts:', datePart);
+        return null;
+      }
+
+      // Parse time part (HH:mmAM/PM)
+      const timeMatch = timePart.match(/(\d{1,2}):(\d{2})(AM|PM)/i);
+      if (!timeMatch) {
+        console.warn('Invalid time format:', timePart);
+        return null;
+      }
+
+      let [_, hours, minutes, period] = timeMatch;
+      
+      // Convert 12-hour format to 24-hour format
+      let hourNum = parseInt(hours);
+      if (isNaN(hourNum)) {
+        console.warn('Invalid hour:', hours);
+        return null;
+      }
+
+      if (period.toUpperCase() === 'PM' && hourNum !== 12) {
+        hourNum += 12;
+      } else if (period.toUpperCase() === 'AM' && hourNum === 12) {
+        hourNum = 0;
+      }
+
+      // Create ISO date string
+      const isoDate = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}T${String(hourNum).padStart(2, '0')}:${minutes}:00`;
+      
+      // Validate the date
+      const date = new Date(isoDate);
+      if (isNaN(date.getTime())) {
+        console.warn('Invalid date created:', isoDate);
+        return null;
+      }
+      
+      return date.toISOString();
+    } catch (error) {
+      console.error('Error formatting date:', dateString, error);
+      return null;
+    }
+  };
+
+  const handleImportCSV = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    event.target.value = '';
+    setIsImporting(true);
+
+    // Function to extract table data from HTML content
+    const extractTableData = (htmlContent: string): ImportRow[] => {
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(htmlContent, 'text/html');
+      const rows = doc.querySelectorAll('tr');
+      const data: ImportRow[] = [];
+
+      // Skip the header row (index 0)
+      for (let i = 1; i < rows.length; i++) {
+        const cells = rows[i].querySelectorAll('td');
+        if (cells.length >= 6) { // Ensure we have all required columns
+          const rowData: ImportRow = {
+            'No.': cells[0].textContent?.trim() || null,
+            'Attendee Name': cells[1].textContent?.trim() || null,
+            'Security Check-In': cells[2].textContent?.trim() || null,
+            'Reception Check-In': cells[3].textContent?.trim() || null,
+            'Reception Check-Out': cells[4].textContent?.trim() || null,
+            'Security Check-Out': cells[5].textContent?.trim() || null,
+          };
+          data.push(rowData);
+        }
+      }
+      return data;
+    };
+
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      try {
+        const content = e.target?.result as string;
+        const tableData = extractTableData(content);
+        const importData = tableData
+        .map((row: ImportRow) => {
+          try {
+            const attendeeName = row['Attendee Name']?.trim();
+            const receptionCheckin = formatExcelDate(row['Reception Check-In'] || '');
+            const receptionCheckout = formatExcelDate(row['Reception Check-Out'] || '');
+            const securityCheckin = formatExcelDate(row['Security Check-In'] || '');
+            const securityCheckout = formatExcelDate(row['Security Check-Out'] || '');
+      
+            const participantData: Partial<Participant> = {
+              attendee_name: attendeeName || 'Unknown Participant',
+              reception_checkin: receptionCheckin || new Date().toISOString(),
+              reception_checkout: receptionCheckout || new Date(new Date().setDate(new Date().getDate() + 1)).toISOString(),
+              program_id: undefined
+            };
+      
+            if (securityCheckin) {
+              participantData.security_checkin = securityCheckin;
+            }
+            if (securityCheckout) {
+              participantData.security_checkout = securityCheckout;
+            }
+      
+            return participantData;
+          } catch (error) {
+            console.error('Error processing row:', row, error);
+            return null;
+          }
+        })
+        .filter((item: Partial<Participant> | null): item is Partial<Participant> => item !== null);
+
+        if (importData.length === 0) {
+          throw new Error('No valid data found in file');
+        }
+
+        const { error } = await supabase
+          .from('participants')
+          .insert(importData);
+
+        if (error) throw error;
+
+        toast.success(`Successfully imported ${importData.length} participants`);
+        fetchParticipants();
+      } catch (error) {
+        console.error('Error importing file:', error);
+        toast.error('Failed to import participants. Please check the console for details.');
+      } finally {
+        setIsImporting(false);
+      }
+    };
+
+    reader.readAsText(file);
+  };
+
+  // Filter participants based on search query and selected program
+  const filteredParticipants = participants.filter(participant => {
+    const matchesSearch = participant.attendee_name.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesProgram = selectedProgramId === 'all' || participant.program_id === selectedProgramId;
+    return matchesSearch && matchesProgram;
+  });
+
+  // Pagination
+  const totalPages = Math.ceil(filteredParticipants.length / itemsPerPage);
+  const paginatedParticipants = filteredParticipants.slice(
+    (currentPage - 1) * itemsPerPage,
+    currentPage * itemsPerPage
+  );
+
+  const handleEdit = (participant: Participant) => {
+    setEditingParticipant(participant);
+    setFormData({
+      attendee_name: participant.attendee_name,
+      program_id: participant.program_id || 'all',
+      security_checkin: participant.security_checkin ? format(new Date(participant.security_checkin), "yyyy-MM-dd'T'HH:mm") : "",
+      reception_checkin: format(new Date(participant.reception_checkin), "yyyy-MM-dd'T'HH:mm"),
+      reception_checkout: format(new Date(participant.reception_checkout), "yyyy-MM-dd'T'HH:mm"),
+      security_checkout: participant.security_checkout ? format(new Date(participant.security_checkout), "yyyy-MM-dd'T'HH:mm") : "",
+    });
+    setIsModalOpen(true);
   };
 
   const handleDelete = async (id: string) => {
@@ -451,7 +430,6 @@ export function ParticipantsPage() {
       const exportData = participants.map(participant => ({
         'No.': participant.id,
         'Attendee Name': participant.attendee_name,
-        'Role': participant.type,
         'Check In': format(new Date(participant.reception_checkin), 'dd-MMM-yyyy h:mm a'),
         'Check Out': format(new Date(participant.reception_checkout), 'dd-MMM-yyyy h:mm a')
       }));
@@ -475,181 +453,13 @@ export function ParticipantsPage() {
     }
   };
 
-  const getDefaultProgramId = async () => {
-    const { data, error } = await supabase
-      .from('programs')
-      .select('id')
-      .order('start_date', { ascending: false })
-      .limit(1)
-      .single();
-
-    if (error) {
-      console.error('Error getting default program:', error);
-      return null;
-    }
-    return data?.id;
-  };
-
-  const handleImportCSV = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    event.target.value = '';
-
-    parse(file, {
-      header: true,
-      skipEmptyLines: true,
-      complete: async (results) => {
-        try {
-          setIsLoading(true);
-
-          const importData = results.data
-            .filter((row: any) => {
-              const hasData = Object.entries(row).some(([key, value]) => {
-                return key !== 'No.' && value && String(value).trim() !== '';
-              });
-              return hasData;
-            })
-            .map((row: any) => {
-              try {
-                if (!row['Attendee Name'] || !row['Reception Check-In'] || !row['Reception Check-Out']) {
-                  console.error('Missing required fields in row:', row);
-                  return null;
-                }
-
-                const checkinDate = new Date(formatDate(row['Reception Check-In']));
-                const checkoutDate = new Date(formatDate(row['Reception Check-Out']));
-                
-                // Find matching program with buffer
-                const { programId, status } = findProgramWithBuffer(checkinDate, checkoutDate, programs);
-                
-                if (!programId) {
-                  console.error('No matching program found for:', row);
-                  return null;
-                }
-
-                return {
-                  attendee_name: row['Attendee Name'].trim(),
-                  type: row['Type']?.toLowerCase() === 'driver' ? 'driver' : 'participant',
-                  program_id: programId,
-                  reception_checkin: checkinDate.toISOString(),
-                  reception_checkout: checkoutDate.toISOString(),
-                  ...(row['Security Check-In'] && {
-                    security_checkin: formatDate(row['Security Check-In'])
-                  }),
-                  ...(row['Security Check-Out'] && {
-                    security_checkout: formatDate(row['Security Check-Out'])
-                  })
-                };
-              } catch (error) {
-                console.error('Error processing row:', row, error);
-                return null;
-              }
-            })
-            .filter((item): item is NonNullable<typeof item> => item !== null);
-
-          if (importData.length === 0) {
-            throw new Error('No valid data found in CSV');
-          }
-
-          const { error } = await supabase
-            .from('participants')
-            .insert(importData);
-
-          if (error) throw error;
-
-          toast.success(`Successfully imported ${importData.length} participants`);
-          fetchParticipants();
-        } catch (error) {
-          console.error('Error importing CSV:', error);
-          toast.error('Failed to import participants');
-        } finally {
-          setIsLoading(false);
-        }
-      },
-      error: (error) => {
-        console.error('Error parsing CSV:', error);
-        toast.error('Failed to parse CSV file');
-      }
-    });
-  };
-
-  // Helper function to format date strings
-  const formatDate = (dateString: string) => {
-    try {
-      if (!dateString) throw new Error('Date string is required');
-
-      // Remove any potential spaces around the date string
-      dateString = dateString.trim();
-      
-      // Split the date and time parts
-      const [datePart, timePart] = dateString.split(' ');
-      
-      // Split the date into components
-      const [day, month, year] = datePart.split('-');
-      
-      // Ensure month and day have leading zeros if needed
-      const paddedMonth = month.length === 1 ? `0${month}` : month;
-      const paddedDay = day.length === 1 ? `0${day}` : day;
-      
-      // Create the ISO formatted date string
-      const isoDate = `${year}-${paddedMonth}-${paddedDay}T${timePart}:00`;
-      
-      // Validate the date by creating a new Date object
-      const date = new Date(isoDate);
-      if (isNaN(date.getTime())) {
-        throw new Error(`Invalid date: ${dateString}`);
-      }
-      
-      return date.toISOString();
-    } catch (error) {
-      console.error('Error formatting date:', dateString, error);
-      throw new Error(`Invalid date format: ${dateString}`);
-    }
-  };
-
-  // Filter participants
-  const filteredParticipants = participants.filter(participant => {
-    return participant.attendee_name.toLowerCase().includes(searchQuery.toLowerCase());
-  });
-
-  // Pagination
-  const totalPages = Math.ceil(filteredParticipants.length / itemsPerPage);
-  const paginatedParticipants = filteredParticipants.slice(
-    (currentPage - 1) * itemsPerPage,
-    currentPage * itemsPerPage
-  );
-
-  const handleMonthChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setSelectedMonth(e.target.value);
-  };
-
-  const handleProgramChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    setSelectedProgramId(e.target.value);
-  };
-
-  const checkParticipantsWithoutProgram = () => {
-    const participantsWithoutProgram = participants.filter(p => !p.program_id);
-    if (participantsWithoutProgram.length > 0) {
-      toast.error(`${participantsWithoutProgram.length} participants are not assigned to any program`);
-      console.warn('Participants without program:', participantsWithoutProgram);
-    }
-  };
-
-  useEffect(() => {
-    if (participants.length > 0) {
-      checkParticipantsWithoutProgram();
-    }
-  }, [participants]);
-
   return (
-    <div>
+    <div className="space-y-6">
       {/* Header with Actions */}
-      <div className="flex flex-col gap-4 mb-6">
+      <div className="flex flex-col gap-4">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-          <h1 className="text-sm font-light text-gray-500">Manage Participants</h1>
+          <h1 className="text-xl font-semibold text-gray-900">Manage Participants</h1>
           <div className="flex flex-wrap items-center gap-2">
-            {/* Export Button */}
             <button
               onClick={handleExportCSV}
               className="flex items-center gap-2 px-3 py-2 text-amber-600 bg-amber-50 rounded-lg hover:bg-amber-100 transition-colors text-sm"
@@ -658,17 +468,16 @@ export function ParticipantsPage() {
               Export
             </button>
 
-            {/* Import Button */}
             <div className="relative">
               <input
                 type="file"
-                accept=".csv"
+                accept=".csv,.xls,.xlsx"
                 onChange={handleImportCSV}
                 className="hidden"
-                id="csv-upload"
+                id="file-upload"
               />
               <label
-                htmlFor="csv-upload"
+                htmlFor="file-upload"
                 className="flex items-center gap-2 px-3 py-2 text-amber-600 bg-amber-50 rounded-lg hover:bg-amber-100 transition-colors cursor-pointer text-sm"
               >
                 <RiUploadLine className="w-4 h-4" />
@@ -676,164 +485,173 @@ export function ParticipantsPage() {
               </label>
             </div>
 
-            {/* Delete All Button */}
             <button
               onClick={() => setIsDeleteAllModalOpen(true)}
-              className="flex items-center gap-2 px-3 py-2 text-red-600 bg-red-50 rounded-lg hover:bg-red-100 transition-colors text-sm ml-2"
+              className="flex items-center gap-2 px-3 py-2 text-red-600 bg-red-50 rounded-lg hover:bg-red-100 transition-colors text-sm"
             >
               <RiDeleteBinLine className="w-4 h-4" />
               Delete All
             </button>
 
-            {/* Add Participant Button */}
             <button
               onClick={() => setIsModalOpen(true)}
-              className="flex items-center gap-2 px-3 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors ml-2 text-sm"
+              className="flex items-center gap-2 px-3 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors text-sm"
             >
               <RiAddLine className="w-4 h-4" />
               Add Participant
             </button>
-
-            <button
-              onClick={() => handleQuickAddDriver(new Date().toISOString())}
-              className="flex items-center gap-2 px-3 py-2 text-amber-600 bg-amber-50 rounded-lg hover:bg-amber-100 transition-colors text-sm"
-            >
-              <RiAddLine className="w-4 h-4" />
-              Quick Add Driver
-            </button>
           </div>
         </div>
 
-        {/* Search */}
-        <div className="flex items-center gap-2 bg-white rounded-lg shadow px-3 py-2 w-full sm:w-auto sm:flex-1 sm:max-w-md">
-          <input
-            type="text"
-            placeholder="Search participants..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full border-none focus:ring-0 text-sm"
-          />
-        </div>
-
-        {/* Filters Section */}
-        <div className="flex flex-col sm:flex-row gap-4 mb-6">
-          <div className="w-full sm:w-48">
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Month
-            </label>
+        {/* Search and Filter Controls */}
+        <div className="flex flex-col sm:flex-row gap-4">
+          {/* Search Input */}
+          <div className="flex items-center gap-2 bg-white rounded-lg shadow px-3 py-2 w-full sm:w-96">
             <input
-              type="month"
-              value={selectedMonth}
-              onChange={handleMonthChange}
-              className="w-full rounded-lg border-gray-300 shadow-sm focus:border-amber-500 focus:ring-amber-500"
+              type="text"
+              placeholder="Search participants..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full border-none focus:ring-0 text-sm"
             />
           </div>
 
-          <div className="w-full sm:w-64">
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Program
-            </label>
+          {/* Program Filter */}
+          <div className="flex items-center gap-2 bg-white rounded-lg shadow px-3 py-2 w-full sm:w-96">
             <select
               value={selectedProgramId}
-              onChange={handleProgramChange}
-              className="w-full rounded-lg border-gray-300 shadow-sm focus:border-amber-500 focus:ring-amber-500"
+              onChange={(e) => {
+                setSelectedProgramId(e.target.value);
+                setCurrentPage(1); // Reset to first page when changing filter
+              }}
+              className="w-full border-none focus:ring-0 text-sm"
             >
-              <option value="">All Programs</option>
-              {filteredPrograms.length > 0 ? (
-                filteredPrograms.map(program => (
-                  <option key={program.id} value={program.id}>
-                    {program.name} ({format(new Date(program.start_date), 'dd/MM/yyyy')} - {format(new Date(program.end_date), 'dd/MM/yyyy')})
-                  </option>
-                ))
-              ) : (
-                <option value="" disabled>No programs found for this month</option>
-              )}
+              <option value="all">All Programs</option>
+              {programs.map((program) => (
+                <option key={program.id} value={program.id}>
+                  {program.name} - {program.customer_name}
+                </option>
+              ))}
             </select>
           </div>
         </div>
 
         {/* Participants Table */}
         <div className="bg-white rounded-lg shadow overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    No.
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Attendee Name
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Role
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Check In
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Check Out
-                  </th>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Actions
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {paginatedParticipants.map((participant, index) => (
-                  <tr key={participant.id} className="hover:bg-gray-50">
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {(currentPage - 1) * itemsPerPage + index + 1}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm font-medium text-gray-900">
-                        {participant.attendee_name}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium
-                        ${participant.type === 'admin' ? 'bg-purple-100 text-purple-800' : 
-                          participant.type === 'staff' ? 'bg-blue-100 text-blue-800' : 
-                          'bg-green-100 text-green-800'}`}>
-                        {participant.type.charAt(0).toUpperCase() + participant.type.slice(1)}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-gray-500">
-                        <div>{format(new Date(participant.reception_checkin), 'dd MMM yyyy')}</div>
-                        <div className="text-xs text-gray-400">
-                          {format(new Date(participant.reception_checkin), 'h:mm a')}
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-gray-500">
-                        <div>{format(new Date(participant.reception_checkout), 'dd MMM yyyy')}</div>
-                        <div className="text-xs text-gray-400">
-                          {format(new Date(participant.reception_checkout), 'h:mm a')}
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-2">
-                      <button
-                        onClick={() => handleEdit(participant)}
-                        className="text-amber-600 hover:text-amber-900"
-                        title="Edit participant"
-                      >
-                        <RiEditLine className="w-5 h-5" />
-                      </button>
-                      <button
-                        onClick={() => handleDelete(participant.id)}
-                        className="text-red-600 hover:text-red-900"
-                        title="Delete participant"
-                      >
-                        <RiDeleteBinLine className="w-5 h-5" />
-                      </button>
-                    </td>
+          {isImporting ? (
+            <div className="flex flex-col items-center justify-center py-12">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-amber-600"></div>
+              <p className="mt-4 text-gray-600">Importing participants...</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      No.
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Attendee Name
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Program
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Security Check-In
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Reception Check-In
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Reception Check-Out
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Security Check-Out
+                    </th>
+                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Actions
+                    </th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {paginatedParticipants.map((participant, index) => (
+                    <tr key={participant.id} className="hover:bg-gray-50">
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {(currentPage - 1) * itemsPerPage + index + 1}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="text-sm font-medium text-gray-900">
+                          {participant.attendee_name}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="text-sm text-gray-500">
+                          {programs.find(p => p.id === participant.program_id)?.name || '-'}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        {participant.security_checkin ? (
+                          <div className="text-sm text-gray-500">
+                            <div>{format(new Date(participant.security_checkin), 'dd MMM yyyy')}</div>
+                            <div className="text-xs text-gray-400">
+                              {format(new Date(participant.security_checkin), 'h:mm a')}
+                            </div>
+                          </div>
+                        ) : (
+                          <span className="text-sm text-gray-400">-</span>
+                        )}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="text-sm text-gray-500">
+                          <div>{format(new Date(participant.reception_checkin), 'dd MMM yyyy')}</div>
+                          <div className="text-xs text-gray-400">
+                            {format(new Date(participant.reception_checkin), 'h:mm a')}
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="text-sm text-gray-500">
+                          <div>{format(new Date(participant.reception_checkout), 'dd MMM yyyy')}</div>
+                          <div className="text-xs text-gray-400">
+                            {format(new Date(participant.reception_checkout), 'h:mm a')}
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        {participant.security_checkout ? (
+                          <div className="text-sm text-gray-500">
+                            <div>{format(new Date(participant.security_checkout), 'dd MMM yyyy')}</div>
+                            <div className="text-xs text-gray-400">
+                              {format(new Date(participant.security_checkout), 'h:mm a')}
+                            </div>
+                          </div>
+                        ) : (
+                          <span className="text-sm text-gray-400">-</span>
+                        )}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-2">
+                        <button
+                          onClick={() => handleEdit(participant)}
+                          className="text-amber-600 hover:text-amber-900"
+                          title="Edit participant"
+                        >
+                          <RiEditLine className="w-5 h-5" />
+                        </button>
+                        <button
+                          onClick={() => handleDelete(participant.id)}
+                          className="text-red-600 hover:text-red-900"
+                          title="Delete participant"
+                        >
+                          <RiDeleteBinLine className="w-5 h-5" />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
 
         {/* Pagination */}
@@ -867,14 +685,15 @@ export function ParticipantsPage() {
             <div className="bg-white rounded-lg p-6 w-full max-w-md">
               <div className="flex justify-between items-center mb-4">
                 <h2 className="text-xl font-semibold">
-                  Add New Participant
+                  {editingParticipant ? 'Edit Participant' : 'Add New Participant'}
                 </h2>
                 <button
                   onClick={() => {
                     setIsModalOpen(false);
+                    setEditingParticipant(null);
                     setFormData({
                       attendee_name: "",
-                      type: "participant",
+                      program_id: "all",
                       security_checkin: "",
                       reception_checkin: "",
                       reception_checkout: "",
@@ -903,22 +722,37 @@ export function ParticipantsPage() {
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700">
-                    Role
+                    Program
                   </label>
                   <select
-                    value={formData.type}
-                    onChange={(e) => setFormData({ ...formData, type: e.target.value })}
+                    value={formData.program_id}
+                    onChange={(e) => setFormData({ ...formData, program_id: e.target.value })}
                     className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-amber-500 focus:outline-none focus:ring-amber-500"
                   >
-                    <option value="participant">Participant</option>
-                    <option value="staff">Staff</option>
-                    <option value="admin">Admin</option>
+                    <option value="all">No Program</option>
+                    {programs.map((program) => (
+                      <option key={program.id} value={program.id}>
+                        {program.name} - {program.customer_name}
+                      </option>
+                    ))}
                   </select>
                 </div>
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700">
-                    Check In Time
+                    Security Check-In
+                  </label>
+                  <input
+                    type="datetime-local"
+                    value={formData.security_checkin}
+                    onChange={(e) => setFormData({ ...formData, security_checkin: e.target.value })}
+                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-amber-500 focus:outline-none focus:ring-amber-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">
+                    Reception Check-In
                   </label>
                   <input
                     type="datetime-local"
@@ -931,7 +765,7 @@ export function ParticipantsPage() {
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700">
-                    Check Out Time
+                    Reception Check-Out
                   </label>
                   <input
                     type="datetime-local"
@@ -939,6 +773,18 @@ export function ParticipantsPage() {
                     onChange={(e) => setFormData({ ...formData, reception_checkout: e.target.value })}
                     className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-amber-500 focus:outline-none focus:ring-amber-500"
                     required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">
+                    Security Check-Out
+                  </label>
+                  <input
+                    type="datetime-local"
+                    value={formData.security_checkout}
+                    onChange={(e) => setFormData({ ...formData, security_checkout: e.target.value })}
+                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-amber-500 focus:outline-none focus:ring-amber-500"
                   />
                 </div>
 
@@ -950,7 +796,7 @@ export function ParticipantsPage() {
                       setEditingParticipant(null);
                       setFormData({
                         attendee_name: "",
-                        type: "participant",
+                        program_id: "all",
                         security_checkin: "",
                         reception_checkin: "",
                         reception_checkout: "",

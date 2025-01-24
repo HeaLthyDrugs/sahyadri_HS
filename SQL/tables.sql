@@ -118,21 +118,23 @@ execute function update_updated_at_column ();
 create table
   public.participants (
     id uuid not null default extensions.uuid_generate_v4 (),
+    program_id uuid null references programs(id),
     attendee_name text not null,
     security_checkin timestamp with time zone null,
     reception_checkin timestamp with time zone not null,
     reception_checkout timestamp with time zone not null,
     security_checkout timestamp with time zone null,
     created_at timestamp with time zone not null default now(),
-    type text null default 'participant'::text,
-    program_id uuid null,
-    constraint participants_pkey primary key (id),
-    constraint participants_program_id_fkey foreign key (program_id) references programs (id) on delete cascade
+    constraint participants_pkey primary key (id)
   ) tablespace pg_default;
 
 create index if not exists participants_created_at_idx on public.participants using btree (created_at desc) tablespace pg_default;
 
 create index if not exists participants_attendee_name_idx on public.participants using btree (attendee_name) tablespace pg_default;
+
+create trigger participant_entry_calculator
+after insert on participants for each row
+execute function calculate_entries_on_participant_insert ();
 
 
 -- products table 
