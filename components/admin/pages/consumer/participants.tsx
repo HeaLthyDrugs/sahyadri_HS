@@ -12,7 +12,7 @@ import {
   RiFileTextLine
 } from "react-icons/ri";
 import { toast } from "react-hot-toast";
-import { format } from 'date-fns';
+import { format, startOfMonth, endOfMonth } from 'date-fns';
 import { parse, unparse } from 'papaparse';
 import { supabase } from "@/lib/supabase";
 
@@ -64,6 +64,7 @@ export function ParticipantsPage() {
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [programs, setPrograms] = useState<Program[]>([]);
   const [selectedProgramId, setSelectedProgramId] = useState<string>('all');
+  const [selectedMonth, setSelectedMonth] = useState<string>(format(new Date(), 'yyyy-MM'));
   const [searchQuery, setSearchQuery] = useState("");
   const [searchSuggestions, setSearchSuggestions] = useState<string[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
@@ -78,40 +79,104 @@ export function ParticipantsPage() {
   });
   const [editingParticipant, setEditingParticipant] = useState<Participant | null>(null);
 
-  const fetchParticipants = async () => {
+  const fetchPrograms = async () => {
+    setIsLoading(true);
     try {
+      const monthDate = new Date(selectedMonth);
+      const monthStart = startOfMonth(monthDate);
+      const monthEnd = endOfMonth(monthDate);
+
       const { data, error } = await supabase
-        .from('participants')
+        .from('programs')
         .select('*')
-        .order('created_at', { ascending: false });
+        .or(
+          `and(start_date.lte.${monthEnd.toISOString()},end_date.gte.${monthStart.toISOString()})`
+        )
+        .order('start_date', { ascending: false });
 
       if (error) throw error;
-      setParticipants(data || []);
+      
+      // Filter programs that overlap with the selected month
+      const filteredPrograms = data?.filter(program => {
+        const programStart = new Date(program.start_date);
+        const programEnd = new Date(program.end_date);
+        return (programStart <= monthEnd && programEnd >= monthStart);
+      });
+
+      setPrograms(filteredPrograms || []);
+      
+      // Reset program selection when month changes
+      setSelectedProgramId('all');
+    } catch (error) {
+      console.error('Error fetching programs:', error);
+      toast.error('Failed to fetch programs');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const fetchParticipants = async () => {
+    try {
+      let query = supabase
+        .from('participants')
+        .select('*, programs(*)')
+        .order('created_at', { ascending: false });
+
+      // Add month filter to the query
+      if (selectedMonth) {
+        const monthDate = new Date(selectedMonth);
+        const monthStart = startOfMonth(monthDate);
+        const monthEnd = endOfMonth(monthDate);
+
+        if (selectedProgramId === 'all') {
+          // First get programs that are active in the selected month
+          const { data: activePrograms } = await supabase
+            .from('programs')
+            .select('id')
+            .lte('start_date', monthEnd.toISOString())
+            .gte('end_date', monthStart.toISOString());
+
+          if (activePrograms && activePrograms.length > 0) {
+            const programIds = activePrograms.map(p => p.id);
+            query = query.in('program_id', programIds);
+          } else {
+            // If no active programs, return empty result
+            setParticipants([]);
+            return;
+          }
+        } else {
+          // For specific program, add the program filter
+          query = query.eq('program_id', selectedProgramId);
+        }
+
+        // Add check-in filter to include both null check-ins and check-ins within the month
+        query = query.or(`reception_checkin.is.null,and(reception_checkin.gte.${monthStart.toISOString()},reception_checkin.lte.${monthEnd.toISOString()})`);
+      }
+
+      const { data, error } = await query;
+
+      if (error) throw error;
+      
+      // Clean up the data to remove the programs object
+      const cleanedData = data?.map(({ programs, ...rest }) => rest) || [];
+      setParticipants(cleanedData);
     } catch (error) {
       console.error('Error fetching participants:', error);
       toast.error('Failed to fetch participants');
     }
   };
 
-  const fetchPrograms = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('programs')
-        .select('id, name, customer_name')
-        .order('name');
-
-      if (error) throw error;
-      setPrograms(data || []);
-    } catch (error) {
-      console.error('Error fetching programs:', error);
-      toast.error('Failed to fetch programs');
-    }
-  };
-
+  // Update useEffect to fetch programs when month changes
   useEffect(() => {
-    fetchPrograms();
+    if (selectedMonth) {
+      fetchPrograms();
+    }
+  }, [selectedMonth]);
+
+  // Update useEffect to fetch participants when month or program changes
+  useEffect(() => {
     fetchParticipants();
-  }, []);
+  }, [selectedMonth, selectedProgramId]);
 
   // Update search suggestions when search query changes
   useEffect(() => {
@@ -307,18 +372,23 @@ export function ParticipantsPage() {
       
             const participantData: Partial<Participant> = {
               attendee_name: attendeeName || 'Unknown Participant',
-              reception_checkin: receptionCheckin || new Date().toISOString(),
-              reception_checkout: receptionCheckout || new Date(new Date().setDate(new Date().getDate() + 1)).toISOString(),
               program_id: selectedProgramId
             };
-      
+
+            // Only add timing fields if they exist
+            if (receptionCheckin) {
+              participantData.reception_checkin = receptionCheckin;
+            }
+            if (receptionCheckout) {
+              participantData.reception_checkout = receptionCheckout;
+            }
             if (securityCheckin) {
               participantData.security_checkin = securityCheckin;
             }
             if (securityCheckout) {
               participantData.security_checkout = securityCheckout;
             }
-      
+
             return participantData;
           } catch (error) {
             console.error('Error processing row:', row, error);
@@ -556,6 +626,19 @@ export function ParticipantsPage() {
             />
           </div>
 
+          {/* Month Filter */}
+          <div className="flex items-center gap-2 bg-white rounded-lg shadow px-3 py-2 w-full sm:w-48">
+            <input
+              type="month"
+              value={selectedMonth}
+              onChange={(e) => {
+                setSelectedMonth(e.target.value);
+                setCurrentPage(1); // Reset to first page when changing filter
+              }}
+              className="w-full border-none focus:ring-0 text-sm"
+            />
+          </div>
+
           {/* Program Filter */}
           <div className="flex items-center gap-2 bg-white rounded-lg shadow px-3 py-2 w-full sm:w-96">
             <select
@@ -576,12 +659,33 @@ export function ParticipantsPage() {
           </div>
         </div>
 
+        {/* No Programs Message */}
+        {programs.length === 0 && (
+          <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mt-4">
+            <div className="flex items-center gap-2 text-amber-700">
+              <RiAlertLine className="w-5 h-5" />
+              <p>No programs found for {format(new Date(selectedMonth), 'MMMM yyyy')}.</p>
+            </div>
+          </div>
+        )}
+
         {/* Participants Table */}
         <div className="bg-white rounded-lg shadow overflow-hidden">
           {isImporting ? (
             <div className="flex flex-col items-center justify-center py-12">
               <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-amber-600"></div>
               <p className="mt-4 text-gray-600">Importing participants...</p>
+            </div>
+          ) : filteredParticipants.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-12 text-gray-500">
+              <RiFileTextLine className="w-12 h-12 text-gray-400 mb-4" />
+              <p className="text-lg font-medium">No participants found</p>
+              <p className="text-sm mt-2">
+                {selectedProgramId === 'all' 
+                  ? `No participants found for ${format(new Date(selectedMonth), 'MMMM yyyy')}`
+                  : `No participants found in ${programs.find(p => p.id === selectedProgramId)?.name || 'this program'}`
+                }
+              </p>
             </div>
           ) : (
             <div className="overflow-x-auto">
@@ -623,6 +727,18 @@ export function ParticipantsPage() {
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="text-sm font-medium text-gray-900">
                           {participant.attendee_name}
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {!participant.reception_checkin && (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800">
+                                Missing Reception Check-In
+                              </span>
+                            )}
+                            {!participant.reception_checkout && (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800">
+                                Missing Reception Check-Out
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
@@ -643,20 +759,32 @@ export function ParticipantsPage() {
                         )}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm text-gray-500">
-                          <div>{format(new Date(participant.reception_checkin), 'dd MMM yyyy')}</div>
-                          <div className="text-xs text-gray-400">
-                            {format(new Date(participant.reception_checkin), 'h:mm a')}
+                        {participant.reception_checkin ? (
+                          <div className="text-sm text-gray-500">
+                            <div>{format(new Date(participant.reception_checkin), 'dd MMM yyyy')}</div>
+                            <div className="text-xs text-gray-400">
+                              {format(new Date(participant.reception_checkin), 'h:mm a')}
+                            </div>
                           </div>
-                        </div>
+                        ) : (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-50 text-red-700">
+                            Not Checked In
+                          </span>
+                        )}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm text-gray-500">
-                          <div>{format(new Date(participant.reception_checkout), 'dd MMM yyyy')}</div>
-                          <div className="text-xs text-gray-400">
-                            {format(new Date(participant.reception_checkout), 'h:mm a')}
+                        {participant.reception_checkout ? (
+                          <div className="text-sm text-gray-500">
+                            <div>{format(new Date(participant.reception_checkout), 'dd MMM yyyy')}</div>
+                            <div className="text-xs text-gray-400">
+                              {format(new Date(participant.reception_checkout), 'h:mm a')}
+                            </div>
                           </div>
-                        </div>
+                        ) : (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-50 text-red-700">
+                            Not Checked Out
+                          </span>
+                        )}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         {participant.security_checkout ? (
