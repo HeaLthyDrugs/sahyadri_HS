@@ -256,6 +256,13 @@ export function ParticipantsPage() {
     const file = event.target.files?.[0];
     if (!file) return;
 
+    // Check if a specific program is selected
+    if (selectedProgramId === 'all') {
+      toast.error('Please select a specific program before importing participants');
+      event.target.value = '';
+      return;
+    }
+
     event.target.value = '';
     setIsImporting(true);
 
@@ -302,7 +309,7 @@ export function ParticipantsPage() {
               attendee_name: attendeeName || 'Unknown Participant',
               reception_checkin: receptionCheckin || new Date().toISOString(),
               reception_checkout: receptionCheckout || new Date(new Date().setDate(new Date().getDate() + 1)).toISOString(),
-              program_id: undefined
+              program_id: selectedProgramId
             };
       
             if (securityCheckin) {
@@ -324,17 +331,50 @@ export function ParticipantsPage() {
           throw new Error('No valid data found in file');
         }
 
-        const { error } = await supabase
-          .from('participants')
-          .insert(importData);
+        // Split the data into smaller chunks of 20 records
+        const chunkSize = 20;
+        const chunks = [];
+        for (let i = 0; i < importData.length; i += chunkSize) {
+          chunks.push(importData.slice(i, i + chunkSize));
+        }
 
-        if (error) throw error;
+        let insertedCount = 0;
+        
+        // Process each chunk in sequence with a delay between chunks
+        for (const chunk of chunks) {
+          try {
+            const { error } = await supabase
+              .from('participants')
+              .insert(chunk);
 
-        toast.success(`Successfully imported ${importData.length} participants`);
+            if (error) {
+              console.error('Chunk insert error:', error);
+              throw error;
+            }
+            
+            insertedCount += chunk.length;
+            // Show progress
+            toast.success(`Imported ${insertedCount} of ${importData.length} participants...`, {
+              duration: 1000,
+            });
+
+            // Add a small delay between chunks to prevent overload
+            await new Promise(resolve => setTimeout(resolve, 500));
+          } catch (error: any) {
+            console.error('Error processing chunk:', error);
+            throw new Error(`Failed to import chunk: ${error.message}`);
+          }
+        }
+
+        toast.success(`Successfully imported ${importData.length} participants to ${programs.find(p => p.id === selectedProgramId)?.name}`);
         fetchParticipants();
-      } catch (error) {
+      } catch (error: any) {
         console.error('Error importing file:', error);
-        toast.error('Failed to import participants. Please check the console for details.');
+        if (error.message?.includes('timeout') || error.code === '40P01') {
+          toast.error('Import process failed. Please try with a smaller file or contact support.');
+        } else {
+          toast.error(`Failed to import participants: ${error.message}`);
+        }
       } finally {
         setIsImporting(false);
       }
