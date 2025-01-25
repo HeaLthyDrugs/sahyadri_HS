@@ -124,6 +124,8 @@ function Pagination({
 
 export function ProgramsPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [programToDelete, setProgramToDelete] = useState<Program | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [editingProgram, setEditingProgram] = useState<Program | null>(null);
   const [programs, setPrograms] = useState<Program[]>([]);
@@ -247,20 +249,23 @@ export function ProgramsPage() {
   };
 
   const handleDelete = async (id: string) => {
-    if (window.confirm("Are you sure you want to delete this program?")) {
-      try {
-        const { error } = await supabase
-          .from('programs')
-          .delete()
-          .eq('id', id);
+    try {
+      setIsLoading(true);
+      const { error } = await supabase
+        .from('programs')
+        .delete()
+        .eq('id', id);
 
-        if (error) throw error;
-        toast.success('Program deleted successfully');
-        fetchPrograms();
-      } catch (error) {
-        console.error('Error deleting program:', error);
-        toast.error('Failed to delete program');
-      }
+      if (error) throw error;
+      toast.success('Program deleted successfully');
+      fetchPrograms();
+      setIsDeleteModalOpen(false);
+      setProgramToDelete(null);
+    } catch (error) {
+      console.error('Error deleting program:', error);
+      toast.error('Failed to delete program');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -631,7 +636,10 @@ export function ProgramsPage() {
                       <RiEditLine className="w-5 h-5" />
                     </button>
                     <button
-                      onClick={() => handleDelete(program.id)}
+                      onClick={() => {
+                        setProgramToDelete(program);
+                        setIsDeleteModalOpen(true);
+                      }}
                       className="text-red-600 hover:text-red-900"
                     >
                       <RiDeleteBinLine className="w-5 h-5" />
@@ -787,7 +795,10 @@ export function ProgramsPage() {
                           <RiEditLine className="w-5 h-5" />
                         </button>
                         <button
-                          onClick={() => handleDelete(program.id)}
+                          onClick={() => {
+                            setProgramToDelete(program);
+                            setIsDeleteModalOpen(true);
+                          }}
                           className="text-red-600 hover:text-red-900"
                         >
                           <RiDeleteBinLine className="w-5 h-5" />
@@ -961,6 +972,70 @@ export function ProgramsPage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {isDeleteModalOpen && programToDelete && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-full max-w-md">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-semibold text-gray-900">Delete Program</h2>
+              <button
+                onClick={() => {
+                  setIsDeleteModalOpen(false);
+                  setProgramToDelete(null);
+                }}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                <RiCloseLine className="w-6 h-6" />
+              </button>
+            </div>
+
+            <div className="mb-6">
+              <p className="text-gray-600 mb-4">
+                Are you sure you want to delete the program "{programToDelete.name}"? This action cannot be undone.
+              </p>
+              <div className="bg-amber-50 border-l-4 border-amber-400 p-4 mb-4">
+                <div className="flex items-start">
+                  <div className="flex-shrink-0">
+                    <svg className="h-5 w-5 text-amber-400" viewBox="0 0 20 20" fill="currentColor">
+                      <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                    </svg>
+                  </div>
+                  <div className="ml-3">
+                    <p className="text-sm text-amber-700">
+                      This will also delete all related:
+                    </p>
+                    <ul className="mt-2 text-sm text-amber-700 list-disc list-inside">
+                      <li>Participants</li>
+                      <li>Billing entries</li>
+                      <li>Invoices</li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-4">
+              <button
+                onClick={() => {
+                  setIsDeleteModalOpen(false);
+                  setProgramToDelete(null);
+                }}
+                className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => handleDelete(programToDelete.id)}
+                disabled={isLoading}
+                className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 disabled:opacity-50"
+              >
+                {isLoading ? "Deleting..." : "Delete Program"}
+              </button>
+            </div>
           </div>
         </div>
       )}

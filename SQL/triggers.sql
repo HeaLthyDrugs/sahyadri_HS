@@ -1,144 +1,157 @@
--- Drop existing functions and triggers
-DROP FUNCTION IF EXISTS recalculate_program_entries(uuid);
-DROP FUNCTION IF EXISTS calculate_entries_on_participant_insert() CASCADE;
-
--- Create the updated trigger function
-CREATE OR REPLACE FUNCTION calculate_entries_on_participant_insert()
+-- Function to calculate entries when a participant is inserted/updated/deleted
+CREATE OR REPLACE FUNCTION calculate_entries_for_participant()
 RETURNS TRIGGER AS $$
 DECLARE
-  program_record RECORD;
-  product_record RECORD;
-  curr_date DATE;
-  checkin_time TIME;
-  checkout_time TIME;
+    program_record RECORD;
+    product_record RECORD;
+    normal_package_id UUID;
+    check_date DATE;
+    time_of_day TIMESTAMP;
+    entry_exists INTEGER;
+    program_id UUID;
 BEGIN
-  -- Get program details
-  SELECT * INTO program_record FROM programs WHERE id = NEW.program_id;
-  
-  -- For each day the participant is present
-  FOR curr_date IN 
-    SELECT generate_series(
-      DATE(NEW.reception_checkin),
-      DATE(NEW.reception_checkout),
-      '1 day'::interval
-    )::date
-  LOOP
-    -- Set checkin/checkout times
-    IF DATE(NEW.reception_checkin) = curr_date THEN
-      checkin_time := NEW.reception_checkin::time;
-    ELSE
-      checkin_time := '00:00:00'::time;
+    -- Get the normal package ID
+    SELECT id INTO normal_package_id 
+    FROM packages 
+    WHERE type = 'Normal' 
+    LIMIT 1;
+
+    -- If no normal package exists, exit
+    IF normal_package_id IS NULL THEN
+        RETURN NULL;
     END IF;
 
-    IF DATE(NEW.reception_checkout) = curr_date THEN
-      checkout_time := NEW.reception_checkout::time;
+    -- Get program ID based on operation type
+    IF TG_OP = 'DELETE' THEN
+        program_id := OLD.program_id;
     ELSE
-      checkout_time := '23:59:59'::time;
+        program_id := NEW.program_id;
     END IF;
 
-    -- For each product
-    FOR product_record IN 
-      SELECT p.* 
-      FROM products p
-      WHERE p.package_id IS NOT NULL
-    LOOP
-      -- Check if participant was present during the product's time slot
-      IF (checkin_time <= product_record.slot_end AND 
-          checkout_time >= product_record.slot_start)
-      THEN
-        -- Insert or update billing entry
-        INSERT INTO billing_entries (
-          id,
-          program_id,
-          package_id,
-          product_id,
-          entry_date,
-          quantity
-        ) VALUES (
-          gen_random_uuid(),
-          NEW.program_id,
-          product_record.package_id,
-          product_record.id,
-          curr_date,
-          1
-        )
-        ON CONFLICT (program_id, package_id, product_id, entry_date)
-        DO UPDATE SET 
-          quantity = billing_entries.quantity + 1;
-      END IF;
-    END LOOP;
-  END LOOP;
-  
-  RETURN NEW;
+    -- Get program details
+    SELECT p.* INTO program_record 
+    FROM programs p
+    WHERE p.id = program_id;
+
+    -- If no program found, exit
+    IF program_record IS NULL THEN
+        RETURN NULL;
+    END IF;
+
+    -- Handle INSERT or UPDATE
+    IF (TG_OP = 'INSERT' OR TG_OP = 'UPDATE') THEN
+        -- Loop through each date between check-in and check-out
+        check_date := DATE(NEW.reception_checkin);
+        WHILE check_date <= DATE(NEW.reception_checkout) LOOP
+            -- For each product in the normal package
+            FOR product_record IN (
+                SELECT p.* 
+                FROM products p
+                WHERE p.package_id = normal_package_id
+                ORDER BY p.slot_start
+            ) LOOP
+                -- Create timestamp for product's time slot on current date
+                time_of_day := check_date + product_record.slot_start;
+                
+                -- Check if participant was present during the product's time slot
+                IF (NEW.reception_checkin <= time_of_day AND 
+                    NEW.reception_checkout >= time_of_day) THEN
+                    
+                    -- Check if entry already exists
+                    SELECT COUNT(*) INTO entry_exists
+                    FROM billing_entries be
+                    WHERE be.program_id = program_record.id
+                    AND be.package_id = normal_package_id
+                    AND be.product_id = product_record.id
+                    AND be.entry_date = check_date;
+
+                    -- If entry exists, increment quantity
+                    IF entry_exists > 0 THEN
+                        UPDATE billing_entries be
+                        SET quantity = quantity + 1
+                        WHERE be.program_id = program_record.id
+                        AND be.package_id = normal_package_id
+                        AND be.product_id = product_record.id
+                        AND be.entry_date = check_date;
+                    ELSE
+                        -- If entry doesn't exist, create new entry with generated UUID
+                        INSERT INTO billing_entries (
+                            id,
+                            program_id,
+                            package_id,
+                            product_id,
+                            entry_date,
+                            quantity
+                        ) VALUES (
+                            gen_random_uuid(),
+                            program_record.id,
+                            normal_package_id,
+                            product_record.id,
+                            check_date,
+                            1
+                        );
+                    END IF;
+                END IF;
+            END LOOP;
+            
+            check_date := check_date + INTERVAL '1 day';
+        END LOOP;
+    END IF;
+
+    -- Handle DELETE or UPDATE (old record)
+    IF (TG_OP = 'DELETE' OR TG_OP = 'UPDATE') THEN
+        -- Loop through each date between check-in and check-out
+        check_date := DATE(OLD.reception_checkin);
+        WHILE check_date <= DATE(OLD.reception_checkout) LOOP
+            -- For each product in the normal package
+            FOR product_record IN (
+                SELECT p.* 
+                FROM products p
+                WHERE p.package_id = normal_package_id
+                ORDER BY p.slot_start
+            ) LOOP
+                -- Create timestamp for product's time slot on current date
+                time_of_day := check_date + product_record.slot_start;
+                
+                -- Check if participant was present during the product's time slot
+                IF (OLD.reception_checkin <= time_of_day AND 
+                    OLD.reception_checkout >= time_of_day) THEN
+                    
+                    -- Decrement quantity
+                    UPDATE billing_entries be
+                    SET quantity = quantity - 1
+                    WHERE be.program_id = program_record.id
+                    AND be.package_id = normal_package_id
+                    AND be.product_id = product_record.id
+                    AND be.entry_date = check_date
+                    AND quantity > 0;
+
+                    -- Delete entry if quantity becomes 0
+                    DELETE FROM billing_entries be
+                    WHERE be.program_id = program_record.id
+                    AND be.package_id = normal_package_id
+                    AND be.product_id = product_record.id
+                    AND be.entry_date = check_date
+                    AND quantity <= 0;
+                END IF;
+            END LOOP;
+            
+            check_date := check_date + INTERVAL '1 day';
+        END LOOP;
+    END IF;
+
+    IF TG_OP = 'DELETE' THEN
+        RETURN OLD;
+    END IF;
+    RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
 
--- Create the trigger
+-- Drop existing triggers if they exist
+DROP TRIGGER IF EXISTS participant_entry_calculator ON participants;
+
+-- Create triggers for INSERT, UPDATE, and DELETE operations
 CREATE TRIGGER participant_entry_calculator
-AFTER INSERT ON participants
-FOR EACH ROW
-EXECUTE FUNCTION calculate_entries_on_participant_insert();
-
--- Update the recalculation function as well
-CREATE OR REPLACE FUNCTION recalculate_program_entries(program_id_param uuid)
-RETURNS void AS $$
-BEGIN
-  -- Clear existing entries for this program
-  DELETE FROM billing_entries WHERE program_id = program_id_param;
-  
-  -- Insert new entries with proper time slot handling
-  WITH participant_days AS (
-    SELECT 
-      p.id as participant_id,
-      p.program_id,
-      d.date,
-      CASE 
-        WHEN DATE(p.reception_checkin) = d.date THEN p.reception_checkin::time
-        ELSE '00:00:00'::time
-      END as day_checkin,
-      CASE 
-        WHEN DATE(p.reception_checkout) = d.date THEN p.reception_checkout::time
-        ELSE '23:59:59'::time
-      END as day_checkout
-    FROM 
-      participants p
-      CROSS JOIN (
-        SELECT generate_series(
-          DATE(MIN(p2.reception_checkin)),
-          DATE(MAX(p2.reception_checkout)),
-          '1 day'::interval
-        )::date as date
-        FROM participants p2
-        WHERE p2.program_id = program_id_param
-      ) d
-    WHERE 
-      p.program_id = program_id_param
-      AND DATE(p.reception_checkin) <= d.date
-      AND DATE(p.reception_checkout) >= d.date
-  )
-  INSERT INTO billing_entries (
-    id,
-    program_id,
-    package_id,
-    product_id,
-    entry_date,
-    quantity
-  )
-  SELECT 
-    gen_random_uuid(),
-    pd.program_id,
-    pr.package_id,
-    pr.id as product_id,
-    pd.date as entry_date,
-    COUNT(DISTINCT pd.participant_id) as quantity
-  FROM 
-    participant_days pd
-    CROSS JOIN products pr
-  WHERE 
-    pd.day_checkin <= pr.slot_end
-    AND pd.day_checkout >= pr.slot_start
-  GROUP BY 
-    pd.program_id, pr.package_id, pr.id, pd.date;
-END;
-$$ LANGUAGE plpgsql;
-
+    AFTER INSERT OR UPDATE OR DELETE ON participants
+    FOR EACH ROW
+    EXECUTE FUNCTION calculate_entries_for_participant();

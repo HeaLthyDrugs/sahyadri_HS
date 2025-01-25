@@ -2,7 +2,7 @@
 create table
   public.billing_entries (
     id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
-    program_id uuid REFERENCES programs(id),
+    program_id uuid REFERENCES programs(id) ON DELETE CASCADE,
     package_id uuid REFERENCES packages(id),
     product_id uuid REFERENCES products(id),
     entry_date date NOT NULL,
@@ -63,7 +63,7 @@ create table
   public.invoices (
     id uuid not null default gen_random_uuid (),
     package_id uuid not null,
-    program_id uuid null,
+    program_id uuid null references programs(id) ON DELETE CASCADE,
     invoice_number character varying(50) not null,
     invoice_date date not null,
     billing_period_start date not null,
@@ -76,7 +76,6 @@ create table
     updated_at timestamp with time zone null default now(),
     constraint invoices_pkey primary key (id),
     constraint invoices_package_id_fkey foreign key (package_id) references packages (id),
-    constraint invoices_program_id_fkey foreign key (program_id) references programs (id),
     constraint invoices_status_check check (
       (
         (status)::text = any (
@@ -118,7 +117,7 @@ execute function update_updated_at_column ();
 create table
   public.participants (
     id uuid not null default extensions.uuid_generate_v4 (),
-    program_id uuid null references programs(id),
+    program_id uuid null references programs(id) ON DELETE CASCADE,
     attendee_name text not null,
     security_checkin timestamp with time zone null,
     reception_checkin timestamp with time zone not null,

@@ -79,6 +79,26 @@ export function ParticipantsPage() {
   });
   const [editingParticipant, setEditingParticipant] = useState<Participant | null>(null);
 
+  const calculateDuration = (checkin: string, checkout: string): string => {
+    try {
+      const start = new Date(checkin);
+      const end = new Date(checkout);
+      const diff = end.getTime() - start.getTime();
+      
+      // Calculate days and remaining hours
+      const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+      const remainingHours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+      
+      // Format the duration string
+      if (days > 0) {
+        return `${days}d ${remainingHours}h`;
+      }
+      return `${remainingHours}h`;
+    } catch {
+      return '-';
+    }
+  };
+
   const fetchPrograms = async () => {
     setIsLoading(true);
     try {
@@ -198,27 +218,36 @@ export function ParticipantsPage() {
     setIsLoading(true);
 
     try {
-      const checkinDate = new Date(formData.reception_checkin);
-      const checkoutDate = new Date(formData.reception_checkout);
+      const participantData: Partial<Participant> = {
+        attendee_name: formData.attendee_name,
+        program_id: formData.program_id === 'all' ? undefined : formData.program_id,
+      };
 
-      if (checkinDate > checkoutDate) {
-        toast.error('Check-in time cannot be later than check-out time');
-        setIsLoading(false);
-        return;
+      // Only add dates if they are provided
+      if (formData.security_checkin) {
+        participantData.security_checkin = new Date(formData.security_checkin).toISOString();
+      }
+      if (formData.reception_checkin) {
+        participantData.reception_checkin = new Date(formData.reception_checkin).toISOString();
+      }
+      if (formData.reception_checkout) {
+        participantData.reception_checkout = new Date(formData.reception_checkout).toISOString();
+      }
+      if (formData.security_checkout) {
+        participantData.security_checkout = new Date(formData.security_checkout).toISOString();
       }
 
-      const participantData = {
-        attendee_name: formData.attendee_name,
-        program_id: formData.program_id === 'all' ? null : formData.program_id,
-        ...(formData.security_checkin && {
-          security_checkin: new Date(formData.security_checkin).toISOString()
-        }),
-        reception_checkin: checkinDate.toISOString(),
-        reception_checkout: checkoutDate.toISOString(),
-        ...(formData.security_checkout && {
-          security_checkout: new Date(formData.security_checkout).toISOString()
-        })
-      };
+      // Validate check-in/out sequence if both dates are present
+      if (participantData.reception_checkin && participantData.reception_checkout) {
+        const checkinDate = new Date(participantData.reception_checkin);
+        const checkoutDate = new Date(participantData.reception_checkout);
+
+        if (checkinDate > checkoutDate) {
+          toast.error('Check-in time cannot be later than check-out time');
+          setIsLoading(false);
+          return;
+        }
+      }
 
       if (editingParticipant) {
         const { error } = await supabase
@@ -472,10 +501,18 @@ export function ParticipantsPage() {
     setFormData({
       attendee_name: participant.attendee_name,
       program_id: participant.program_id || 'all',
-      security_checkin: participant.security_checkin ? format(new Date(participant.security_checkin), "yyyy-MM-dd'T'HH:mm") : "",
-      reception_checkin: format(new Date(participant.reception_checkin), "yyyy-MM-dd'T'HH:mm"),
-      reception_checkout: format(new Date(participant.reception_checkout), "yyyy-MM-dd'T'HH:mm"),
-      security_checkout: participant.security_checkout ? format(new Date(participant.security_checkout), "yyyy-MM-dd'T'HH:mm") : "",
+      security_checkin: participant.security_checkin 
+        ? format(new Date(participant.security_checkin), "yyyy-MM-dd'T'HH:mm") 
+        : "",
+      reception_checkin: participant.reception_checkin 
+        ? format(new Date(participant.reception_checkin), "yyyy-MM-dd'T'HH:mm")
+        : "",
+      reception_checkout: participant.reception_checkout 
+        ? format(new Date(participant.reception_checkout), "yyyy-MM-dd'T'HH:mm")
+        : "",
+      security_checkout: participant.security_checkout 
+        ? format(new Date(participant.security_checkout), "yyyy-MM-dd'T'HH:mm")
+        : "",
     });
     setIsModalOpen(true);
   };
@@ -632,7 +669,9 @@ export function ParticipantsPage() {
               type="month"
               value={selectedMonth}
               onChange={(e) => {
-                setSelectedMonth(e.target.value);
+                // If cleared, set to current month
+                const newValue = e.target.value || format(new Date(), 'yyyy-MM');
+                setSelectedMonth(newValue);
                 setCurrentPage(1); // Reset to first page when changing filter
               }}
               className="w-full border-none focus:ring-0 text-sm"
@@ -682,7 +721,7 @@ export function ParticipantsPage() {
               <p className="text-lg font-medium">No participants found</p>
               <p className="text-sm mt-2">
                 {selectedProgramId === 'all' 
-                  ? `No participants found for ${format(new Date(selectedMonth), 'MMMM yyyy')}`
+                  ? `No participants found for ${selectedMonth ? format(new Date(selectedMonth), 'MMMM yyyy') : 'the selected period'}`
                   : `No participants found in ${programs.find(p => p.id === selectedProgramId)?.name || 'this program'}`
                 }
               </p>
@@ -702,16 +741,13 @@ export function ParticipantsPage() {
                       Program
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Security Check-In
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Reception Check-In
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Reception Check-Out
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Security Check-Out
+                      Duration
                     </th>
                     <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Actions
@@ -747,18 +783,6 @@ export function ParticipantsPage() {
                         </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
-                        {participant.security_checkin ? (
-                          <div className="text-sm text-gray-500">
-                            <div>{format(new Date(participant.security_checkin), 'dd MMM yyyy')}</div>
-                            <div className="text-xs text-gray-400">
-                              {format(new Date(participant.security_checkin), 'h:mm a')}
-                            </div>
-                          </div>
-                        ) : (
-                          <span className="text-sm text-gray-400">-</span>
-                        )}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
                         {participant.reception_checkin ? (
                           <div className="text-sm text-gray-500">
                             <div>{format(new Date(participant.reception_checkin), 'dd MMM yyyy')}</div>
@@ -787,15 +811,14 @@ export function ParticipantsPage() {
                         )}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
-                        {participant.security_checkout ? (
+                        {participant.reception_checkin && participant.reception_checkout ? (
                           <div className="text-sm text-gray-500">
-                            <div>{format(new Date(participant.security_checkout), 'dd MMM yyyy')}</div>
-                            <div className="text-xs text-gray-400">
-                              {format(new Date(participant.security_checkout), 'h:mm a')}
-                            </div>
+                            {calculateDuration(participant.reception_checkin, participant.reception_checkout)}
                           </div>
                         ) : (
-                          <span className="text-sm text-gray-400">-</span>
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-700">
+                            Not Available
+                          </span>
                         )}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-2">
@@ -862,10 +885,8 @@ export function ParticipantsPage() {
                     setFormData({
                       attendee_name: "",
                       program_id: "all",
-                      security_checkin: "",
                       reception_checkin: "",
                       reception_checkout: "",
-                      security_checkout: "",
                     });
                   }}
                   className="text-gray-500 hover:text-gray-700"
@@ -908,18 +929,6 @@ export function ParticipantsPage() {
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700">
-                    Security Check-In
-                  </label>
-                  <input
-                    type="datetime-local"
-                    value={formData.security_checkin}
-                    onChange={(e) => setFormData({ ...formData, security_checkin: e.target.value })}
-                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-amber-500 focus:outline-none focus:ring-amber-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">
                     Reception Check-In
                   </label>
                   <input
@@ -944,18 +953,6 @@ export function ParticipantsPage() {
                   />
                 </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">
-                    Security Check-Out
-                  </label>
-                  <input
-                    type="datetime-local"
-                    value={formData.security_checkout}
-                    onChange={(e) => setFormData({ ...formData, security_checkout: e.target.value })}
-                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-amber-500 focus:outline-none focus:ring-amber-500"
-                  />
-                </div>
-
                 <div className="flex justify-end gap-3 mt-6">
                   <button
                     type="button"
@@ -965,10 +962,8 @@ export function ParticipantsPage() {
                       setFormData({
                         attendee_name: "",
                         program_id: "all",
-                        security_checkin: "",
                         reception_checkin: "",
                         reception_checkout: "",
-                        security_checkout: "",
                       });
                     }}
                     className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"

@@ -299,88 +299,88 @@ export function BillingEntriesPage() {
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [selectedProducts, setSelectedProducts] = useState<ProductChip[]>([]);
   const [isFullScreenMode, setIsFullScreenMode] = useState(false);
+  const [showKeyboardGuide, setShowKeyboardGuide] = useState(true);
 
   // Add ref for managing focus
-  const tableRef = useRef<HTMLTableElement>(null);
+  const tableRef = useRef<HTMLDivElement>(null);
   const [focusedCell, setFocusedCell] = useState<{ row: number; col: number } | null>(null);
 
-  // Modify the handleKeyDown function for table cells
-  const handleKeyDown = (
-    e: React.KeyboardEvent<HTMLInputElement>,
-    rowIndex: number,
-    colIndex: number
-  ) => {
+  // Add this function to handle keyboard navigation
+  const handleKeyDown = async (e: React.KeyboardEvent<HTMLInputElement>, rowIndex: number, colIndex: number) => {
     const totalRows = products.length;
     const totalCols = dateRange.length;
+    let nextRow = rowIndex;
+    let nextCol = colIndex;
 
     switch (e.key) {
       case 'ArrowUp':
         e.preventDefault();
-        if (rowIndex > 0) {
-          focusCell(rowIndex - 1, colIndex);
-        }
+        nextRow = Math.max(0, rowIndex - 1);
+        focusCell(nextRow, colIndex);
         break;
       case 'ArrowDown':
         e.preventDefault();
-        if (rowIndex < totalRows - 1) {
-          focusCell(rowIndex + 1, colIndex);
-        }
+        nextRow = Math.min(totalRows - 1, rowIndex + 1);
+        focusCell(nextRow, colIndex);
         break;
       case 'ArrowLeft':
         e.preventDefault();
-        if (colIndex > 0) {
-          focusCell(rowIndex, colIndex - 1);
-        }
+        nextCol = Math.max(0, colIndex - 1);
+        focusCell(rowIndex, nextCol);
         break;
       case 'ArrowRight':
+      case 'Tab':
         e.preventDefault();
-        if (colIndex < totalCols - 1) {
-          focusCell(rowIndex, colIndex + 1);
+        nextCol = Math.min(totalCols - 1, colIndex + 1);
+        if (nextCol === colIndex && rowIndex < totalRows - 1) {
+          nextCol = 0;
+          nextRow = rowIndex + 1;
         }
+        focusCell(nextRow, nextCol);
         break;
       case 'Enter':
         e.preventDefault();
-        if (isFullScreenMode) {
-          // Save the current value before saving all entries
-          const currentValue = e.currentTarget.value;
-          handleSave().then(() => {
-            // After saving, restore focus and value
-            setTimeout(() => {
-              focusCell(rowIndex, colIndex);
-              const input = tableRef.current?.querySelector(
-                `input[data-row="${rowIndex}"][data-col="${colIndex}"]`
-              ) as HTMLInputElement;
-              if (input) {
-                input.value = currentValue;
-              }
-            }, 100);
-          });
-        } else {
-          // Regular enter behavior - move down
-          if (rowIndex < totalRows - 1) {
-            focusCell(rowIndex + 1, colIndex);
-          }
+        // Save entries and maintain current focus
+        const currentInput = e.currentTarget;
+        try {
+          await handleSave();
+          toast.success('Entries saved successfully');
+          // Restore focus to current cell
+          setTimeout(() => {
+            currentInput.focus();
+            currentInput.select();
+          }, 100);
+        } catch (error) {
+          console.error('Error saving entries:', error);
+          toast.error('Failed to save entries');
         }
         break;
-      case 'Tab':
-        // Don't prevent default Tab behavior
-        // but update the focused cell state
-        setFocusedCell({
-          row: rowIndex,
-          col: e.shiftKey ? colIndex - 1 : colIndex + 1
-        });
-        break;
+      default:
+        return;
     }
   };
 
-  // Function to focus a specific cell
+  // Add this function to handle cell focusing
   const focusCell = (rowIndex: number, colIndex: number) => {
-    const cell = tableRef.current?.querySelector(
+    const cell = document.querySelector(
       `input[data-row="${rowIndex}"][data-col="${colIndex}"]`
     ) as HTMLInputElement;
-    
+
     if (cell) {
+      // Scroll cell into view if needed
+      const cellRect = cell.getBoundingClientRect();
+      const tableRect = tableRef.current?.getBoundingClientRect();
+
+      if (tableRect) {
+        if (cellRect.bottom > tableRect.bottom) {
+          cell.scrollIntoView({ block: 'end', behavior: 'smooth' });
+        } else if (cellRect.top < tableRect.top) {
+          cell.scrollIntoView({ block: 'start', behavior: 'smooth' });
+        }
+      }
+
       cell.focus();
+      cell.select();
       setFocusedCell({ row: rowIndex, col: colIndex });
     }
   };
@@ -617,12 +617,19 @@ export function BillingEntriesPage() {
   };
 
   const handleQuantityChange = (date: string, productId: string, value: string) => {
-    const quantity = parseInt(value) || 0;
+    // Remove the Normal package check to allow editing
+    const newValue = value === '' ? '0' : value;
+    const numericValue = parseInt(newValue, 10);
+
+    if (isNaN(numericValue)) {
+      return;
+    }
+
     setEntryData(prev => ({
       ...prev,
       [date]: {
-        ...prev[date],
-        [productId]: quantity
+        ...(prev[date] || {}),
+        [productId]: numericValue
       }
     }));
   };
@@ -872,6 +879,13 @@ export function BillingEntriesPage() {
     setSelectedProducts(prev => prev.filter(p => p.id !== productId));
   };
 
+  // Add this helper function near the top of the file
+  const isNormalPackageProduct = (productId: string, products: Product[], packages: Package[]) => {
+    const product = products.find(p => p.id === productId);
+    const package_ = packages.find(p => p.id === product?.package_id);
+    return package_?.type === 'Normal';
+  };
+
   return (
     <div className={`${isFullScreenMode ? 'fixed inset-0 bg-white z-50' : 'p-4'}`}>
       {/* Toggle Full Screen Button - Only show when table is ready */}
@@ -951,145 +965,127 @@ export function BillingEntriesPage() {
 
             {/* Table Container */}
             {dateRange.length > 0 && (
-              <div className={`
-                bg-white rounded-lg shadow overflow-hidden max-w-[90vw] mx-auto
-                ${isFullScreenMode ? 'flex-1 flex flex-col' : ''}
-              `}>
-                <div className={`
-                  overflow-auto
-                  ${isFullScreenMode ? 'flex-1' : ''}
-                `}>
-                  <table ref={tableRef} className="w-full border-collapse">
-                    <thead className="sticky top-0 bg-white z-20">
-                      <tr>
-                        <th className="border p-2 bg-gray-50 sticky left-0 z-30 min-w-[200px] max-w-[300px]">
-                          Product Name
+              <div 
+                ref={tableRef}
+                className="overflow-auto flex-1 border rounded-lg"
+                style={{ maxHeight: isFullScreenMode ? 'calc(100vh - 180px)' : '70vh' }}
+              >
+                <table className="min-w-full border-collapse">
+                  <thead className="sticky top-0 bg-white z-20">
+                    <tr>
+                      <th className="border p-2 bg-gray-50 sticky left-0 z-30 min-w-[200px] max-w-[300px]">
+                        Product Name
+                      </th>
+                      {dateRange.map(date => (
+                        <th 
+                          key={date.toISOString()} 
+                          className="border p-2 bg-gray-50 min-w-[80px] max-w-[100px] sticky top-0"
+                        >
+                          <div className="flex flex-col">
+                            {format(date, 'dd-MM-yyyy')}
+                            <button
+                              onClick={() => handleCopyPrevious(date)}
+                              className="text-xs text-blue-500 hover:text-blue-700"
+                              title="Copy previous day's entries"
+                            >
+                              <RiCalendarLine />
+                            </button>
+                          </div>
                         </th>
-                        {dateRange.map(date => (
-                          <th 
-                            key={date.toISOString()} 
-                            className="border p-2 bg-gray-50 min-w-[80px] max-w-[100px] sticky top-0"
-                          >
-                            <div className="flex flex-col">
-                              {format(date, 'dd-MM-yyyy')}
-                              <button
-                                onClick={() => handleCopyPrevious(date)}
-                                className="text-xs text-blue-500 hover:text-blue-700"
-                                title="Copy previous day's entries"
+                      ))}
+                      {showSummary && (
+                        <>
+                          <th className="border p-2 bg-gray-50 sticky top-0">Total</th>
+                          <th className="border p-2 bg-gray-50 sticky top-0">Average</th>
+                          <th className="border p-2 bg-gray-50 sticky top-0">Max</th>
+                          <th className="border p-2 bg-gray-50 sticky top-0">Min</th>
+                        </>
+                      )}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {products
+                      .filter(product => 
+                        selectedProducts.length === 0 || 
+                        selectedProducts.some(sp => sp.id === product.id)
+                      )
+                      .map((product, rowIndex) => (
+                        <tr key={product.id}>
+                          <td className="border p-2 bg-gray-50 font-medium sticky left-0 z-10 whitespace-nowrap">
+                            {product.name}
+                          </td>
+                          {dateRange.map((date, colIndex) => {
+                            const dateStr = format(date, 'yyyy-MM-dd');
+                            return (
+                              <td 
+                                key={`${date}-${product.id}`}
+                                className="border px-4 py-2 text-center"
                               >
-                                <RiCalendarLine />
-                              </button>
-                            </div>
-                          </th>
-                        ))}
-                        {showSummary && (
-                          <>
-                            <th className="border p-2 bg-gray-50 sticky top-0">Total</th>
-                            <th className="border p-2 bg-gray-50 sticky top-0">Average</th>
-                            <th className="border p-2 bg-gray-50 sticky top-0">Max</th>
-                            <th className="border p-2 bg-gray-50 sticky top-0">Min</th>
-                          </>
-                        )}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {products
-                        .filter(product => 
-                          selectedProducts.length === 0 || 
-                          selectedProducts.some(sp => sp.id === product.id)
-                        )
-                        .map((product, rowIndex) => (
-                          <tr key={product.id}>
-                            <td className="border p-2 bg-gray-50 font-medium sticky left-0 z-10 whitespace-nowrap">
-                              {product.name}
-                            </td>
-                            {dateRange.map((date, colIndex) => {
-                              const dateStr = format(date, 'yyyy-MM-dd');
-                              return (
-                                <td key={dateStr} className="border p-2">
-                                  <input
-                                    type="number"
-                                    value={entryData[dateStr]?.[product.id] || ''}
-                                    onChange={(e) => handleQuantityChange(dateStr, product.id, e.target.value)}
-                                    onKeyDown={(e) => handleKeyDown(e, rowIndex, colIndex)}
-                                    data-row={rowIndex}
-                                    data-col={colIndex}
-                                    className={`w-full text-center border rounded p-1 focus:outline-none focus:ring-2 focus:ring-amber-500 ${
-                                      focusedCell?.row === rowIndex && focusedCell?.col === colIndex
-                                        ? 'ring-2 ring-amber-500'
-                                        : ''
-                                    }`}
-                                    min="0"
-                                  />
-                                </td>
-                              );
-                            })}
-                          </tr>
-                        ))}
-                    </tbody>
-                  </table>
-                </div>
-
-                {/* Save Button - Sticky in full screen mode */}
-                <div className={`
-                  flex justify-end gap-4 p-4
-                  ${isFullScreenMode ? 'sticky bottom-0 bg-white border-t shadow-lg' : 'mt-4'}
-                `}>
-                  {isFullScreenMode && (
-                    <button
-                      onClick={() => setIsFullScreenMode(false)}
-                      className="px-6 py-2 rounded text-gray-600 hover:bg-gray-100"
-                    >
-                      Cancel
-                    </button>
-                  )}
-                  <button
-                    onClick={handleSave}
-                    disabled={isLoading}
-                    className="bg-green-500 text-white px-6 py-2 rounded hover:bg-green-600 disabled:opacity-50"
-                  >
-                    {isLoading ? 'Saving...' : 'Save'}
-                  </button>
-                </div>
+                                <input
+                                  type="number"
+                                  value={entryData[dateStr]?.[product.id] || 0}
+                                  onChange={(e) => handleQuantityChange(dateStr, product.id, e.target.value)}
+                                  onKeyDown={(e) => handleKeyDown(e, rowIndex, colIndex)}
+                                  data-row={rowIndex}
+                                  data-col={colIndex}
+                                  className={`w-20 text-center border rounded focus:ring-2 focus:ring-amber-500 focus:border-amber-500 ${
+                                    focusedCell?.row === rowIndex && focusedCell?.col === colIndex
+                                      ? 'ring-2 ring-amber-500'
+                                      : ''
+                                  }`}
+                                  min="0"
+                                />
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
               </div>
             )}
           </div>
         )}
 
-        {/* Keyboard Controls Guide - Only show in full screen mode */}
-        {isFullScreenMode && (
-          <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 bg-gray-800 text-white px-6 py-3 rounded-lg shadow-lg flex items-center gap-6 z-50">
+        {/* Keyboard Controls Guide */}
+        {isFullScreenMode && showKeyboardGuide && (
+          <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 bg-gray-800 text-white px-6 py-3 rounded-lg shadow-lg flex items-center gap-6">
             <div className="flex items-center gap-2">
-              <RiKeyboardLine className="w-5 h-5" />
-              <span className="font-medium">Keyboard Controls:</span>
+              <span className="font-medium">Keyboard Shortcuts:</span>
             </div>
-
             <div className="flex items-center gap-6 text-sm">
-              <div className="flex items-center gap-2">
-                <div className="flex gap-1">
-                  <kbd className="px-2 py-1 bg-gray-700 rounded">↑</kbd>
-                  <kbd className="px-2 py-1 bg-gray-700 rounded">↓</kbd>
-                  <kbd className="px-2 py-1 bg-gray-700 rounded">←</kbd>
-                  <kbd className="px-2 py-1 bg-gray-700 rounded">→</kbd>
-                </div>
-                <span>Navigate cells</span>
+              <div className="flex items-center gap-1">
+                <kbd className="px-2 py-1 bg-gray-700 rounded">↑</kbd>
+                <kbd className="px-2 py-1 bg-gray-700 rounded">↓</kbd>
+                <kbd className="px-2 py-1 bg-gray-700 rounded">←</kbd>
+                <kbd className="px-2 py-1 bg-gray-700 rounded">→</kbd>
+                <span className="ml-1">Navigate</span>
               </div>
-
-              <div className="flex items-center gap-2">
-                <div className="flex gap-1">
-                  <kbd className="px-2 py-1 bg-gray-700 rounded">Enter</kbd>
-                </div>
-                <span>Save entries</span>
+              <div className="flex items-center gap-1">
+                <kbd className="px-2 py-1 bg-gray-700 rounded">Tab</kbd>
+                <span className="ml-1">Next Cell</span>
               </div>
-
-              <div className="flex items-center gap-2">
-                <div className="flex gap-1">
-                  <kbd className="px-2 py-1 bg-gray-700 rounded">Esc</kbd>
-                </div>
-                <span>Exit edit mode</span>
+              <div className="flex items-center gap-1">
+                <kbd className="px-2 py-1 bg-gray-700 rounded">Enter</kbd>
+                <span className="ml-1">Save Changes</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <kbd className="px-2 py-1 bg-gray-700 rounded">Esc</kbd>
+                <span className="ml-1">Exit Edit Mode</span>
               </div>
             </div>
           </div>
+        )}
+
+        {/* Show keyboard guide button - Only visible in full screen when guide is hidden */}
+        {isFullScreenMode && !showKeyboardGuide && (
+          <button
+            onClick={() => setShowKeyboardGuide(true)}
+            className="fixed bottom-4 left-4 bg-gray-800 text-white px-4 py-2 rounded-lg shadow-lg flex items-center gap-2 z-50 hover:bg-gray-700"
+          >
+            <RiKeyboardLine className="w-5 h-5" />
+            <span>Show Keyboard Controls</span>
+          </button>
         )}
 
         {/* Loading indicator */}
