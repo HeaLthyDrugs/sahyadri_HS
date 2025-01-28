@@ -25,6 +25,7 @@ interface Product {
   id: string;
   name: string;
   rate: number;
+  index: number;
 }
 
 interface BillingEntry {
@@ -32,7 +33,7 @@ interface BillingEntry {
   entry_date: string;
   quantity: number;
   programs: { id: string; name: string; }[];
-  products: { id: string; name: string; rate: number; }[];
+  products: Product;
 }
 
 interface InvoiceData {
@@ -378,6 +379,14 @@ export default function InvoicePage() {
       return;
     }
 
+    // Check if selected month is in the future
+    const selectedDate = new Date(selectedMonth + '-01');
+    const currentDate = new Date();
+    if (selectedDate > currentDate) {
+      toast.error('Cannot generate invoice for future months. Please select current or past months only.');
+      return;
+    }
+
     setIsLoading(true);
     try {
       // Get start and end dates for the selected month
@@ -386,9 +395,6 @@ export default function InvoicePage() {
       endDate.setMonth(endDate.getMonth() + 1);
       endDate.setDate(endDate.getDate() - 1);
       const endDateStr = format(endDate, 'yyyy-MM-dd');
-
-      // Debug log the date range
-      console.log('Date Range:', { startDate, endDateStr });
 
       // First get package details
       const { data: packageData, error: packageError } = await supabase
@@ -399,10 +405,7 @@ export default function InvoicePage() {
 
       if (packageError) throw packageError;
 
-      // Debug log package data
-      console.log('Package Data:', packageData);
-
-      // Update the billing entries query with debug logging
+      // Update the billing entries query to join with products and order by product index
       const entriesQuery = supabase
         .from('billing_entries')
         .select(`
@@ -420,14 +423,15 @@ export default function InvoicePage() {
           products:product_id (
             id,
             name,
-            rate
+            rate,
+            index
           )
         `)
         .eq('package_id', selectedPackage)
         .gte('entry_date', startDate)
-        .lte('entry_date', endDateStr);
+        .lte('entry_date', endDateStr)
+        .order('products(index)', { ascending: true });
 
-      // Simply execute the query without toSQL()
       const { data: entriesData, error: entriesError } = await entriesQuery;
 
       if (entriesError) {
@@ -435,44 +439,37 @@ export default function InvoicePage() {
         throw entriesError;
       }
 
-      // Debug log the raw entries data
-      console.log('Raw Entries Data:', entriesData);
-
       if (!entriesData || entriesData.length === 0) {
-        throw new Error(`No entries found for package ${selectedPackage} between ${startDate} and ${endDateStr}`);
+        throw new Error(`No entries found for package ${packageData.name} between ${format(new Date(startDate), 'dd/MM/yyyy')} and ${format(new Date(endDateStr), 'dd/MM/yyyy')}`);
       }
 
-      // Transform and aggregate the entries by product
+      // Transform and aggregate the entries by product, maintaining the index order
       const transformedEntries = entriesData.reduce((acc: any[], entry) => {
-        // Check if we have valid product data
         if (!entry.products || !entry.products.name) {
           console.error('Invalid product data:', entry);
           return acc;
         }
 
-        // Find if this product already exists in our accumulated array
         const existingEntry = acc.find(e => e.products.id === entry.products.id);
 
         if (existingEntry) {
-          // If it exists, add to its quantity
           existingEntry.quantity += entry.quantity || 0;
         } else {
-          // If it doesn't exist, create a new entry
           acc.push({
             id: entry.id,
             entry_date: entry.entry_date,
             quantity: entry.quantity || 0,
             programs: entry.programs,
-            products: entry.products // This contains {id, name, rate}
+            products: entry.products
           });
         }
 
         return acc;
       }, []);
 
-      // Sort entries by product name
+      // Sort entries by product index
       transformedEntries.sort((a, b) => 
-        (a.products.name || '').localeCompare(b.products.name || '')
+        (a.products.index || 0) - (b.products.index || 0)
       );
 
       // Calculate total with null checks
@@ -780,9 +777,7 @@ export default function InvoicePage() {
               </div>
               <div className="space-y-2">
                 <h4 className="font-semibold text-gray-900">Authorized Signatory:</h4>
-                <div className="mt-16 pt-4 border-t border-gray-200">
-                  <p className="text-gray-600">Signature & Stamp</p>
-                </div>
+                  {/* Signature space  */}
               </div>
             </div>
 

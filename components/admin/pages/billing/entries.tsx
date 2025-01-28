@@ -21,6 +21,7 @@ import {
   RiArrowLeftLine,
   RiArrowRightLine,
   RiKeyboardLine,
+  RiCloseLine,
 } from "react-icons/ri";
 import Papa from 'papaparse';
 import {CiEdit} from "react-icons/ci";
@@ -1049,48 +1050,56 @@ export function BillingEntriesPage() {
 
         {/* Keyboard Controls Guide */}
         {isFullScreenMode && showKeyboardGuide && (
-          <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 bg-gray-800 text-white px-6 py-3 rounded-lg shadow-lg flex items-center gap-6">
-            <div className="flex items-center gap-2">
-              <span className="font-medium">Keyboard Shortcuts:</span>
+          <div className="fixed bottom-4 left-4 bg-gray-800 text-white p-4 rounded-lg shadow-lg z-50 max-w-2xl">
+            <div className="flex justify-between items-center mb-3">
+              <span className="font-medium">Keyboard Shortcuts</span>
+              <button
+                onClick={() => setShowKeyboardGuide(false)}
+                className="text-gray-400 hover:text-white"
+              >
+                <RiCloseLine className="w-5 h-5" />
+              </button>
             </div>
-            <div className="flex items-center gap-6 text-sm">
-              <div className="flex items-center gap-1">
-                <kbd className="px-2 py-1 bg-gray-700 rounded">↑</kbd>
-                <kbd className="px-2 py-1 bg-gray-700 rounded">↓</kbd>
-                <kbd className="px-2 py-1 bg-gray-700 rounded">←</kbd>
-                <kbd className="px-2 py-1 bg-gray-700 rounded">→</kbd>
-                <span className="ml-1">Navigate</span>
+            <div className="grid grid-cols-2 gap-4 text-sm">
+              <div className="flex items-center gap-2">
+                <div className="flex gap-1">
+                  <kbd className="px-2 py-1 bg-gray-700 rounded">↑</kbd>
+                  <kbd className="px-2 py-1 bg-gray-700 rounded">↓</kbd>
+                  <kbd className="px-2 py-1 bg-gray-700 rounded">←</kbd>
+                  <kbd className="px-2 py-1 bg-gray-700 rounded">→</kbd>
+                </div>
+                <span>Navigate</span>
               </div>
-              <div className="flex items-center gap-1">
+              <div className="flex items-center gap-2">
                 <kbd className="px-2 py-1 bg-gray-700 rounded">Tab</kbd>
-                <span className="ml-1">Next Cell</span>
+                <span>Next Cell</span>
               </div>
-              <div className="flex items-center gap-1">
+              <div className="flex items-center gap-2">
                 <kbd className="px-2 py-1 bg-gray-700 rounded">Enter</kbd>
-                <span className="ml-1">Save Changes</span>
+                <span>Save Changes</span>
               </div>
-              <div className="flex items-center gap-1">
+              <div className="flex items-center gap-2">
                 <kbd className="px-2 py-1 bg-gray-700 rounded">Esc</kbd>
-                <span className="ml-1">Exit Edit Mode</span>
+                <span>Exit Edit Mode</span>
               </div>
             </div>
           </div>
         )}
 
-        {/* Show keyboard guide button - Only visible in full screen when guide is hidden */}
+        {/* Show keyboard guide button - Always visible in full screen */}
         {isFullScreenMode && !showKeyboardGuide && (
           <button
             onClick={() => setShowKeyboardGuide(true)}
-            className="fixed bottom-4 left-4 bg-gray-800 text-white px-4 py-2 rounded-lg shadow-lg flex items-center gap-2 z-50 hover:bg-gray-700"
+            className="fixed bottom-4 left-4 bg-gray-800 text-white px-2 py-2 rounded-lg shadow-lg flex items-center gap-2 z-50 hover:bg-gray-700"
           >
             <RiKeyboardLine className="w-5 h-5" />
-            <span>Show Keyboard Controls</span>
+            <span>Show Shortcuts</span>
           </button>
         )}
 
-        {/* Loading indicator */}
+        {/* Loading indicator - Adjusted position */}
         {isLoading && (
-          <div className="fixed bottom-20 right-4 bg-white rounded-lg shadow-lg px-4 py-3 flex items-center gap-3 z-50 border border-amber-100">
+          <div className="fixed bottom-4 right-4 bg-white rounded-lg shadow-lg px-4 py-3 flex items-center gap-3 z-50 border border-amber-100">
             <div className="relative">
               <div className="w-6 h-6 border-4 border-amber-200 border-t-amber-500 rounded-full animate-spin"></div>
               <div className="absolute inset-0 border-2 border-amber-100 rounded-full animate-pulse"></div>

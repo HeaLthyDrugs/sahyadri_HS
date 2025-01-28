@@ -228,51 +228,23 @@ export function ProductsPage() {
       return;
     }
 
-    if (window.confirm("Are you sure you want to delete this product?")) {
+    if (window.confirm("Are you sure you want to delete this product? This will also delete all related billing entries.")) {
       try {
-        // First check if product is used in any billing entries
-        const { data: billingEntries, error: checkError } = await supabase
-          .from('billing_entries')
-          .select('id')
-          .eq('product_id', id)
-          .limit(1);
-
-        if (checkError) throw checkError;
-
-        // If product is used in billing entries, prevent deletion
-        if (billingEntries && billingEntries.length > 0) {
-          toast.error('Cannot delete this product as it is being used in billing entries');
-          return;
-        }
-
-        // If product is not used, proceed with deletion
-        const { data, error } = await supabase
+        setIsLoading(true);
+        const { error } = await supabase
           .from('products')
           .delete()
-          .eq('id', id)
-          .select();
+          .eq('id', id);
 
-        if (error) {
-          console.error('Supabase delete error:', error);
-          throw error;
-        }
+        if (error) throw error;
 
-        if (!data || data.length === 0) {
-          throw new Error('Product not found or already deleted');
-        }
-
-        toast.success('Product deleted successfully');
+        toast.success('Product and related entries deleted successfully');
         fetchProducts();
       } catch (error: any) {
-        console.error('Error deleting product:', {
-          error,
-          message: error.message,
-          details: error.details,
-          hint: error.hint
-        });
-        
-        const errorMessage = error.message || 'Failed to delete product';
-        toast.error(errorMessage);
+        console.error('Error deleting product:', error);
+        toast.error(error.message || 'Failed to delete product');
+      } finally {
+        setIsLoading(false);
       }
     }
   };
@@ -525,45 +497,24 @@ export function ProductsPage() {
       return;
     }
 
-    if (window.confirm(`Are you sure you want to delete ${selectedProducts.length} products?`)) {
+    if (window.confirm(`Are you sure you want to delete ${selectedProducts.length} products? This will also delete all related billing entries.`)) {
       try {
-        // Check for billing entries for selected products
-        const { data: billingEntries, error: checkError } = await supabase
-          .from('billing_entries')
-          .select('product_id')
-          .in('product_id', selectedProducts);
-
-        if (checkError) throw checkError;
-
-        // Filter out products that have billing entries
-        const productsWithBilling = new Set((billingEntries || []).map(entry => entry.product_id));
-        const productsToDelete = selectedProducts.filter(id => !productsWithBilling.has(id));
-
-        if (productsToDelete.length === 0) {
-          toast.error('Selected products cannot be deleted as they are being used in billing entries');
-          return;
-        }
-
-        // Delete the filtered products
+        setIsLoading(true);
         const { error } = await supabase
           .from('products')
           .delete()
-          .in('id', productsToDelete);
+          .in('id', selectedProducts);
 
         if (error) throw error;
 
-        toast.success(`Successfully deleted ${productsToDelete.length} products`);
-        if (productsWithBilling.size > 0) {
-          toast(`${productsWithBilling.size} products were not deleted as they are being used in billing entries`, {
-            icon: '⚠️'
-          });
-        }
-
+        toast.success(`Successfully deleted ${selectedProducts.length} products and their related entries`);
         setSelectedProducts([]);
         fetchProducts();
       } catch (error: any) {
         console.error('Error deleting products:', error);
         toast.error(error.message || 'Failed to delete products');
+      } finally {
+        setIsLoading(false);
       }
     }
   };

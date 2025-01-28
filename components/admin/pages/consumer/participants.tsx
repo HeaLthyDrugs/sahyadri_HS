@@ -19,6 +19,7 @@ import { supabase } from "@/lib/supabase";
 interface Participant {
   id: string;
   program_id?: string;
+  program?: Program;
   attendee_name: string;
   security_checkin?: string;
   reception_checkin: string;
@@ -54,6 +55,8 @@ interface Program {
   id: string;
   name: string;
   customer_name: string;
+  start_date: string;
+  end_date: string;
 }
 
 export function ParticipantsPage() {
@@ -108,7 +111,7 @@ export function ParticipantsPage() {
 
       const { data, error } = await supabase
         .from('programs')
-        .select('*')
+        .select('id, name, customer_name, start_date, end_date')
         .or(
           `and(start_date.lte.${monthEnd.toISOString()},end_date.gte.${monthStart.toISOString()})`
         )
@@ -137,49 +140,73 @@ export function ParticipantsPage() {
 
   const fetchParticipants = async () => {
     try {
+      const monthDate = new Date(selectedMonth);
+      const monthStart = startOfMonth(monthDate);
+      const monthEnd = endOfMonth(monthDate);
+
+      // First, get all programs that overlap with the selected month
+      const { data: monthPrograms, error: programError } = await supabase
+        .from('programs')
+        .select('id')
+        .or(
+          `and(start_date.lte.${monthEnd.toISOString()},end_date.gte.${monthStart.toISOString()})`
+        );
+
+      if (programError) throw programError;
+
+      // Get program IDs for the selected month
+      const programIds = monthPrograms?.map(p => p.id) || [];
+
       let query = supabase
         .from('participants')
-        .select('*, programs(*)')
+        .select(`
+          *,
+          programs:program_id (
+            id,
+            name,
+            customer_name,
+            start_date,
+            end_date
+          )
+        `)
         .order('created_at', { ascending: false });
 
-      // Add month filter to the query
-      if (selectedMonth) {
-        const monthDate = new Date(selectedMonth);
-        const monthStart = startOfMonth(monthDate);
-        const monthEnd = endOfMonth(monthDate);
-
-        if (selectedProgramId === 'all') {
-          // First get programs that are active in the selected month
-          const { data: activePrograms } = await supabase
-            .from('programs')
-            .select('id')
-            .lte('start_date', monthEnd.toISOString())
-            .gte('end_date', monthStart.toISOString());
-
-          if (activePrograms && activePrograms.length > 0) {
-            const programIds = activePrograms.map(p => p.id);
-            query = query.in('program_id', programIds);
-          } else {
-            // If no active programs, return empty result
-            setParticipants([]);
-            return;
-          }
-        } else {
-          // For specific program, add the program filter
-          query = query.eq('program_id', selectedProgramId);
-        }
-
-        // Add check-in filter to include both null check-ins and check-ins within the month
-        query = query.or(`reception_checkin.is.null,and(reception_checkin.gte.${monthStart.toISOString()},reception_checkin.lte.${monthEnd.toISOString()})`);
+      // Add program filter
+      if (selectedProgramId !== 'all') {
+        // If specific program selected, only show participants from that program
+        query = query.eq('program_id', selectedProgramId);
+      } else if (programIds.length > 0) {
+        // For "All Programs", show participants from all programs in the selected month
+        query = query.in('program_id', programIds);
       }
+
+      // Add month filter only if check-in/out dates exist
+      // This complex filter includes:
+      // 1. Participants with missing check-in/out times (linked to programs in the month)
+      // 2. Participants who checked in or out during the month
+      // 3. Participants whose stay overlaps with the month
+      query = query.or(
+        `reception_checkin.is.null,` +
+        `reception_checkout.is.null,` +
+        `and(reception_checkin.gte.${monthStart.toISOString()},reception_checkin.lte.${monthEnd.toISOString()}),` +
+        `and(reception_checkout.gte.${monthStart.toISOString()},reception_checkout.lte.${monthEnd.toISOString()}),` +
+        `and(reception_checkin.lte.${monthEnd.toISOString()},reception_checkout.gte.${monthStart.toISOString()})`
+      );
 
       const { data, error } = await query;
 
       if (error) throw error;
       
-      // Clean up the data to remove the programs object
-      const cleanedData = data?.map(({ programs, ...rest }) => rest) || [];
-      setParticipants(cleanedData);
+      // Transform the data to maintain program information
+      const transformedData = data?.map(participant => {
+        const { programs: programInfo, ...rest } = participant;
+        return {
+          ...rest,
+          program: programInfo
+        };
+      }) || [];
+
+      setParticipants(transformedData);
     } catch (error) {
       console.error('Error fetching participants:', error);
       toast.error('Failed to fetch participants');
@@ -600,6 +627,42 @@ export function ParticipantsPage() {
     }
   };
 
+  // Add function to check if participant arrived early or departed late
+  const getAttendanceStatus = (participant: Participant, program?: Program) => {
+    if (!program || !participant.reception_checkin || !participant.reception_checkout) return null;
+
+    const programStart = new Date(program.start_date);
+    const programEnd = new Date(program.end_date);
+    const checkinDate = new Date(participant.reception_checkin);
+    const checkoutDate = new Date(participant.reception_checkout);
+
+    // Reset time part for date comparison
+    programStart.setHours(0, 0, 0, 0);
+    programEnd.setHours(23, 59, 59, 999);
+    checkinDate.setHours(0, 0, 0, 0);
+    checkoutDate.setHours(23, 59, 59, 999);
+
+    const tags = [];
+
+    if (checkinDate < programStart) {
+      const daysEarly = Math.round((programStart.getTime() - checkinDate.getTime()) / (1000 * 60 * 60 * 24));
+      tags.push({
+        type: 'early-arrival',
+        message: `Arrived ${daysEarly} day${daysEarly > 1 ? 's' : ''} early`
+      });
+    }
+
+    if (checkoutDate > programEnd) {
+      const daysLate = Math.round((checkoutDate.getTime() - programEnd.getTime()) / (1000 * 60 * 60 * 24));
+      tags.push({
+        type: 'late-departure',
+        message: `Left ${daysLate} day${daysLate > 1 ? 's' : ''} after program end`
+      });
+    }
+
+    return tags;
+  };
+
   return (
     <div className="space-y-6">
       {/* Header with Actions */}
@@ -698,12 +761,12 @@ export function ParticipantsPage() {
           </div>
         </div>
 
-        {/* No Programs Message */}
+        {/* No Data Message */}
         {programs.length === 0 && (
           <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mt-4">
             <div className="flex items-center gap-2 text-amber-700">
               <RiAlertLine className="w-5 h-5" />
-              <p>No programs found for {format(new Date(selectedMonth), 'MMMM yyyy')}.</p>
+              <p>No programs found for {format(new Date(selectedMonth), 'MMMM yyyy')}. Please select a different month or add programs for this period.</p>
             </div>
           </div>
         )}
@@ -721,10 +784,11 @@ export function ParticipantsPage() {
               <p className="text-lg font-medium">No participants found</p>
               <p className="text-sm mt-2">
                 {selectedProgramId === 'all' 
-                  ? `No participants found for ${selectedMonth ? format(new Date(selectedMonth), 'MMMM yyyy') : 'the selected period'}`
-                  : `No participants found in ${programs.find(p => p.id === selectedProgramId)?.name || 'this program'}`
+                  ? `No participants found for ${format(new Date(selectedMonth), 'MMMM yyyy')}`
+                  : `No participants found in ${programs.find(p => p.id === selectedProgramId)?.name || 'this program'} for ${format(new Date(selectedMonth), 'MMMM yyyy')}`
                 }
               </p>
+              <p className="text-sm text-gray-400 mt-1">Try selecting a different month or program</p>
             </div>
           ) : (
             <div className="overflow-x-auto">
@@ -774,12 +838,31 @@ export function ParticipantsPage() {
                                 Missing Reception Check-Out
                               </span>
                             )}
+                            {participant.program_id && participant.reception_checkin && participant.reception_checkout && (
+                              <>
+                                {getAttendanceStatus(
+                                  participant,
+                                  programs.find(p => p.id === participant.program_id)
+                                )?.map((tag, idx) => (
+                                  <span
+                                    key={idx}
+                                    className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
+                                      tag.type === 'early-arrival'
+                                        ? 'bg-blue-100 text-blue-800'
+                                        : 'bg-amber-100 text-amber-800'
+                                    }`}
+                                  >
+                                    {tag.message}
+                                  </span>
+                                ))}
+                              </>
+                            )}
                           </div>
                         </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="text-sm text-gray-500">
-                          {programs.find(p => p.id === participant.program_id)?.name || '-'}
+                          {participant.program?.name || '-'}
                         </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
