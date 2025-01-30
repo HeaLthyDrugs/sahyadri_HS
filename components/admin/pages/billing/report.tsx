@@ -15,6 +15,9 @@ import {
 } from "react-icons/ri";
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
+import MonthlyReport from "@/components/ui/report/MonthlyReport";
+import ProgramReport from "@/components/ui/report/ProgramReport";
+import AnnualReport from "@/components/ui/report/AnnualReport";
 
 interface Package {
   id: string;
@@ -28,7 +31,7 @@ interface Program {
   total_participants: number;
 }
 
-interface ReportData {
+export interface ReportData {
   date: string;
   program: string;
   cateringTotal: number;
@@ -62,10 +65,51 @@ interface ProgramReport {
 interface BillingEntry {
   entry_date: string;
   quantity: number;
-  programs: { id: string; name: string; }[];
-  packages: { id: string; name: string; type: string; }[];
-  products: { name: string; rate: number; }[];
+  package_id: string;
+  packages: {
+    id: string;
+    name: string;
+    type: string;
+  };
+  products: {
+    id: string;
+    name: string;
+    rate: number;
+  };
 }
+
+interface CateringData {
+  program: string;
+  products: { [key: string]: number };
+  total: number;
+  comment?: string;
+}
+
+interface MonthlyData {
+  month: string;
+  packages: {
+    [key: string]: {
+      packageName: string;
+      items: {
+        productName: string;
+        quantity: number;
+        rate: number;
+        total: number;
+      }[];
+      packageTotal: number;
+    };
+  };
+  total: number;
+}
+
+interface CateringProduct {
+  id: string;
+  name: string;
+  quantity: number;
+}
+
+// Add report type definition
+type ReportType = 'monthly' | 'program' | 'annual';
 
 const pdfStyles = `
   @media print {
@@ -198,12 +242,17 @@ export default function ReportPage() {
     totalAmount: 0,
     averagePerDay: 0,
   });
-  const [reportType, setReportType] = useState<'monthly' | 'program'>('monthly');
+  const [reportType, setReportType] = useState<ReportType>('monthly');
   const [programReport, setProgramReport] = useState<ProgramReport | null>(null);
+  const [cateringData, setCateringData] = useState<CateringData[]>([]);
+  const [monthlyData, setMonthlyData] = useState<MonthlyData[]>([]);
+  const [cateringProducts, setCateringProducts] = useState<CateringProduct[]>([]);
+  const [reportComments, setReportComments] = useState<{ [key: string]: string }>({});
 
   useEffect(() => {
     fetchPackages();
     fetchPrograms();
+    fetchCateringProducts();
   }, []);
 
   const fetchPackages = async () => {
@@ -236,11 +285,54 @@ export default function ReportPage() {
     }
   };
 
+  const fetchCateringProducts = async () => {
+    try {
+      // First get the catering package (type: Normal)
+      const { data: packagesData, error: packagesError } = await supabase
+        .from('packages')
+        .select('id')
+        .eq('type', 'Normal');
+
+      if (packagesError) throw packagesError;
+      
+      // If no catering packages found, return early
+      if (!packagesData || packagesData.length === 0) {
+        console.log('No catering packages found');
+        setCateringProducts([]);
+        return;
+      }
+
+      // Get all products from catering packages
+      const packageIds = packagesData.map(pkg => pkg.id);
+      const { data: productsData, error: productsError } = await supabase
+        .from('products')
+        .select('id, name, index')
+        .in('package_id', packageIds)
+        .order('index');
+
+      if (productsError) throw productsError;
+
+      if (!productsData || productsData.length === 0) {
+        console.log('No products found for catering packages');
+        setCateringProducts([]);
+        return;
+      }
+
+      setCateringProducts(productsData.map(p => ({ ...p, quantity: 0 })));
+    } catch (error) {
+      console.error('Error fetching catering products:', error);
+      toast.error('Failed to fetch catering products');
+      setCateringProducts([]);
+    }
+  };
+
   const generateReport = async () => {
     if (reportType === 'monthly') {
       await generateMonthlyReport();
-    } else {
+    } else if (reportType === 'program') {
       await generateProgramReport();
+    } else {
+      await generateAnnualReport();
     }
   };
 
@@ -250,7 +342,16 @@ export default function ReportPage() {
       return;
     }
 
+    if (!selectedPackage) {
+      toast.error('Please select a package');
+      return;
+    }
+
     setIsLoading(true);
+    // Clear previous data
+    setReportData([]);
+    setCateringData([]);
+    
     try {
       // Get start and end dates for the selected month
       const startDate = `${selectedMonth}-01`;
@@ -259,22 +360,26 @@ export default function ReportPage() {
       endDate.setDate(endDate.getDate() - 1);
       const endDateStr = format(endDate, 'yyyy-MM-dd');
 
-      // Build query to get program-wise package totals - Updated query structure
+      // Build query for billing entries
       let query = supabase
         .from('billing_entries')
         .select(`
           entry_date,
           quantity,
-          programs:program_id (
+          program_id,
+          package_id,
+          product_id,
+          programs:programs!inner (
             id,
             name
           ),
-          packages:package_id (
+          packages:packages!inner (
             id,
             name,
             type
           ),
-          products:product_id (
+          products:products!inner (
+            id,
             name,
             rate
           )
@@ -282,29 +387,31 @@ export default function ReportPage() {
         .gte('entry_date', startDate)
         .lte('entry_date', endDateStr);
 
+      // Add program filter if selected
       if (selectedProgram) {
         query = query.eq('program_id', selectedProgram);
       }
 
-      const { data, error } = await query;
+      const { data: entriesData, error } = await query;
 
       if (error) throw error;
 
-      // Debug log to check the raw data
-      console.log('Raw data from query:', data);
+      if (!entriesData || entriesData.length === 0) {
+        throw new Error('No entries found for the selected period');
+      }
 
-      // Group and transform data by program
-      const programTotals = new Map();
+      // Always process data for all packages view
+      const programTotals = new Map<string, ReportData>();
 
-      (data || []).forEach((entry: BillingEntry) => {
-        const programId = entry.programs?.[0]?.id || 'unknown';
-        const programName = entry.programs?.[0]?.name || 'N/A';
-        const packageType = entry.packages?.[0]?.type?.toLowerCase() || 'unknown';
-        const amount = entry.quantity * (entry.products?.[0]?.rate || 0);
+      entriesData.forEach((entry: any) => {
+        const programId = entry.programs.id;
+        const programName = entry.programs.name;
+        const amount = entry.quantity * entry.products.rate;
+        const packageType = entry.packages.type.toLowerCase();
 
         if (!programTotals.has(programId)) {
           programTotals.set(programId, {
-            date: selectedMonth,
+            date: format(new Date(entry.entry_date), 'yyyy-MM-dd'),
             program: programName,
             cateringTotal: 0,
             extraTotal: 0,
@@ -313,43 +420,66 @@ export default function ReportPage() {
           });
         }
 
-        const programData = programTotals.get(programId);
+        const programData = programTotals.get(programId)!;
         
+        // Update totals based on package type
         switch (packageType) {
-          case 'catering':
-            programData.cateringTotal = (programData.cateringTotal || 0) + amount;
+          case 'normal':
+            programData.cateringTotal += amount;
             break;
           case 'extra':
-            programData.extraTotal = (programData.extraTotal || 0) + amount;
+            programData.extraTotal += amount;
             break;
           case 'cold drink':
-            programData.coldDrinkTotal = (programData.coldDrinkTotal || 0) + amount;
+            programData.coldDrinkTotal += amount;
             break;
         }
         
-        programData.grandTotal = (programData.grandTotal || 0) + amount;
+        programData.grandTotal += amount;
       });
 
-      // Convert to array and ensure all values are numbers
-      const formattedData: ReportData[] = Array.from(programTotals.values());
+      const reportDataArray = Array.from(programTotals.values());
+      setReportData(reportDataArray);
 
-      // Debug log to check the transformed data
-      console.log('Transformed data:', formattedData);
+      // Process data for catering view if needed
+      if (selectedPackage === 'normal') {
+        const cateringEntries = new Map<string, CateringData>();
 
-      // Calculate summary
-      const summary = {
-        totalQuantity: data?.length || 0,
-        totalAmount: formattedData.reduce((sum, item) => sum + (Number(item.grandTotal) || 0), 0),
-        averagePerDay: formattedData.length ? (data?.length || 0) / formattedData.length : 0
-      };
+        entriesData.forEach((entry: any) => {
+          if (entry.packages.type.toLowerCase() !== 'normal') return;
 
-      setReportData(formattedData);
-      setSummary(summary);
+          const programId = entry.programs.id;
+          const programName = entry.programs.name;
+          const productId = entry.product_id;
+          const quantity = entry.quantity;
+
+          if (!cateringEntries.has(programId)) {
+            cateringEntries.set(programId, {
+              program: programName,
+              products: {},
+              total: 0
+            });
+          }
+
+          const data = cateringEntries.get(programId)!;
+          data.products[productId] = (data.products[productId] || 0) + quantity;
+          data.total += quantity;
+        });
+
+        const cateringDataArray = Array.from(cateringEntries.values());
+        if (cateringDataArray.length === 0) {
+          throw new Error('No catering data found for the selected period');
+        }
+        setCateringData(cateringDataArray);
+      }
 
       toast.success('Report generated successfully');
     } catch (error) {
       console.error('Error generating report:', error);
-      toast.error('Failed to generate report');
+      toast.error(error instanceof Error ? error.message : 'Failed to generate report');
+      // Clear report data on error
+      setReportData([]);
+      setCateringData([]);
     } finally {
       setIsLoading(false);
     }
@@ -376,49 +506,92 @@ export default function ReportPage() {
       let query = supabase
         .from('billing_entries')
         .select(`
+          id,
+          entry_date,
           quantity,
-          packages (id, name, type),
-          products (name, rate)
+          package_id,
+          product_id,
+          packages:packages!inner (
+            id,
+            name,
+            type
+          ),
+          products:products!inner (
+            id,
+            name,
+            rate
+          )
         `)
         .eq('program_id', selectedProgram);
 
       // Add package filter if selected
-      if (selectedPackage) {
+      if (selectedPackage && selectedPackage !== 'all') {
         query = query.eq('package_id', selectedPackage);
       }
 
       const { data: billingData, error: billingError } = await query;
 
-      if (billingError) throw billingError;
+      if (billingError) {
+        console.error('Billing error:', billingError);
+        throw billingError;
+      }
+
+      if (!billingData || billingData.length === 0) {
+        toast.error('No billing data found for the selected program');
+        setProgramReport(null);
+        setReportData([]);
+        return;
+      }
 
       // Process and group data by package type
-      const packageGroups: ProgramReport['packages'] = {};
+      const packageGroups: { [key: string]: any } = {};
       let grandTotal = 0;
 
-      billingData.forEach(entry => {
-        const packageType = entry.packages?.[0]?.type?.toLowerCase() || 'unknown';
+      billingData.forEach((entry: any) => {
+        const packageType = entry.packages.type;
+        const packageName = entry.packages.name;
         const quantity = entry.quantity || 0;
-        const rate = entry.products?.[0]?.rate || 0;
+        const rate = entry.products.rate || 0;
         const total = quantity * rate;
 
         if (!packageGroups[packageType]) {
           packageGroups[packageType] = {
-            packageName: packageType,
+            packageName: packageName,
             items: [],
             packageTotal: 0
           };
         }
 
-        packageGroups[packageType].items.push({
-          productName: entry.products?.[0]?.name || 'Unknown',
-          quantity,
-          rate,
-          total
-        });
+        // Check if product already exists in items
+        const existingItem = packageGroups[packageType].items.find(
+          (item: any) => item.productName === entry.products.name
+        );
 
-        packageGroups[packageType].packageTotal += total;
-        grandTotal += total;
+        if (existingItem) {
+          existingItem.quantity += quantity;
+          existingItem.total = existingItem.quantity * rate;
+        } else {
+          packageGroups[packageType].items.push({
+            productName: entry.products.name,
+            quantity,
+            rate,
+            total
+          });
+        }
+
+        packageGroups[packageType].packageTotal = packageGroups[packageType].items.reduce(
+          (sum: number, item: any) => sum + item.total,
+          0
+        );
       });
+
+      // Calculate grand total after all items are processed
+      grandTotal = Object.values(packageGroups).reduce(
+        (sum: number, pkg: any) => sum + pkg.packageTotal,
+        0
+      );
+
+      console.log('Package Groups:', packageGroups); // Debug log
 
       setProgramReport({
         programDetails: {
@@ -431,10 +604,100 @@ export default function ReportPage() {
         grandTotal
       });
 
+      // Set reportData to trigger display
+      setReportData([{
+        date: format(new Date(), 'yyyy-MM-dd'),
+        program: programData.name,
+        cateringTotal: 0,
+        extraTotal: 0,
+        coldDrinkTotal: 0,
+        grandTotal
+      }]);
+
       toast.success('Program report generated successfully');
     } catch (error) {
       console.error('Error generating program report:', error);
       toast.error('Failed to generate program report');
+      setProgramReport(null);
+      setReportData([]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const generateAnnualReport = async () => {
+    setIsLoading(true);
+    try {
+      const year = new Date().getFullYear();
+      const startDate = `${year}-01-01`;
+      const endDate = `${year}-12-31`;
+
+      // Build query for billing entries
+      let query = supabase
+        .from('billing_entries')
+        .select(`
+          entry_date,
+          quantity,
+          packages (id, name, type),
+          products (name, rate)
+        `)
+        .gte('entry_date', startDate)
+        .lte('entry_date', endDate)
+        .order('entry_date', { ascending: true });
+
+      // Add package filter if selected
+      if (selectedPackage && selectedPackage !== 'all') {
+        query = query.eq('packages.type', selectedPackage);
+      }
+
+      const { data: entriesData, error } = await query;
+
+      if (error) throw error;
+
+      // Process and group data by month and package type
+      const monthlyGroups = new Map<string, MonthlyData>();
+
+      entriesData.forEach(entry => {
+        const month = format(new Date(entry.entry_date), 'yyyy-MM');
+        const packageType = entry.packages?.[0]?.type?.toLowerCase() || 'unknown';
+        const quantity = entry.quantity || 0;
+        const rate = entry.products?.[0]?.rate || 0;
+        const total = quantity * rate;
+
+        if (!monthlyGroups.has(month)) {
+          monthlyGroups.set(month, {
+            month,
+            packages: {},
+            total: 0
+          });
+        }
+
+        const monthData = monthlyGroups.get(month)!;
+
+        if (!monthData.packages[packageType]) {
+          monthData.packages[packageType] = {
+            packageName: packageType,
+            items: [],
+            packageTotal: 0
+          };
+        }
+
+        monthData.packages[packageType].items.push({
+          productName: entry.products?.[0]?.name || 'Unknown',
+          quantity,
+          rate,
+          total
+        });
+
+        monthData.packages[packageType].packageTotal += total;
+        monthData.total += total;
+      });
+
+      setMonthlyData(Array.from(monthlyGroups.values()));
+      toast.success('Annual report generated successfully');
+    } catch (error) {
+      console.error('Error generating annual report:', error);
+      toast.error('Failed to generate annual report');
     } finally {
       setIsLoading(false);
     }
@@ -482,7 +745,7 @@ export default function ReportPage() {
 
       // Configure html2canvas with better quality settings
       const canvas = await html2canvas(element, {
-        scale: 2, // Higher scale for better quality
+        scale: 2,
         useCORS: true,
         logging: false,
         backgroundColor: '#ffffff',
@@ -530,13 +793,13 @@ export default function ReportPage() {
       );
 
       // Add page numbers
-      const pageCount = pdf.internal.getNumberOfPages();
-      for (let i = 1; i <= pageCount; i++) {
+      const totalPages = (pdf as any).internal.getNumberOfPages();
+      for (let i = 1; i <= totalPages; i++) {
         pdf.setPage(i);
         pdf.setFontSize(10);
         pdf.setTextColor(128);
         pdf.text(
-          `Page ${i} of ${pageCount}`,
+          `Page ${i} of ${totalPages}`,
           pdf.internal.pageSize.getWidth() / 2,
           pdf.internal.pageSize.getHeight() - 10,
           { align: 'center' }
@@ -578,32 +841,49 @@ export default function ReportPage() {
 
       return (
         <div className="mb-8">
-          <h3 className="text-xl font-semibold mb-4">{packageType.toUpperCase()} PACKAGE</h3>
-          <div className="border border-gray-300 rounded-lg overflow-hidden">
-            <table className="min-w-full">
+          <h3 className="text-xl font-semibold mb-4 text-gray-800 border-b pb-2">
+            {packageType.toUpperCase()} PACKAGE
+          </h3>
+          <div className="border border-gray-200 rounded-lg overflow-hidden shadow-sm">
+            <table className="min-w-full divide-y divide-gray-200">
               <thead>
-                <tr className="border-b border-gray-300">
-                  <th className="text-left p-4 w-1/3">product name</th>
-                  <th className="text-left p-4 w-1/4">Quantity</th>
-                  <th className="text-left p-4 w-1/4">rate</th>
-                  <th className="text-left p-4 w-1/4">Total</th>
+                <tr className="bg-gray-50">
+                  <th className="px-6 py-4 text-left text-sm font-semibold text-gray-700 uppercase tracking-wider border-b border-gray-200">
+                    Product Name
+                  </th>
+                  <th className="px-6 py-4 text-center text-sm font-semibold text-gray-700 uppercase tracking-wider border-b border-gray-200">
+                    Quantity
+                  </th>
+                  <th className="px-6 py-4 text-right text-sm font-semibold text-gray-700 uppercase tracking-wider border-b border-gray-200">
+                    Rate
+                  </th>
+                  <th className="px-6 py-4 text-right text-sm font-semibold text-gray-700 uppercase tracking-wider border-b border-gray-200">
+                    Total
+                  </th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="bg-white divide-y divide-gray-200">
                 {packageData.items.map((item, index) => (
-                  <tr key={index} className="border-b border-gray-300">
-                    <td className="p-4">{item.productName}</td>
-                    <td className="p-4">{item.quantity}</td>
-                    <td className="p-4">{formatCurrency(item.rate)}</td>
-                    <td className="p-4">{formatCurrency(item.total)}</td>
+                  <tr key={index} className="hover:bg-gray-50 transition-colors">
+                    <td className="px-6 py-4 text-sm text-gray-900 border-r border-gray-100">
+                      {item.productName}
+                    </td>
+                    <td className="px-6 py-4 text-sm text-gray-900 text-center border-r border-gray-100">
+                      {item.quantity}
+                    </td>
+                    <td className="px-6 py-4 text-sm text-gray-900 text-right border-r border-gray-100">
+                      {formatCurrency(item.rate)}
+                    </td>
+                    <td className="px-6 py-4 text-sm text-gray-900 text-right">
+                      {formatCurrency(item.total)}
+                    </td>
                   </tr>
                 ))}
-                {/* Package Total */}
-                <tr className="bg-gray-50">
-                  <td colSpan={3} className="p-4 font-semibold text-right">
+                <tr className="bg-gray-50 font-semibold">
+                  <td colSpan={3} className="px-6 py-4 text-right text-gray-800 border-t border-gray-200">
                     Package Total:
                   </td>
-                  <td className="p-4 font-semibold">
+                  <td className="px-6 py-4 text-right text-gray-800 border-t border-gray-200">
                     {formatCurrency(packageData.packageTotal)}
                   </td>
                 </tr>
@@ -615,27 +895,27 @@ export default function ReportPage() {
     };
 
     return (
-      <div id="report-content" className="bg-white rounded-lg shadow-md overflow-hidden p-8">
+      <div id="report-content" className="bg-white rounded-lg shadow-lg overflow-hidden p-8">
         {/* Program Header */}
-        <div className="flex justify-between mb-8 text-lg">
-          <div>
-            <span className="font-semibold">Program name: </span>
-            <span>{programReport.programDetails.name}</span>
+        <div className="grid grid-cols-3 gap-6 mb-8 p-6 bg-gray-50 rounded-lg border border-gray-200">
+          <div className="space-y-1">
+            <span className="text-sm font-semibold text-gray-600">Program Name</span>
+            <p className="text-lg text-gray-900">{programReport.programDetails.name}</p>
           </div>
-          <div>
-            <span className="font-semibold">from to duration: </span>
-            <span>
+          <div className="space-y-1">
+            <span className="text-sm font-semibold text-gray-600">Duration</span>
+            <p className="text-lg text-gray-900">
               {format(new Date(programReport.programDetails.startDate), 'dd/MM/yyyy')} - {format(new Date(programReport.programDetails.endDate), 'dd/MM/yyyy')}
-            </span>
+            </p>
           </div>
-          <div>
-            <span className="font-semibold">No. of people: </span>
-            <span>{programReport.programDetails.totalParticipants}</span>
+          <div className="space-y-1">
+            <span className="text-sm font-semibold text-gray-600">Total Participants</span>
+            <p className="text-lg text-gray-900">{programReport.programDetails.totalParticipants}</p>
           </div>
         </div>
 
         {/* Package Tables */}
-        <div className="space-y-6">
+        <div className="space-y-8">
           {getFilteredPackages().map(packageType => (
             <PackageTable
               key={packageType}
@@ -646,8 +926,8 @@ export default function ReportPage() {
         </div>
 
         {/* Grand Total */}
-        <div className="mt-8 text-right">
-          <p className="text-xl font-bold">
+        <div className="mt-8 p-4 bg-amber-50 border border-amber-200 rounded-lg">
+          <p className="text-xl font-bold text-amber-900 text-right">
             Grand Total: {formatCurrency(programReport.grandTotal)}
           </p>
         </div>
@@ -667,108 +947,31 @@ export default function ReportPage() {
     await generateEnhancedPDF('report-content', fileName);
   };
 
-  const MonthlyReportContent = () => {
-    const ITEMS_PER_PAGE = 25;
-    const totalPages = Math.ceil(reportData.length / ITEMS_PER_PAGE);
-
-    return (
-      <div id="report-content" className="p-8">
-        {/* Report Header */}
-        <div className="page-header">
-          <h2 className="text-xl font-bold text-center">Monthly Billing Report</h2>
-          <div className="mt-4 grid grid-cols-2 gap-4 text-sm">
-            <div>
-              <p><strong>Period:</strong> {format(new Date(selectedMonth), 'MMMM yyyy')}</p>
-              {selectedProgram && (
-                <p><strong>Program:</strong> {programs.find(p => p.id === selectedProgram)?.name}</p>
-              )}
-            </div>
-            <div className="text-right">
-              <p><strong>Date Generated:</strong> {format(new Date(), 'dd/MM/yyyy')}</p>
-            </div>
-          </div>
-        </div>
-
-        {/* Summary Cards */}
-        <div className="grid grid-cols-3 gap-4 my-6">
-          <div className="bg-gray-50 p-4 rounded-lg">
-            <p className="text-sm text-gray-600">Total Quantity</p>
-            <p className="text-xl font-semibold">{summary.totalQuantity.toLocaleString()}</p>
-          </div>
-          <div className="bg-gray-50 p-4 rounded-lg">
-            <p className="text-sm text-gray-600">Total Amount</p>
-            <p className="text-xl font-semibold">₹{summary.totalAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
-          </div>
-          <div className="bg-gray-50 p-4 rounded-lg">
-            <p className="text-sm text-gray-600">Average Per Day</p>
-            <p className="text-xl font-semibold">{summary.averagePerDay.toFixed(2)}</p>
-          </div>
-        </div>
-
-        {/* Data Table */}
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200 entries-table">
-            <thead className="bg-gray-50">
-              <tr>
-                <th scope="col" className="px-4 py-3 text-xs font-medium text-gray-500 uppercase text-center">
-                  Sr. No
-                </th>
-                <th scope="col" className="px-4 py-3 text-xs font-medium text-gray-500 uppercase text-left">
-                  Program Name
-                </th>
-                <th scope="col" className="px-4 py-3 text-xs font-medium text-gray-500 uppercase text-right">
-                  Catering Total
-                </th>
-                <th scope="col" className="px-4 py-3 text-xs font-medium text-gray-500 uppercase text-right">
-                  Extra Total
-                </th>
-                <th scope="col" className="px-4 py-3 text-xs font-medium text-gray-500 uppercase text-right">
-                  Cold Drink Total
-                </th>
-                <th scope="col" className="px-4 py-3 text-xs font-medium text-gray-500 uppercase text-right">
-                  Grand Total
-                </th>
-              </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
-              {reportData.map((row, index) => (
-                <tr key={index}>
-                  <td className="px-4 py-2 text-sm text-gray-500 text-center">
-                    {index + 1}
-                  </td>
-                  <td className="px-4 py-2 text-sm text-gray-900">
-                    {row.program}
-                  </td>
-                  <td className="px-4 py-2 text-sm text-gray-900 text-right">
-                    ₹{row.cateringTotal.toFixed(2)}
-                  </td>
-                  <td className="px-4 py-2 text-sm text-gray-900 text-right">
-                    ₹{row.extraTotal.toFixed(2)}
-                  </td>
-                  <td className="px-4 py-2 text-sm text-gray-900 text-right">
-                    ₹{row.coldDrinkTotal.toFixed(2)}
-                  </td>
-                  <td className="px-4 py-2 text-sm text-gray-900 text-right font-medium">
-                    ₹{row.grandTotal.toFixed(2)}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-            <tfoot className="bg-gray-50">
-              <tr>
-                <td colSpan={5} className="px-4 py-3 text-sm font-medium text-gray-900 text-right">
-                  Grand Total
-                </td>
-                <td className="px-4 py-3 text-sm font-medium text-gray-900 text-right">
-                  ₹{summary.totalAmount.toFixed(2)}
-                </td>
-              </tr>
-            </tfoot>
-          </table>
-        </div>
-      </div>
-    );
+  const handleCommentChange = (programName: string, comment: string) => {
+    setReportComments(prev => ({ ...prev, [programName]: comment }));
   };
+
+  // Update the report type selector UI
+  const reportTypes = [
+    {
+      id: 'monthly',
+      name: 'Monthly Report',
+      description: 'View monthly billing summary',
+      icon: RiCalendarLine
+    },
+    {
+      id: 'program',
+      name: 'Program Report',
+      description: 'View program-wise details',
+      icon: RiBuilding4Line
+    },
+    {
+      id: 'annual',
+      name: 'Annual Report',
+      description: 'View yearly summary',
+      icon: RiFileChartLine
+    }
+  ];
 
   return (
     <div className="space-y-6">
@@ -781,43 +984,34 @@ export default function ReportPage() {
             <RiFileChartLine className="w-5 h-5 text-amber-600" />
             Report Type
           </h2>
-          <div className="grid grid-cols-2 gap-4 max-w-md">
-            <button
-              onClick={() => setReportType('monthly')}
-              className={`p-4 rounded-lg border-2 transition-all ${
-                reportType === 'monthly'
-                  ? 'border-amber-600 bg-amber-50 text-amber-900'
-                  : 'border-gray-200 hover:border-amber-300 hover:bg-amber-50/50'
-              }`}
-            >
-              <div className="flex items-center gap-3">
-                <RiCalendarLine className={`w-5 h-5 ${
-                  reportType === 'monthly' ? 'text-amber-600' : 'text-gray-400'
-                }`} />
-                <div className="text-left">
-                  <p className="font-medium">Monthly Report</p>
-                  <p className="text-sm text-gray-500">View monthly billing summary</p>
+          <div className="grid grid-cols-3 gap-4">
+            {reportTypes.map((type) => (
+              <button
+                key={type.id}
+                onClick={() => {
+                  setReportType(type.id as ReportType);
+                  // Reset selections when changing report type
+                  setSelectedPackage("");
+                  setSelectedProgram("");
+                  setReportData([]);
+                }}
+                className={`p-4 rounded-lg border-2 transition-all ${
+                  reportType === type.id
+                    ? 'border-amber-600 bg-amber-50 text-amber-900'
+                    : 'border-gray-200 hover:border-amber-300 hover:bg-amber-50/50'
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <type.icon className={`w-5 h-5 ${
+                    reportType === type.id ? 'text-amber-600' : 'text-gray-400'
+                  }`} />
+                  <div className="text-left">
+                    <p className="font-medium">{type.name}</p>
+                    <p className="text-sm text-gray-500">{type.description}</p>
+                  </div>
                 </div>
-              </div>
-            </button>
-            <button
-              onClick={() => setReportType('program')}
-              className={`p-4 rounded-lg border-2 transition-all ${
-                reportType === 'program'
-                  ? 'border-amber-600 bg-amber-50 text-amber-900'
-                  : 'border-gray-200 hover:border-amber-300 hover:bg-amber-50/50'
-              }`}
-            >
-              <div className="flex items-center gap-3">
-                <RiBuilding4Line className={`w-5 h-5 ${
-                  reportType === 'program' ? 'text-amber-600' : 'text-gray-400'
-                }`} />
-                <div className="text-left">
-                  <p className="font-medium">Program Report</p>
-                  <p className="text-sm text-gray-500">View program-wise details</p>
-                </div>
-              </div>
-            </button>
+              </button>
+            ))}
           </div>
         </div>
 
@@ -829,54 +1023,91 @@ export default function ReportPage() {
           </h2>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {reportType === 'monthly' ? (
-              <div className="space-y-2">
-                <label className="block text-sm font-medium text-gray-700">
-                  Select Month
-                </label>
-                <input
-                  type="month"
-                  value={selectedMonth}
-                  onChange={(e) => setSelectedMonth(e.target.value)}
-                  className="w-full rounded-md border-gray-300 shadow-sm focus:border-amber-500 focus:ring-amber-500"
-                />
-              </div>
+              <>
+                <div className="space-y-2">
+                  <label className="block text-sm font-medium text-gray-700">
+                    Select Month
+                  </label>
+                  <input
+                    type="month"
+                    value={selectedMonth}
+                    onChange={(e) => setSelectedMonth(e.target.value)}
+                    className="w-full rounded-md border-gray-300 shadow-sm focus:border-amber-500 focus:ring-amber-500"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="block text-sm font-medium text-gray-700">
+                    Select Package
+                  </label>
+                  <select
+                    value={selectedPackage}
+                    onChange={(e) => setSelectedPackage(e.target.value)}
+                    className="w-full rounded-md border-gray-300 shadow-sm focus:border-amber-500 focus:ring-amber-500 p-2 border-2"
+                  >
+                    <option value="">Select Package</option>
+                    <option value="all">All Packages</option>
+                    <option value="normal">Catering Package</option>
+                  </select>
+                </div>
+              </>
+            ) : reportType === 'program' ? (
+              <>
+                <div className="space-y-2">
+                  <label className="block text-sm font-medium text-gray-700">
+                    Select Program
+                  </label>
+                  <select
+                    value={selectedProgram}
+                    onChange={(e) => setSelectedProgram(e.target.value)}
+                    className="w-full rounded-md border-gray-300 shadow-sm focus:border-amber-500 focus:ring-amber-500 p-2 border-2"
+                  >
+                    <option value="">Choose a program</option>
+                    {programs.map((program) => (
+                      <option key={program.id} value={program.id}>
+                        {program.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="space-y-2">
+                  <label className="block text-sm font-medium text-gray-700">
+                    Select Package
+                  </label>
+                  <select
+                    value={selectedPackage}
+                    onChange={(e) => setSelectedPackage(e.target.value)}
+                    className="w-full rounded-md border-gray-300 shadow-sm focus:border-amber-500 focus:ring-amber-500 p-2 border-2"
+                  >
+                    <option value="">Select Package</option>
+                    <option value="all">All Packages</option>
+                    {packages.map((pkg) => (
+                      <option key={pkg.id} value={pkg.id}>
+                        {pkg.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </>
             ) : (
               <div className="space-y-2">
                 <label className="block text-sm font-medium text-gray-700">
-                  Select Program
+                  Select Package
                 </label>
                 <select
-                  value={selectedProgram}
-                  onChange={(e) => setSelectedProgram(e.target.value)}
-                  className="w-full rounded-md border-gray-300 shadow-sm focus:border-amber-500 focus:ring-amber-500"
+                  value={selectedPackage}
+                  onChange={(e) => setSelectedPackage(e.target.value)}
+                  className="w-full rounded-md border-gray-300 shadow-sm focus:border-amber-500 focus:ring-amber-500 p-2 border-2"
                 >
-                  <option value="">Choose a program</option>
-                  {programs.map((program) => (
-                    <option key={program.id} value={program.id}>
-                      {program.name}
+                  <option value="">Select Package</option>
+                  <option value="all">All Packages</option>
+                  {packages.map((pkg) => (
+                    <option key={pkg.id} value={pkg.type.toLowerCase()}>
+                      {pkg.name}
                     </option>
                   ))}
                 </select>
               </div>
             )}
-
-            <div className="space-y-2">
-              <label className="block text-sm font-medium text-gray-700">
-                Select Package
-              </label>
-              <select
-                value={selectedPackage}
-                onChange={(e) => setSelectedPackage(e.target.value)}
-                className="w-full rounded-md border-gray-300 shadow-sm focus:border-amber-500 focus:ring-amber-500"
-              >
-                <option value="">All Packages</option>
-                {packages.map((pkg) => (
-                  <option key={pkg.id} value={pkg.id}>
-                    {pkg.name}
-                  </option>
-                ))}
-              </select>
-            </div>
 
             <div className="flex items-end">
               <button
@@ -922,11 +1153,35 @@ export default function ReportPage() {
             </button>
           </div>
 
-          {/* Monthly Report Content */}
-          {reportType === 'monthly' && <MonthlyReportContent />}
-          
-          {/* Program Report Content */}
-          {reportType === 'program' && programReport && <ProgramReportView />}
+          {/* Report Content based on type */}
+          {reportType === 'monthly' && (
+            <MonthlyReport 
+              data={reportData} 
+              month={selectedMonth} 
+              type={selectedPackage as 'all' | 'normal'}
+              cateringData={selectedPackage === 'normal' ? cateringData : undefined}
+              products={selectedPackage === 'normal' ? cateringProducts : undefined}
+              onCommentChange={handleCommentChange}
+            />
+          )}
+          {reportType === 'program' && programReport && (
+            <ProgramReport 
+              programName={programReport.programDetails.name}
+              startDate={programReport.programDetails.startDate}
+              endDate={programReport.programDetails.endDate}
+              totalParticipants={programReport.programDetails.totalParticipants}
+              selectedPackage={selectedPackage}
+              packages={programReport.packages}
+              grandTotal={programReport.grandTotal}
+            />
+          )}
+          {reportType === 'annual' && monthlyData.length > 0 && (
+            <AnnualReport 
+              year={new Date().getFullYear()}
+              selectedPackage={selectedPackage}
+              monthlyData={monthlyData}
+            />
+          )}
         </div>
       )}
 
