@@ -1,7 +1,6 @@
 import { ReportData } from "@/components/admin/pages/billing/report";
 import { format } from "date-fns";
-import { useState } from "react";
-import { RiChat2Line, RiCloseLine } from "react-icons/ri";
+import React from "react";
 
 interface CateringProduct {
   id: string;
@@ -13,7 +12,6 @@ interface CateringData {
   program: string;
   products: { [key: string]: number };
   total: number;
-  comment?: string;
 }
 
 interface MonthlyReportProps {
@@ -22,7 +20,6 @@ interface MonthlyReportProps {
   type: 'all' | 'normal';
   cateringData?: CateringData[];
   products?: CateringProduct[];
-  onCommentChange?: (programName: string, comment: string) => void;
 }
 
 const MonthlyReport = ({ 
@@ -30,108 +27,70 @@ const MonthlyReport = ({
   month, 
   type, 
   cateringData, 
-  products = [],
-  onCommentChange 
+  products = []
 }: MonthlyReportProps) => {
-  const [showComments, setShowComments] = useState(false);
-  const [comments, setComments] = useState<{ [key: string]: string }>({});
   const totalAmount = data.reduce((sum, row) => sum + row.grandTotal, 0);
 
-  const handleCommentChange = (programName: string, comment: string) => {
-    setComments(prev => ({ ...prev, [programName]: comment }));
-    onCommentChange?.(programName, comment);
-  };
-
   const renderAllPackagesTable = () => (
-    <div className="relative">
-      <div className="flex justify-end mb-4">
-        <button
-          onClick={() => setShowComments(!showComments)}
-          className="flex items-center gap-2 px-3 py-1.5 text-sm text-amber-600 bg-amber-50 rounded-lg hover:bg-amber-100"
-        >
-          <RiChat2Line className="w-4 h-4" />
-          {showComments ? 'Hide Comments' : 'Show Comments'}
-        </button>
-      </div>
-      <div className={`grid ${showComments ? 'grid-cols-[1fr,300px]' : 'grid-cols-1'} gap-4`}>
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200 entries-table border border-gray-200">
-            <thead>
-              <tr className="divide-x divide-gray-200">
-                <th scope="col" className="px-4 py-3 text-xs font-medium text-gray-500 uppercase text-center w-16 bg-gray-50 border-b">
-                  Sr. No
-                </th>
-                <th scope="col" className="px-4 py-3 text-xs font-medium text-gray-500 uppercase text-left bg-gray-50 border-b">
-                  Program Name
-                </th>
-                <th scope="col" className="px-4 py-3 text-xs font-medium text-gray-500 uppercase text-right bg-gray-50 border-b">
-                  Catering Package
-                </th>
-                <th scope="col" className="px-4 py-3 text-xs font-medium text-gray-500 uppercase text-right bg-gray-50 border-b">
-                  Extra Catering
-                </th>
-                <th scope="col" className="px-4 py-3 text-xs font-medium text-gray-500 uppercase text-right bg-gray-50 border-b">
-                  Cold Drink Catering
-                </th>
-                <th scope="col" className="px-4 py-3 text-xs font-medium text-gray-500 uppercase text-right bg-gray-50 border-b">
-                  Gr. Total
-                </th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-200">
-              {data.map((row, index) => (
-                <tr key={index} className="hover:bg-gray-50 divide-x divide-gray-200">
-                  <td className="px-4 py-3 text-sm text-gray-500 text-center">
-                    {index + 1}
-                  </td>
-                  <td className="px-4 py-3 text-sm text-gray-900">
-                    {row.program}
-                  </td>
-                  <td className="px-4 py-3 text-sm text-gray-900 text-right">
-                    ₹{row.cateringTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                  </td>
-                  <td className="px-4 py-3 text-sm text-gray-900 text-right">
-                    ₹{row.extraTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                  </td>
-                  <td className="px-4 py-3 text-sm text-gray-900 text-right">
-                    ₹{row.coldDrinkTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                  </td>
-                  <td className="px-4 py-3 text-sm font-medium text-gray-900 text-right">
-                    ₹{row.grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-            <tfoot>
-              <tr className="divide-x divide-gray-200 bg-gray-50">
-                <td colSpan={5} className="px-4 py-3 text-sm font-medium text-gray-900 text-right">
-                  Grand Total
-                </td>
-                <td className="px-4 py-3 text-sm font-medium text-gray-900 text-right">
-                  ₹{totalAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                </td>
-              </tr>
-            </tfoot>
-          </table>
-        </div>
-        {showComments && (
-          <div className="space-y-4">
-            <h3 className="text-sm font-medium text-gray-700">Comments</h3>
+    <div className="w-full flex justify-center">
+      <div className="w-[90%] max-w-5xl print:w-[98%] print:max-w-none print:mx-auto print:transform print:scale-100 print:origin-center">
+        <table className="w-full text-[11px] print:text-[9pt] border-collapse bg-white table-fixed">
+          <thead>
+            <tr>
+              <th scope="col" className="w-[8%] p-1.5 print:p-1 font-medium text-gray-900 text-center border border-gray-300 break-words">
+                No.
+              </th>
+              <th scope="col" className="w-[32%] p-1.5 print:p-1 font-medium text-gray-900 text-left border border-gray-300 break-words">
+                Program Name
+              </th>
+              <th scope="col" className="w-[15%] p-1.5 print:p-1 font-medium text-gray-900 text-right border border-gray-300 break-words">
+                Catering
+              </th>
+              <th scope="col" className="w-[15%] p-1.5 print:p-1 font-medium text-gray-900 text-right border border-gray-300 break-words">
+                Extra Catering
+              </th>
+              <th scope="col" className="w-[15%] p-1.5 print:p-1 font-medium text-gray-900 text-right border border-gray-300 break-words">
+                Cold Drinks
+              </th>
+              <th scope="col" className="w-[15%] p-1.5 print:p-1 font-medium text-gray-900 text-right border border-gray-300 break-words">
+                Gr. Total
+              </th>
+            </tr>
+          </thead>
+
+          <tbody className="text-[10px] print:text-[7pt]">
             {data.map((row, index) => (
-              <div key={index} className="space-y-2">
-                <label className="block text-xs font-medium text-gray-600">
+              <tr key={index}>
+                <td className="p-1.5 print:p-1 text-gray-900 text-center border border-gray-300 break-words">
+                  {index + 1}
+                </td>
+                <td className="p-1.5 print:p-1 text-gray-900 border border-gray-300 break-words">
                   {row.program}
-                </label>
-                <textarea
-                  value={comments[row.program] || ''}
-                  onChange={(e) => handleCommentChange(row.program, e.target.value)}
-                  className="w-full h-20 text-sm rounded-md border-gray-300 shadow-sm focus:border-amber-500 focus:ring-amber-500"
-                  placeholder="Add a comment..."
-                />
-              </div>
+                </td>
+                <td className="p-1.5 print:p-1 text-gray-900 text-right border border-gray-300 break-words">
+                  {row.cateringTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                </td>
+                <td className="p-1.5 print:p-1 text-gray-900 text-right border border-gray-300 break-words">
+                  {row.extraTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                </td>
+                <td className="p-1.5 print:p-1 text-gray-900 text-right border border-gray-300 break-words">
+                  {row.coldDrinkTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                </td>
+                <td className="p-1.5 print:p-1 text-gray-900 text-right border border-gray-300 break-words">
+                  {row.grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                </td>
+              </tr>
             ))}
-          </div>
-        )}
+            <tr className="font-medium">
+              <td colSpan={5} className="p-1.5 print:p-1 text-gray-900 text-right border border-gray-300 break-words">
+                TOTAL
+              </td>
+              <td className="p-1.5 print:p-1 text-gray-900 text-right border border-gray-300 break-words">
+                {totalAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+              </td>
+            </tr>
+          </tbody>
+        </table>
       </div>
     </div>
   );
@@ -150,110 +109,96 @@ const MonthlyReport = ({
       });
     });
 
+    const totalProducts = products.length;
+    const srNoWidth = 8;
+    const programWidth = 22;
+    const remainingWidth = 90; // 100 - srNoWidth - programWidth
+    const productColumnWidth =20;
+
+
     return (
-      <div className="relative">
-        <div className="flex justify-end mb-4">
-          <button
-            onClick={() => setShowComments(!showComments)}
-            className="flex items-center gap-2 px-3 py-1.5 text-sm text-amber-600 bg-amber-50 rounded-lg hover:bg-amber-100"
-          >
-            <RiChat2Line className="w-4 h-4" />
-            {showComments ? 'Hide Comments' : 'Show Comments'}
-          </button>
-        </div>
-        <div className={`grid ${showComments ? 'grid-cols-[1fr,300px]' : 'grid-cols-1'} gap-4`}>
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200 entries-table border border-gray-200">
-              <thead>
-                <tr className="divide-x divide-gray-200">
-                  <th scope="col" className="px-4 py-3 text-xs font-medium text-gray-500 uppercase text-center w-16 bg-gray-50 border-b">
-                    Sr. No
+      <div className="w-full flex justify-center">
+        <div className="w-[100%] max-w-5xl print:w-[100%] print:max-w-none print:mx-auto print:transform print:scale-200 print:origin-center">
+          <table className="w-full text-[11px] print:text-[9pt] border-collapse bg-white table-fixed">
+            <thead>
+              <tr>
+                <th scope="col" style={{ width: `${srNoWidth}%` }} className="p-1.5 print:p-1 font-medium text-gray-900 text-center border border-gray-300 break-words">
+                  No.
+                </th>
+
+                <th scope="col" style={{ width: `${programWidth}%` }} className="p-1.5 print:p-1 font-medium text-gray-900 text-left border border-gray-300 break-words">
+                  Program Name
+                </th>
+                {products.map(product => (
+                  <th 
+                    key={product.id} 
+                    scope="col" 
+                    style={{ width: `${productColumnWidth}%` }}
+                    className="p-1.5 print:p-1 text-[10px] print:text-[7pt] text-gray-900 text-center border border-gray-300 break-words"
+                  >
+                    {product.name}
                   </th>
-                  <th scope="col" className="px-4 py-3 text-xs font-medium text-gray-500 uppercase text-left bg-gray-50 border-b">
-                    Program Name
-                  </th>
-                  {products.map(product => (
-                    <th key={product.id} scope="col" className="px-4 py-3 text-xs font-medium text-gray-500 uppercase text-right bg-gray-50 border-b">
-                      {product.name}
-                    </th>
-                  ))}
-                  <th scope="col" className="px-4 py-3 text-xs font-medium text-gray-500 uppercase text-right bg-gray-50 border-b">
-                    Total
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-200">
-                {cateringData.map((row, index) => (
-                  <tr key={index} className="hover:bg-gray-50 divide-x divide-gray-200">
-                    <td className="px-4 py-3 text-sm text-gray-500 text-center">
-                      {index + 1}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-gray-900">
-                      {row.program}
-                    </td>
-                    {products.map(product => (
-                      <td key={product.id} className="px-4 py-3 text-sm text-gray-900 text-right">
-                        {row.products[product.id] || 0}
-                      </td>
-                    ))}
-                    <td className="px-4 py-3 text-sm font-medium text-gray-900 text-right">
-                      {row.total}
-                    </td>
-                  </tr>
                 ))}
-              </tbody>
-              <tfoot>
-                <tr className="divide-x divide-gray-200 bg-gray-50">
-                  <td colSpan={2} className="px-4 py-3 text-sm font-medium text-gray-900 text-right">
-                    Total
+                <th 
+                  scope="col" 
+                  style={{ width: `${productColumnWidth}%` }}
+                  className="p-1.5 print:p-1 font-medium text-gray-900 text-right border border-gray-300 break-words"
+                >
+                  Total
+                </th>
+              </tr>
+            </thead>
+            <tbody className="text-[10px] print:text-[7pt]">
+              {cateringData.map((row, index) => (
+                <tr key={index}>
+                  <td className="p-1.5 print:p-1 text-gray-900 text-center border border-gray-300 break-words">
+                    {index + 1}
+                  </td>
+                  <td className="p-1.5 print:p-1 text-gray-900 border border-gray-300 break-words">
+                    {row.program}
                   </td>
                   {products.map(product => (
-                    <td key={product.id} className="px-4 py-3 text-sm font-medium text-gray-900 text-right">
-                      {totals[product.id]}
+                    <td key={product.id} className="p-1.5 print:p-1 text-gray-900 text-right border border-gray-300 break-words">
+                      {row.products[product.id] || 0}
                     </td>
                   ))}
-                  <td className="px-4 py-3 text-sm font-medium text-gray-900 text-right">
-                    {Object.values(totals).reduce((a, b) => a + b, 0)}
+                  <td className="p-1.5 print:p-1 text-gray-900 text-right border border-gray-300 break-words">
+                    {row.total}
                   </td>
                 </tr>
-              </tfoot>
-            </table>
-          </div>
-          {showComments && (
-            <div className="space-y-4">
-              <h3 className="text-sm font-medium text-gray-700">Comments</h3>
-              {cateringData.map((row, index) => (
-                <div key={index} className="space-y-2">
-                  <label className="block text-xs font-medium text-gray-600">
-                    {row.program}
-                  </label>
-                  <textarea
-                    value={comments[row.program] || ''}
-                    onChange={(e) => handleCommentChange(row.program, e.target.value)}
-                    className="w-full h-20 text-sm rounded-md border-gray-300 shadow-sm focus:border-amber-500 focus:ring-amber-500"
-                    placeholder="Add a comment..."
-                  />
-                </div>
               ))}
-            </div>
-          )}
+              <tr className="font-medium">
+                <td colSpan={2} className="p-1.5 print:p-1 text-gray-900 text-right border border-gray-300 break-words">
+                  TOTAL
+                </td>
+                {products.map(product => (
+                  <td key={product.id} className="p-1.5 print:p-1 text-gray-900 text-right border border-gray-300 break-words">
+                    {totals[product.id]}
+                  </td>
+                ))}
+                <td className="p-1.5 print:p-1 text-gray-900 text-right border border-gray-300 break-words">
+                  {Object.values(totals).reduce((a, b) => a + b, 0)}
+                </td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </div>
     );
   };
 
   return (
-    <div id="report-content" className="p-8">
+    <div id="report-content" className="container mx-auto p-4 print:p-1 bg-white print:w-full print:max-w-none">
       {/* Report Header */}
-      <div className="page-header">
-        <h2 className="text-2xl font-bold text-center mb-2">Monthly Billing Report</h2>
-        <p className="text-center text-gray-600 mb-8">
-          {format(new Date(month), 'MMMM yyyy')}
-        </p>
+      <div className="mb-4 print:mb-3 w-full text-center">
+        <h2 className="text-sm font-bold mb-2 print:text-sm print:mb-2">
+          {format(new Date(month), 'MMMM yyyy')} {type === 'all' ? 'All Packages Report' : 'Catering Report'}
+        </h2>
       </div>
 
+
       {/* Report Content */}
-      <div className="mt-8">
+      <div className="print:mt-0 w-full">
         {type === 'all' ? (
           data && data.length > 0 ? (
             renderAllPackagesTable()

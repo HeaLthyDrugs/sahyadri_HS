@@ -1161,7 +1161,7 @@ export default function ReportPage() {
               type={selectedPackage as 'all' | 'normal'}
               cateringData={selectedPackage === 'normal' ? cateringData : undefined}
               products={selectedPackage === 'normal' ? cateringProducts : undefined}
-              onCommentChange={handleCommentChange}
+              // onCommentChange={handleCommentChange}
             />
           )}
           {reportType === 'program' && programReport && (

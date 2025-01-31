@@ -1,4 +1,5 @@
 import { format } from "date-fns";
+import React from "react";
 
 interface ProductEntry {
   productName: string;
@@ -27,7 +28,11 @@ interface AnnualReportProps {
   monthlyData: MonthlyData[];
 }
 
-const AnnualReport = ({ year, selectedPackage, monthlyData }: AnnualReportProps) => {
+const AnnualReport = ({
+  year,
+  selectedPackage,
+  monthlyData
+}: AnnualReportProps) => {
   const renderPackageTable = (packageType: string) => {
     const monthlyTotals = monthlyData.map(month => ({
       month: month.month,
@@ -38,46 +43,48 @@ const AnnualReport = ({ year, selectedPackage, monthlyData }: AnnualReportProps)
 
     return (
       <div className="mb-8">
-        <h3 className="text-xl font-semibold mb-4 text-gray-900">
+        <h3 className="text-xl font-semibold mb-4 text-gray-900 print:text-lg print:mb-2">
           {packageType.toUpperCase()} PACKAGE - YEARLY SUMMARY
         </h3>
-        <div className="border border-gray-300 rounded-lg overflow-hidden">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-4 py-3 text-xs font-medium text-gray-500 uppercase text-left">
-                  Month
-                </th>
-                <th className="px-4 py-3 text-xs font-medium text-gray-500 uppercase text-right">
-                  Total Amount
-                </th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-200">
-              {monthlyTotals.map(({ month, data }) => (
-                <tr key={month} className="hover:bg-gray-50">
-                  <td className="px-4 py-3 text-sm text-gray-900">
-                    {format(new Date(month), 'MMMM yyyy')}
+        <div className="relative overflow-x-auto">
+          <div className="border border-gray-900">
+            <table className="w-full text-sm print:text-[10pt] border-collapse">
+              <thead>
+                <tr>
+                  <th className="p-2 font-normal text-gray-900 text-left border-r border-b border-gray-900 print:p-1">
+                    Month
+                  </th>
+                  <th className="p-2 font-normal text-gray-900 text-right border-b border-gray-900 print:p-1">
+                    Total Amount
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {monthlyTotals.map(({ month, data }) => (
+                  <tr key={month} className="border-b border-gray-900">
+                    <td className="p-2 text-gray-900 border-r border-gray-900 print:p-1">
+                      {format(new Date(month), 'MMMM yyyy')}
+                    </td>
+                    <td className="p-2 text-gray-900 text-right print:p-1">
+                      {data.packageTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                    </td>
+                  </tr>
+                ))}
+                <tr>
+                  <td className="p-2 text-gray-900 text-right border-r border-gray-900 print:p-1">
+                    YEARLY TOTAL
                   </td>
-                  <td className="px-4 py-3 text-sm text-gray-900 text-right">
-                    ₹{data.packageTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                  <td className="p-2 text-gray-900 text-right print:p-1">
+                    {yearlyTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                   </td>
                 </tr>
-              ))}
-              <tr className="bg-gray-50 font-medium">
-                <td className="px-4 py-3 text-sm text-gray-900">
-                  Yearly Total
-                </td>
-                <td className="px-4 py-3 text-sm text-gray-900 text-right">
-                  ₹{yearlyTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                </td>
-              </tr>
-            </tbody>
-          </table>
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
     );
-  };
+  }
 
   const getAvailablePackages = () => {
     const packages = new Set<string>();
@@ -100,30 +107,51 @@ const AnnualReport = ({ year, selectedPackage, monthlyData }: AnnualReportProps)
   };
 
   return (
-    <div id="report-content" className="p-8">
+    <div id="report-content" className="p-8 print:p-4 bg-white">
       {/* Report Header */}
-      <div className="page-header mb-8">
-        <h2 className="text-2xl font-bold text-center mb-2">Annual Billing Report</h2>
-        <p className="text-center text-gray-600">
-          Year {year}
-        </p>
+      <div className="mb-6 print:mb-4">
+        <h2 className="text-2xl font-bold text-center mb-4 print:text-xl print:mb-2">
+          Annual Billing Report
+        </h2>
+        <div className="grid grid-cols-2 gap-4 text-sm text-gray-900 print:text-[10pt]">
+          <div className="space-y-1">
+            <p><span className="font-semibold">Year:</span> {year}</p>
+            <p><span className="font-semibold">Report Type:</span> {selectedPackage ? selectedPackage.toUpperCase() : 'All Packages'}</p>
+          </div>
+          <div className="space-y-1 text-right">
+            <p><span className="font-semibold">Report Date:</span> {format(new Date(), 'dd/MM/yyyy')}</p>
+          </div>
+        </div>
       </div>
 
       {/* Package Tables */}
-      <div className="space-y-8">
+      <div className="space-y-6 print:space-y-4">
         {getFilteredPackages().map(packageType => renderPackageTable(packageType))}
       </div>
 
-      {/* Grand Total - Only show when viewing all packages */}
+      {/* Grand Total */}
       {(!selectedPackage || selectedPackage === 'all') && (
-        <div className="mt-8 text-right">
-          <p className="text-xl font-bold text-gray-900">
-            Annual Grand Total: ₹{calculateGrandTotal().toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-          </p>
+        <div className="mt-6 print:mt-4">
+          <div className="relative overflow-x-auto">
+            <div className="border border-gray-900">
+              <table className="w-full text-sm print:text-[10pt] border-collapse">
+                <tbody>
+                  <tr>
+                    <td className="p-2 text-gray-900 text-right border-r border-gray-900 print:p-1">
+                      ANNUAL GRAND TOTAL
+                    </td>
+                    <td className="p-2 text-gray-900 text-right w-48 print:p-1">
+                      {calculateGrandTotal().toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
       )}
     </div>
   );
-};
+}
 
 export default AnnualReport; 

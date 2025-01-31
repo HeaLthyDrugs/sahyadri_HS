@@ -181,3 +181,38 @@ input, textarea {
 }
 
 @layer base { img { display: initial; }}
+
+/* Table styles */
+table {
+  border-collapse: collapse;
+  border-spacing: 0;
+}
+
+table td,
+table th {
+  border: 1px solid #e5e7eb;
+}
+
+/* Ensure table cells don't overlap */
+table td,
+table th {
+  overflow-wrap: break-word;
+  word-wrap: break-word;
+  max-width: 1px;
+  hyphens: auto;
+}
+
+@media print {
+  table {
+    page-break-inside: auto;
+  }
+  
+  tr {
+    page-break-inside: avoid;
+    page-break-after: auto;
+  }
+  
+  td, th {
+    border-color: #e5e7eb !important;
+  }
+}

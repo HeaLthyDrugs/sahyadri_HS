@@ -81,10 +81,9 @@ export default function DashboardLayout({
   const handleLogout = async () => {
     try {
       await auth.signOut();
-      router.push("/dashboard/login");
-      router.refresh();
+      router.push('/auth/login');
     } catch (error) {
-      console.error("Error signing out:", error);
+      console.error('Error logging out:', error);
     }
   };
 
