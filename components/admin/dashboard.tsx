@@ -86,8 +86,9 @@ export function AdminDashboard() {
 
   const handleLogout = () => {
     localStorage.removeItem("isAuthenticated");
-    router.push("/admin/login");
+    router.push("/auth/login");
   };
+
 
   const toggleMenu = (title: string) => {
     setOpenMenus(prev => 

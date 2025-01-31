@@ -20,6 +20,7 @@ import {
   RiLogoutBoxLine,
   RiSettingsLine
 } from "react-icons/ri";
+import { auth } from "@/lib/auth";
 
 interface MenuItem {
   title: string;
@@ -77,9 +78,14 @@ export default function DashboardLayout({
     }
   ];
 
-  const handleLogout = () => {
-    localStorage.removeItem("isAuthenticated");
-    router.push("/dashboard/login");
+  const handleLogout = async () => {
+    try {
+      await auth.signOut();
+      router.push("/dashboard/login");
+      router.refresh();
+    } catch (error) {
+      console.error("Error signing out:", error);
+    }
   };
 
   const toggleMenu = (title: string) => {

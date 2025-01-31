@@ -6,7 +6,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { auth } from "@/lib/auth";
 
-export default function LoginPage() {
+export default function SignUpPage() {
   const router = useRouter();
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -20,12 +20,17 @@ export default function LoginPage() {
       const formData = new FormData(e.currentTarget);
       const email = formData.get("email") as string;
       const password = formData.get("password") as string;
+      const confirmPassword = formData.get("confirmPassword") as string;
 
-      await auth.signIn(email, password);
+      if (password !== confirmPassword) {
+        throw new Error("Passwords do not match");
+      }
+
+      await auth.signUp(email, password);
       router.push("/dashboard");
       router.refresh();
     } catch (err: any) {
-      setError(err.message || "Failed to sign in");
+      setError(err.message || "Failed to sign up");
     } finally {
       setIsLoading(false);
     }
@@ -43,15 +48,15 @@ export default function LoginPage() {
             className="mx-auto rounded-full"
           />
           <h2 className="mt-6 text-3xl font-extrabold text-gray-900">
-            Sign in to Dashboard
+            Create your account
           </h2>
           <p className="mt-2 text-sm text-gray-600">
             Or{" "}
             <Link
-              href="/dashboard/signup"
+              href="/dashboard/login"
               className="font-medium text-amber-600 hover:text-amber-500"
             >
-              create a new account
+              sign in to your account
             </Link>
           </p>
         </div>
@@ -79,22 +84,25 @@ export default function LoginPage() {
                 id="password"
                 name="password"
                 type="password"
-                autoComplete="current-password"
+                autoComplete="new-password"
                 required
-                className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-b-md focus:outline-none focus:ring-amber-500 focus:border-amber-500 focus:z-10 sm:text-sm"
+                className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-amber-500 focus:border-amber-500 focus:z-10 sm:text-sm"
                 placeholder="Password"
               />
             </div>
-          </div>
-
-          <div className="flex items-center justify-between">
-            <div className="text-sm">
-              <Link
-                href="/dashboard/forgot-password"
-                className="font-medium text-amber-600 hover:text-amber-500"
-              >
-                Forgot your password?
-              </Link>
+            <div>
+              <label htmlFor="confirmPassword" className="sr-only">
+                Confirm Password
+              </label>
+              <input
+                id="confirmPassword"
+                name="confirmPassword"
+                type="password"
+                autoComplete="new-password"
+                required
+                className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-b-md focus:outline-none focus:ring-amber-500 focus:border-amber-500 focus:z-10 sm:text-sm"
+                placeholder="Confirm Password"
+              />
             </div>
           </div>
 
@@ -108,7 +116,7 @@ export default function LoginPage() {
               disabled={isLoading}
               className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-amber-600 hover:bg-amber-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-amber-500 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {isLoading ? "Signing in..." : "Sign in"}
+              {isLoading ? "Creating account..." : "Create account"}
             </button>
           </div>
         </form>

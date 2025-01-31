@@ -14,31 +14,52 @@ export function LoginForm() {
   const [loading, setLoading] = useState(false);
   const router = useRouter();
 
+  // Check initial auth state
   useEffect(() => {
-    // Check if already authenticated
-    const isAuthenticated = localStorage.getItem("isAuthenticated") === "true";
-    if (isAuthenticated) {
-      router.push("/admin");
-    }
-  }, [router]);
+    console.log("Checking initial auth state...");
+    const isAuthenticated = localStorage.getItem("isAuthenticated");
+    console.log("Initial auth state:", isAuthenticated);
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    console.log("Login attempt started...");
+    console.log("Email:", credentials.email);
     setLoading(true);
     setError("");
 
     try {
+      console.log("Validating credentials...");
       if (credentials.email === "admin@example.com" && credentials.password === "admin123") {
+        console.log("Credentials valid, setting authentication...");
+        
         // Set authentication in both localStorage and cookie
         localStorage.setItem("isAuthenticated", "true");
-        Cookies.set('isAuthenticated', 'true', { expires: 7 }); // Cookie expires in 7 days
+        Cookies.set('isAuthenticated', 'true', { expires: 7 });
         
-        // Force a hard navigation to the admin page
-        window.location.href = "/admin";
+        console.log("Authentication state set in localStorage and cookies");
+        console.log("localStorage auth:", localStorage.getItem("isAuthenticated"));
+        console.log("Cookie auth:", Cookies.get('isAuthenticated'));
+        
+        // Add a small delay to ensure state is set
+        console.log("Waiting for state to settle...");
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+        console.log("Attempting redirect to dashboard...");
+        // Try router.push first, fallback to window.location
+        try {
+          await router.push('/dashboard');
+          console.log("Router push completed");
+        } catch (routerError) {
+          console.log("Router push failed, using window.location", routerError);
+          window.location.href = "/dashboard";
+        }
       } else {
+        console.log("Invalid credentials provided");
         setError("Invalid credentials");
       }
     } catch (err) {
+      console.error("Login process error:", err);
       setError("An error occurred. Please try again.");
     } finally {
       setLoading(false);
@@ -76,6 +97,7 @@ export function LoginForm() {
             onChange={(e) => setCredentials({ ...credentials, email: e.target.value })}
             className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-amber-500 focus:outline-none focus:ring-amber-500"
             required
+            disabled={loading}
           />
         </div>
 
@@ -90,6 +112,7 @@ export function LoginForm() {
             onChange={(e) => setCredentials({ ...credentials, password: e.target.value })}
             className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-amber-500 focus:outline-none focus:ring-amber-500"
             required
+            disabled={loading}
           />
         </div>
 
@@ -98,7 +121,17 @@ export function LoginForm() {
           disabled={loading}
           className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-amber-600 hover:bg-amber-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-amber-500 disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          {loading ? "Logging in..." : "Login"}
+          {loading ? (
+            <div className="flex items-center">
+              <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+              Logging in...
+            </div>
+          ) : (
+            "Login"
+          )}
         </button>
       </form>
     </div>

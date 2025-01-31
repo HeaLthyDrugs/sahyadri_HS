@@ -18,9 +18,12 @@ export function Navbar() {
     const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
     const router = useRouter();
 
-    const handleLoginClick = () => {
-        router.push('/admin/login');
+    const handleLoginClick = (e: React.MouseEvent) => {
+        e.preventDefault();
+        router.push('/auth/login');
+        setIsMobileMenuOpen(false);
     };
+
 
     return (
         <nav className="fixed top-6 left-1/2 -translate-x-1/2 w-[90%] max-w-4xl bg-white/10 backdrop-blur-md z-50 rounded-3xl border border-white/20 shadow-lg">
