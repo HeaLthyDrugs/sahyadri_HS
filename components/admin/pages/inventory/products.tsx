@@ -787,11 +787,11 @@ export function ProductsPage() {
         <>
           <div className="bg-white rounded-lg shadow overflow-hidden">
             <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
+              <table className="table-auto min-w-full divide-gray-200">
                 <thead className="bg-gray-50">
                   <tr>
                     {isSelectMode && (
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="w-[50px] px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         <input
                           type="checkbox"
                           checked={paginatedProducts().length > 0 && selectedProducts.length === paginatedProducts().length}
@@ -800,22 +800,22 @@ export function ProductsPage() {
                         />
                       </th>
                     )}
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="w-[80px] px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       ID
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="w-1/4 min-w-[200px] px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Name
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="w-1/6 min-w-[150px] px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Package
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="w-[100px] px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Rate
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="w-1/5 min-w-[180px] px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Slot Time
                     </th>
-                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="w-[100px] px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Actions
                     </th>
                   </tr>
@@ -825,7 +825,7 @@ export function ProductsPage() {
                     paginatedProducts().map((product) => (
                       <tr key={product.id} className="hover:bg-gray-50">
                         {isSelectMode && (
-                          <td className="px-6 py-4 whitespace-nowrap">
+                          <td className="w-[50px] px-4 py-4 whitespace-nowrap">
                             <input
                               type="checkbox"
                               checked={selectedProducts.includes(product.id)}
@@ -834,30 +834,30 @@ export function ProductsPage() {
                             />
                           </td>
                         )}
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        <td className="w-[80px] px-4 py-4 text-sm text-gray-900">
                           {product.index}
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div>
-                            <div className="text-sm font-medium text-gray-900">
+                        <td className="w-1/4 min-w-[200px] px-4 py-4">
+                          <div className="max-w-full">
+                            <div className="text-sm font-medium text-gray-900 truncate">
                               {product.name}
                             </div>
                             {product.description && (
-                              <div className="text-sm text-gray-500">
+                              <div className="text-sm text-gray-500 truncate">
                                 {product.description}
                               </div>
                             )}
                           </div>
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <span className="text-sm font-medium text-amber-600">
+                        <td className="w-1/6 min-w-[150px] px-4 py-4">
+                          <span className="text-sm font-medium text-amber-600 truncate block">
                             {(product as any).packages?.name}
                           </span>
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        <td className="w-[100px] px-4 py-4 text-sm text-gray-900">
                           ₹{product.rate}
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
+                        <td className="w-1/5 min-w-[180px] px-4 py-4">
                           <div>
                             <div className="text-sm text-gray-900">
                               {formatTime(product.slot_start)} - {formatTime(product.slot_end)}
@@ -867,36 +867,38 @@ export function ProductsPage() {
                             </div>
                           </div>
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                          <button
-                            onClick={() => {
-                              setEditingProduct(product);
-                              setFormData({
-                                name: product.name,
-                                description: product.description,
-                                package_id: product.package_id,
-                                rate: product.rate.toString(),
-                                slot_start: product.slot_start,
-                                slot_end: product.slot_end
-                              });
-                              setIsModalOpen(true);
-                            }}
-                            className="text-amber-600 hover:text-amber-900 mr-4"
-                          >
-                            <RiEditLine className="w-5 h-5" />
-                          </button>
-                          <button
-                            onClick={() => handleDelete(product.id)}
-                            className="text-red-600 hover:text-red-900"
-                          >
-                            <RiDeleteBinLine className="w-5 h-5" />
-                          </button>
+                        <td className="w-[100px] px-4 py-4 text-right text-sm font-medium">
+                          <div className="flex justify-end gap-2">
+                            <button
+                              onClick={() => {
+                                setEditingProduct(product);
+                                setFormData({
+                                  name: product.name,
+                                  description: product.description,
+                                  package_id: product.package_id,
+                                  rate: product.rate.toString(),
+                                  slot_start: product.slot_start,
+                                  slot_end: product.slot_end
+                                });
+                                setIsModalOpen(true);
+                              }}
+                              className="text-amber-600 hover:text-amber-900 p-1"
+                            >
+                              <RiEditLine className="w-5 h-5" />
+                            </button>
+                            <button
+                              onClick={() => handleDelete(product.id)}
+                              className="text-red-600 hover:text-red-900 p-1"
+                            >
+                              <RiDeleteBinLine className="w-5 h-5" />
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))
                   ) : (
                     <tr>
-                      <td colSpan={6} className="px-6 py-4 text-center text-gray-500">
+                      <td colSpan={isSelectMode ? 7 : 6} className="px-4 py-4 text-center text-gray-500">
                         No products found matching the selected filters
                       </td>
                     </tr>

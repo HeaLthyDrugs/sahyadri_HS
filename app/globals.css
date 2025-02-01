@@ -216,3 +216,92 @@ table th {
     border-color: #e5e7eb !important;
   }
 }
+
+/* Enhanced Table Styles for Reports and Invoices */
+.report-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  margin-bottom: 1rem;
+  border: 2px solid #e5e7eb; /* Outer table border */
+  background-color: white;
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
+  border-radius: 0.5rem;
+  overflow: hidden;
+}
+
+/* Header cell styles */
+.report-table thead th {
+  background-color: #fff7ed;
+  font-weight: 600;
+  color: #1f2937;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 0.75rem;
+  border: 1px solid #e5e7eb;
+  border-bottom: 2px solid #e5e7eb; /* Thicker bottom border for header */
+}
+
+/* Body cell styles */
+.report-table tbody td {
+  padding: 0.75rem;
+  border: 1px solid #e5e7eb;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+}
+
+/* Row hover effect */
+.report-table tbody tr:hover {
+  background-color: #f8fafc;
+}
+
+/* Footer/total row styles */
+.report-table tfoot tr,
+.report-table tbody tr:last-child {
+  border-top: 2px solid #e5e7eb;
+  font-weight: 600;
+}
+
+/* Amber highlight row */
+.report-table tr.bg-amber-50 {
+  background-color: #fff7ed;
+  border-top: 2px solid #e5e7eb;
+}
+
+/* Print-specific border styles */
+@media print {
+  .report-table {
+    border: 1pt solid #000000;
+    box-shadow: none;
+  }
+
+  .report-table th,
+  .report-table td {
+    border: 0.5pt solid #000000 !important;
+  }
+
+  .report-table thead th {
+    border-bottom: 1pt solid #000000 !important;
+  }
+
+  .report-table tfoot tr,
+  .report-table tbody tr:last-child {
+    border-top: 1pt solid #000000 !important;
+  }
+}
+
+/* Border radius utilities */
+.rounded-tl { border-top-left-radius: 0.5rem; }
+.rounded-tr { border-top-right-radius: 0.5rem; }
+.rounded-bl { border-bottom-left-radius: 0.5rem; }
+.rounded-br { border-bottom-right-radius: 0.5rem; }
+
+/* Border width utilities */
+.border-t-2 { border-top-width: 2px; }
+.border-b-2 { border-bottom-width: 2px; }
+.border-l-2 { border-left-width: 2px; }
+.border-r-2 { border-right-width: 2px; }
+
+/* Border color utilities */
+.border-gray-200 { border-color: #e5e7eb; }
+.border-amber-200 { border-color: #fcd34d; }

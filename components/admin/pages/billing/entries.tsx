@@ -888,12 +888,12 @@ export function BillingEntriesPage() {
   };
 
   return (
-    <div className={`${isFullScreenMode ? 'fixed inset-0 bg-white z-50' : 'p-4'}`}>
+    <div className={`${isFullScreenMode ? 'fixed inset-0 bg-white z-50' : 'p-2 sm:p-4'}`}>
       {/* Toggle Full Screen Button - Only show when table is ready */}
       {selectedPackage && dateRange.length > 0 && (
         <button
           onClick={() => setIsFullScreenMode(!isFullScreenMode)}
-          className="fixed top-4 right-4 z-50 bg-amber-500 text-white px-4 py-2 rounded-lg shadow-lg hover:bg-amber-600 flex items-center gap-2"
+          className="fixed top-2 sm:top-4 right-2 sm:right-4 z-50 bg-amber-500 text-white px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg shadow-lg hover:bg-amber-600 flex items-center gap-2 text-sm sm:text-base"
         >
           {isFullScreenMode ? (
             <>Exit Edit Mode <IoExitOutline /></>
@@ -906,18 +906,18 @@ export function BillingEntriesPage() {
       <div className={`${isFullScreenMode ? 'h-screen flex flex-col overflow-hidden' : ''}`}>
         {/* Filter Section - Hide in full screen mode */}
         {!isFullScreenMode && (
-          <div className="flex flex-wrap gap-4 mb-6 items-center bg-white p-4 rounded-lg shadow">
+          <div className="flex flex-col sm:flex-row flex-wrap gap-2 sm:gap-4 mb-4 sm:mb-6 items-start sm:items-center bg-white p-2 sm:p-4 rounded-lg shadow">
             <input
               type="month"
               value={selectedMonth}
               onChange={(e) => setSelectedMonth(e.target.value)}
-              className="border rounded px-3 py-2"
+              className="w-full sm:w-auto border rounded px-2 py-1.5 sm:px-3 sm:py-2 text-sm sm:text-base"
             />
 
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
-              className="border rounded px-3 py-2"
+              className="w-full sm:w-auto border rounded px-2 py-1.5 sm:px-3 sm:py-2 text-sm sm:text-base"
             >
               <option value="all">All Programs</option>
               <option value="Upcoming">Upcoming</option>
@@ -925,16 +925,18 @@ export function BillingEntriesPage() {
               <option value="Completed">Completed</option>
             </select>
 
-            <ProgramSelect
-              value={selectedProgram}
-              onChange={setSelectedProgram}
-              programs={filteredPrograms}
-            />
+            <div className="w-full sm:w-auto">
+              <ProgramSelect
+                value={selectedProgram}
+                onChange={setSelectedProgram}
+                programs={filteredPrograms}
+              />
+            </div>
 
             <select
               value={selectedPackage}
               onChange={(e) => setSelectedPackage(e.target.value)}
-              className="border rounded px-3 py-2 min-w-[200px]"
+              className="w-full sm:w-auto border rounded px-2 py-1.5 sm:px-3 sm:py-2 text-sm sm:text-base min-w-[200px]"
               disabled={!selectedProgram}
             >
               <option value="">Select Package</option>
@@ -950,11 +952,11 @@ export function BillingEntriesPage() {
         {/* Full Screen Mode Content */}
         {selectedPackage && (
           <div className={`
-            ${isFullScreenMode ? 'flex-1 flex flex-col h-full overflow-hidden p-4' : ''}
+            ${isFullScreenMode ? 'flex-1 flex flex-col h-full overflow-hidden p-2 sm:p-4' : ''}
           `}>
             {/* Search Component - Sticky in full screen mode */}
             <div className={`
-              ${isFullScreenMode ? 'sticky top-0 bg-white z-30 py-4 border-b' : ''}
+              ${isFullScreenMode ? 'sticky top-0 bg-white z-30 py-2 sm:py-4 border-b' : ''}
             `}>
               <ProductSearch
                 products={products}
@@ -971,22 +973,26 @@ export function BillingEntriesPage() {
                 className="overflow-auto flex-1 border rounded-lg"
                 style={{ maxHeight: isFullScreenMode ? 'calc(100vh - 180px)' : '70vh' }}
               >
-                <table className="min-w-full border-collapse">
-                  <thead className="sticky top-0 bg-white z-20">
+                <table className="min-w-full table-auto border-collapse bg-white relative">
+                  <thead>
                     <tr>
-                      <th className="border p-2 bg-gray-50 sticky left-0 z-30 min-w-[200px] max-w-[300px]">
-                        Product Name
+                      <th 
+                        className="border bg-gray-50 sticky top-0 left-0 z-50 min-w-[160px] sm:min-w-[200px] max-w-[300px] text-sm sm:text-base shadow-[2px_2px_4px_-2px_rgba(0,0,0,0.1)]"
+                        style={{ minHeight: '64px' }}
+                      >
+                        <div className="truncate p-2">Product Name</div>
                       </th>
                       {dateRange.map(date => (
                         <th 
                           key={date.toISOString()} 
-                          className="border p-2 bg-gray-50 min-w-[80px] max-w-[100px] sticky top-0"
+                          className="border bg-gray-50 sticky top-0 z-40 min-w-[70px] sm:min-w-[80px] max-w-[100px] text-xs sm:text-sm whitespace-nowrap shadow-[0_2px_4px_-2px_rgba(0,0,0,0.1)]"
+                          style={{ minHeight: '64px' }}
                         >
-                          <div className="flex flex-col">
-                            {format(date, 'dd-MM-yyyy')}
+                          <div className="flex flex-col items-center p-1 sm:p-2">
+                            <span>{format(date, 'dd-MM-yyyy')}</span>
                             <button
                               onClick={() => handleCopyPrevious(date)}
-                              className="text-xs text-blue-500 hover:text-blue-700"
+                              className="text-xs text-blue-500 hover:text-blue-700 mt-1"
                               title="Copy previous day's entries"
                             >
                               <RiCalendarLine />
@@ -996,10 +1002,10 @@ export function BillingEntriesPage() {
                       ))}
                       {showSummary && (
                         <>
-                          <th className="border p-2 bg-gray-50 sticky top-0">Total</th>
-                          <th className="border p-2 bg-gray-50 sticky top-0">Average</th>
-                          <th className="border p-2 bg-gray-50 sticky top-0">Max</th>
-                          <th className="border p-2 bg-gray-50 sticky top-0">Min</th>
+                          <th className="border bg-gray-50 sticky top-0 z-40 p-1 sm:p-2 text-xs sm:text-sm shadow-[0_2px_4px_-2px_rgba(0,0,0,0.1)]">Total</th>
+                          <th className="border bg-gray-50 sticky top-0 z-40 p-1 sm:p-2 text-xs sm:text-sm shadow-[0_2px_4px_-2px_rgba(0,0,0,0.1)]">Average</th>
+                          <th className="border bg-gray-50 sticky top-0 z-40 p-1 sm:p-2 text-xs sm:text-sm shadow-[0_2px_4px_-2px_rgba(0,0,0,0.1)]">Max</th>
+                          <th className="border bg-gray-50 sticky top-0 z-40 p-1 sm:p-2 text-xs sm:text-sm shadow-[0_2px_4px_-2px_rgba(0,0,0,0.1)]">Min</th>
                         </>
                       )}
                     </tr>
@@ -1012,15 +1018,19 @@ export function BillingEntriesPage() {
                       )
                       .map((product, rowIndex) => (
                         <tr key={product.id}>
-                          <td className="border p-2 bg-gray-50 font-medium sticky left-0 z-10 whitespace-nowrap">
-                            {product.name}
+                          <td 
+                            className="border bg-gray-50 font-medium sticky left-0 z-30 text-sm sm:text-base shadow-[2px_0_4px_-2px_rgba(0,0,0,0.1)]"
+                          >
+                            <div className="truncate p-2" title={product.name}>
+                              {product.name}
+                            </div>
                           </td>
                           {dateRange.map((date, colIndex) => {
                             const dateStr = format(date, 'yyyy-MM-dd');
                             return (
                               <td 
                                 key={`${date}-${product.id}`}
-                                className="border px-4 py-2 text-center"
+                                className="border px-2 sm:px-4 py-1 sm:py-2 text-center bg-white"
                               >
                                 <input
                                   type="number"
@@ -1029,7 +1039,7 @@ export function BillingEntriesPage() {
                                   onKeyDown={(e) => handleKeyDown(e, rowIndex, colIndex)}
                                   data-row={rowIndex}
                                   data-col={colIndex}
-                                  className={`w-20 text-center border rounded focus:ring-2 focus:ring-amber-500 focus:border-amber-500 ${
+                                  className={`w-14 sm:w-20 text-center border rounded focus:ring-2 focus:ring-amber-500 focus:border-amber-500 text-sm sm:text-base py-1 ${
                                     focusedCell?.row === rowIndex && focusedCell?.col === colIndex
                                       ? 'ring-2 ring-amber-500'
                                       : ''
@@ -1050,36 +1060,36 @@ export function BillingEntriesPage() {
 
         {/* Keyboard Controls Guide */}
         {isFullScreenMode && showKeyboardGuide && (
-          <div className="fixed bottom-4 left-4 bg-gray-800 text-white p-4 rounded-lg shadow-lg z-50 max-w-2xl">
-            <div className="flex justify-between items-center mb-3">
+          <div className="fixed bottom-2 sm:bottom-4 left-2 sm:left-4 bg-gray-800 text-white p-2 sm:p-4 rounded-lg shadow-lg z-50 max-w-[calc(100vw-1rem)] sm:max-w-2xl text-xs sm:text-sm">
+            <div className="flex justify-between items-center mb-2 sm:mb-3">
               <span className="font-medium">Keyboard Shortcuts</span>
               <button
                 onClick={() => setShowKeyboardGuide(false)}
                 className="text-gray-400 hover:text-white"
               >
-                <RiCloseLine className="w-5 h-5" />
+                <RiCloseLine className="w-4 h-4 sm:w-5 sm:h-5" />
               </button>
             </div>
-            <div className="grid grid-cols-2 gap-4 text-sm">
-              <div className="flex items-center gap-2">
-                <div className="flex gap-1">
-                  <kbd className="px-2 py-1 bg-gray-700 rounded">↑</kbd>
-                  <kbd className="px-2 py-1 bg-gray-700 rounded">↓</kbd>
-                  <kbd className="px-2 py-1 bg-gray-700 rounded">←</kbd>
-                  <kbd className="px-2 py-1 bg-gray-700 rounded">→</kbd>
+            <div className="grid grid-cols-2 gap-2 sm:gap-4">
+              <div className="flex items-center gap-1 sm:gap-2">
+                <div className="flex gap-0.5 sm:gap-1">
+                  <kbd className="px-1 sm:px-2 py-0.5 sm:py-1 bg-gray-700 rounded text-xs sm:text-sm">↑</kbd>
+                  <kbd className="px-1 sm:px-2 py-0.5 sm:py-1 bg-gray-700 rounded text-xs sm:text-sm">↓</kbd>
+                  <kbd className="px-1 sm:px-2 py-0.5 sm:py-1 bg-gray-700 rounded text-xs sm:text-sm">←</kbd>
+                  <kbd className="px-1 sm:px-2 py-0.5 sm:py-1 bg-gray-700 rounded text-xs sm:text-sm">→</kbd>
                 </div>
                 <span>Navigate</span>
               </div>
-              <div className="flex items-center gap-2">
-                <kbd className="px-2 py-1 bg-gray-700 rounded">Tab</kbd>
+              <div className="flex items-center gap-1 sm:gap-2">
+                <kbd className="px-1 sm:px-2 py-0.5 sm:py-1 bg-gray-700 rounded text-xs sm:text-sm">Tab</kbd>
                 <span>Next Cell</span>
               </div>
-              <div className="flex items-center gap-2">
-                <kbd className="px-2 py-1 bg-gray-700 rounded">Enter</kbd>
+              <div className="flex items-center gap-1 sm:gap-2">
+                <kbd className="px-1 sm:px-2 py-0.5 sm:py-1 bg-gray-700 rounded text-xs sm:text-sm">Enter</kbd>
                 <span>Save Changes</span>
               </div>
-              <div className="flex items-center gap-2">
-                <kbd className="px-2 py-1 bg-gray-700 rounded">Esc</kbd>
+              <div className="flex items-center gap-1 sm:gap-2">
+                <kbd className="px-1 sm:px-2 py-0.5 sm:py-1 bg-gray-700 rounded text-xs sm:text-sm">Esc</kbd>
                 <span>Exit Edit Mode</span>
               </div>
             </div>
@@ -1090,21 +1100,21 @@ export function BillingEntriesPage() {
         {isFullScreenMode && !showKeyboardGuide && (
           <button
             onClick={() => setShowKeyboardGuide(true)}
-            className="fixed bottom-4 left-4 bg-gray-800 text-white px-2 py-2 rounded-lg shadow-lg flex items-center gap-2 z-50 hover:bg-gray-700"
+            className="fixed bottom-2 sm:bottom-4 left-2 sm:left-4 bg-gray-800 text-white px-2 py-1.5 sm:px-3 sm:py-2 rounded-lg shadow-lg flex items-center gap-2 z-50 hover:bg-gray-700 text-xs sm:text-sm"
           >
-            <RiKeyboardLine className="w-5 h-5" />
+            <RiKeyboardLine className="w-4 h-4 sm:w-5 sm:h-5" />
             <span>Show Shortcuts</span>
           </button>
         )}
 
         {/* Loading indicator - Adjusted position */}
         {isLoading && (
-          <div className="fixed bottom-4 right-4 bg-white rounded-lg shadow-lg px-4 py-3 flex items-center gap-3 z-50 border border-amber-100">
+          <div className="fixed bottom-2 sm:bottom-4 right-2 sm:right-4 bg-white rounded-lg shadow-lg px-3 py-2 sm:px-4 sm:py-3 flex items-center gap-2 sm:gap-3 z-50 border border-amber-100">
             <div className="relative">
-              <div className="w-6 h-6 border-4 border-amber-200 border-t-amber-500 rounded-full animate-spin"></div>
+              <div className="w-4 h-4 sm:w-6 sm:h-6 border-3 sm:border-4 border-amber-200 border-t-amber-500 rounded-full animate-spin"></div>
               <div className="absolute inset-0 border-2 border-amber-100 rounded-full animate-pulse"></div>
             </div>
-            <span className="text-sm font-medium text-amber-700">Saving entries...</span>
+            <span className="text-xs sm:text-sm font-medium text-amber-700">Saving entries...</span>
           </div>
         )}
       </div>

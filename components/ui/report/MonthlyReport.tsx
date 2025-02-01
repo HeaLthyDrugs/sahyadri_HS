@@ -110,7 +110,7 @@ const MonthlyReport = ({
     });
 
     const totalProducts = products.length;
-    const srNoWidth = 8;
+    const srNoWidth = 10;
     const programWidth = 22;
     const remainingWidth = 90; // 100 - srNoWidth - programWidth
     const productColumnWidth =20;

@@ -141,21 +141,21 @@ export function PackagesPage() {
       </div>
 
       {/* Table */}
-      <div className="bg-white rounded-lg shadow overflow-hidden">
+      <div className="bg-white rounded-lg shadow">
         <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
+          <table className="w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/4">
                   Name
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-2/5">
                   Description
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/6">
                   Type
                 </th>
-                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider w-1/6">
                   Actions
                 </th>
               </tr>
@@ -163,34 +163,38 @@ export function PackagesPage() {
             <tbody className="bg-white divide-y divide-gray-200">
               {packages.map((pkg) => (
                 <tr key={pkg.id} className="hover:bg-gray-50">
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                  <td className="px-4 py-4 text-sm font-medium text-gray-900 truncate max-w-[200px]">
                     {pkg.name}
                   </td>
-                  <td className="px-6 py-4 text-sm text-gray-500">
-                    {pkg.description}
+                  <td className="px-4 py-4 text-sm text-gray-500">
+                    <div className="line-clamp-2 max-w-[300px]">
+                      {pkg.description}
+                    </div>
                   </td>
-                  <td className="px-6 py-4 text-sm text-gray-500">
+                  <td className="px-4 py-4 text-sm text-gray-500 truncate max-w-[120px]">
                     {pkg.type}
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                    <button
-                      onClick={() => handleEdit(pkg)}
-                      className="text-amber-600 hover:text-amber-900 mr-4"
-                    >
-                      <RiEditLine className="w-5 h-5" />
-                    </button>
-                    <button
-                      onClick={() => handleDelete(pkg.id)}
-                      className="text-red-600 hover:text-red-900"
-                    >
-                      <RiDeleteBinLine className="w-5 h-5" />
-                    </button>
+                  <td className="px-4 py-4 text-right text-sm font-medium whitespace-nowrap">
+                    <div className="flex justify-end gap-2">
+                      <button
+                        onClick={() => handleEdit(pkg)}
+                        className="text-amber-600 hover:text-amber-900 p-1"
+                      >
+                        <RiEditLine className="w-5 h-5" />
+                      </button>
+                      <button
+                        onClick={() => handleDelete(pkg.id)}
+                        className="text-red-600 hover:text-red-900 p-1"
+                      >
+                        <RiDeleteBinLine className="w-5 h-5" />
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
               {packages.length === 0 && (
                 <tr>
-                  <td colSpan={4} className="px-6 py-4 text-center text-gray-500">
+                  <td colSpan={4} className="px-4 py-4 text-center text-gray-500">
                     No packages found
                   </td>
                 </tr>
