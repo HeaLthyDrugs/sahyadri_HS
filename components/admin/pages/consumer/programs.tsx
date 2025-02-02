@@ -156,7 +156,7 @@ export function ProgramsPage() {
       const { data, error } = await supabase
         .from('programs')
         .select('*')
-        .order('start_date', { ascending: true });
+        .order('program_number', { ascending: true });
 
       if (error) throw error;
       setPrograms(data || []);
@@ -257,6 +257,20 @@ export function ProgramsPage() {
         .eq('id', id);
 
       if (error) throw error;
+
+      // Check if this was the last program
+      const { data: remainingPrograms, error: countError } = await supabase
+        .from('programs')
+        .select('id');
+
+      if (countError) throw countError;
+
+      // If no programs left, reset the sequence
+      if (remainingPrograms.length === 0) {
+        const { error: resetError } = await supabase.rpc('reset_program_number_sequence');
+        if (resetError) throw resetError;
+      }
+
       toast.success('Program deleted successfully');
       fetchPrograms();
       setIsDeleteModalOpen(false);
@@ -698,7 +712,7 @@ export function ProgramsPage() {
               <table className="table-auto min-w-full divide-gray-200">
                 <thead className="bg-gray-50">
                   <tr>
-                    <th className="w-1/6 min-w-[10px] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="w-[100px] min-w-[60px] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       <div className="flex items-center gap-2">
                         <button
                           onClick={() => {
@@ -707,7 +721,7 @@ export function ProgramsPage() {
                           }}
                           className="text-gray-500 hover:text-amber-600 flex items-center gap-1"
                         >
-                          No.
+                          ID
                           {sortField === 'program_number' && (
                             sortDirection === 'asc' ? (
                               <RiSortAsc className="w-4 h-4" />
@@ -718,7 +732,7 @@ export function ProgramsPage() {
                         </button>
                       </div>
                     </th>
-                    <th className="w-1/4 min-w-[200px] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="w-1/4 min-w-[150px] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Customer Name
                     </th>
                     <th className="w-1/4 min-w-[200px] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -733,13 +747,13 @@ export function ProgramsPage() {
                     <th className="w-1/4 min-w-[200px] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Time
                     </th>
-                    <th className="w-1/4 min-w-[200px] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="w-1/4 min-w-[150px] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Participants
                     </th>
-                    <th className="w-1/4 min-w-[200px] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="w-1/4 min-w-[150px] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Status
                     </th>
-                    <th className="w-1/4 min-w-[200px] px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th className="w-1/4 min-w-[120px] px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Actions
                     </th>
                   </tr>
@@ -750,15 +764,15 @@ export function ProgramsPage() {
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                         {program.program_number || 0}
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-wrap">
                         {program.customer_name}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm font-medium text-gray-900">
+                        <div className="text-sm font-medium text-gray-900 text-wrap">
                           {program.name}
                         </div>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-wrap">
                         {format(new Date(program.start_date), 'MMM dd, yyyy')} - {format(new Date(program.end_date), 'MMM dd, yyyy')}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
