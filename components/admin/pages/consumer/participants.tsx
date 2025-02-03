@@ -76,6 +76,7 @@ export function ParticipantsPage() {
   const [searchSuggestions, setSearchSuggestions] = useState<string[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage] = useState(100);
+  const [selectedType, setSelectedType] = useState<'all' | Participant['type']>('all');
   const [formData, setFormData] = useState<FormData>({
     attendee_name: "",
     program_id: "all",
@@ -149,6 +150,18 @@ export function ParticipantsPage() {
       const monthStart = startOfMonth(monthDate);
       const monthEnd = endOfMonth(monthDate);
 
+      // First fetch programs for the selected month
+      const { data: monthPrograms, error: programError } = await supabase
+        .from('programs')
+        .select('id')
+        .lte('start_date', monthEnd.toISOString())
+        .gte('end_date', monthStart.toISOString());
+
+      if (programError) throw programError;
+
+      // Get program IDs for the selected month
+      const programIds = monthPrograms?.map(p => p.id) || [];
+
       let query = supabase
         .from('participants')
         .select(`
@@ -163,35 +176,47 @@ export function ParticipantsPage() {
         `)
         .order('created_at', { ascending: false });
 
-      // Add program filter if specific program selected
+      // Add program filter
       if (selectedProgramId !== 'all') {
         query = query.eq('program_id', selectedProgramId);
+      } else if (programIds.length > 0) {
+        query = query.in('program_id', programIds);
       }
-
-      // Get all participants that either:
-      // 1. Have date errors
-      // 2. Are within the selected month
-      // 3. Have early arrival/late departure in relation to their program
-      query = query.or(
-        `has_date_error.eq.true,` +
-        `and(reception_checkin.gte.${monthStart.toISOString()},reception_checkin.lte.${monthEnd.toISOString()}),` +
-        `and(reception_checkout.gte.${monthStart.toISOString()},reception_checkout.lte.${monthEnd.toISOString()}),` +
-        `and(reception_checkin.lte.${monthEnd.toISOString()},reception_checkout.gte.${monthStart.toISOString()})`
-      );
 
       const { data, error } = await query;
 
       if (error) throw error;
       
-      // Transform the data and check for early arrival/late departure
+      // Transform and filter the data
       const transformedData = (data || []).map(participant => {
         const transformed = {
           ...participant,
           program: participant.program
         };
 
+        // Check for missing check-in/out
+        if (!transformed.reception_checkin || !transformed.reception_checkout) {
+          transformed.has_date_error = true;
+          transformed.date_error_message = !transformed.reception_checkin && !transformed.reception_checkout 
+            ? "Missing both Check-In and Check-Out"
+            : !transformed.reception_checkin 
+              ? "Missing Check-In" 
+              : "Missing Check-Out";
+          return transformed;
+        }
+
+        // Check for invalid dates (checkout before checkin)
+        const checkinDate = new Date(transformed.reception_checkin);
+        const checkoutDate = new Date(transformed.reception_checkout);
+        
+        if (checkoutDate < checkinDate) {
+          transformed.has_date_error = true;
+          transformed.date_error_message = `Check-out date (${format(checkoutDate, 'dd MMM yyyy')}) is before check-in date (${format(checkinDate, 'dd MMM yyyy')})`;
+          return transformed;
+        }
+
         // If participant has a program, check for early arrival/late departure
-        if (transformed.program && transformed.reception_checkin && transformed.reception_checkout) {
+        if (transformed.program) {
           const attendanceStatus = getAttendanceStatus(transformed, transformed.program);
           if (attendanceStatus && attendanceStatus.length > 0) {
             transformed.has_date_error = true;
@@ -202,7 +227,27 @@ export function ParticipantsPage() {
         return transformed;
       });
 
-      setParticipants(transformedData);
+      // Filter participants to only show those relevant to the selected month
+      const filteredData = transformedData.filter(participant => {
+        if (!participant.reception_checkin || !participant.reception_checkout) {
+          // For participants with missing dates, only show if they belong to a program in this month
+          return programIds.includes(participant.program_id || '');
+        }
+
+        const checkinDate = new Date(participant.reception_checkin);
+        const checkoutDate = new Date(participant.reception_checkout);
+
+        // For participants with dates, check if their stay overlaps with the month
+        const stayOverlapsMonth = (
+          (checkinDate >= monthStart && checkinDate <= monthEnd) ||
+          (checkoutDate >= monthStart && checkoutDate <= monthEnd) ||
+          (checkinDate <= monthEnd && checkoutDate >= monthStart)
+        );
+
+        return stayOverlapsMonth;
+      });
+
+      setParticipants(filteredData);
     } catch (error) {
       console.error('Error fetching participants:', error);
       toast.error('Failed to fetch participants');
@@ -555,12 +600,31 @@ export function ParticipantsPage() {
     reader.readAsText(file);
   };
 
-  // Filter participants based on search query and selected program
-  const filteredParticipants = participants.filter(participant => {
-    const matchesSearch = participant.attendee_name.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesProgram = selectedProgramId === 'all' || participant.program_id === selectedProgramId;
-    return matchesSearch && matchesProgram;
-  });
+  // Add new function to sort participants by type
+  const sortParticipantsByType = (a: Participant, b: Participant) => {
+    const typeOrder = {
+      participant: 1,
+      guest: 2,
+      driver: 3,
+      other: 4
+    };
+    return typeOrder[a.type] - typeOrder[b.type];
+  };
+
+  // Modify the filteredParticipants to include type filtering and sorting
+  const filteredParticipants = participants
+    .filter(participant => {
+      const matchesSearch = participant.attendee_name.toLowerCase().includes(searchQuery.toLowerCase());
+      const matchesProgram = selectedProgramId === 'all' || participant.program_id === selectedProgramId;
+      const matchesType = selectedType === 'all' || participant.type === selectedType;
+      return matchesSearch && matchesProgram && matchesType;
+    })
+    .sort(sortParticipantsByType);
+
+  // Add new function to get count by type
+  const getTypeCount = (type: Participant['type']) => {
+    return participants.filter(p => p.type === type).length;
+  };
 
   // Pagination
   const totalPages = Math.ceil(filteredParticipants.length / itemsPerPage);
@@ -810,10 +874,9 @@ export function ParticipantsPage() {
               type="month"
               value={selectedMonth}
               onChange={(e) => {
-                // If cleared, set to current month
                 const newValue = e.target.value || format(new Date(), 'yyyy-MM');
                 setSelectedMonth(newValue);
-                setCurrentPage(1); // Reset to first page when changing filter
+                setCurrentPage(1);
               }}
               className="w-full border-none focus:ring-0 text-sm"
             />
@@ -825,7 +888,7 @@ export function ParticipantsPage() {
               value={selectedProgramId}
               onChange={(e) => {
                 setSelectedProgramId(e.target.value);
-                setCurrentPage(1); // Reset to first page when changing filter
+                setCurrentPage(1);
               }}
               className="w-full border-none focus:ring-0 text-sm"
             >
@@ -835,6 +898,24 @@ export function ParticipantsPage() {
                   {program.name} - {program.customer_name}
                 </option>
               ))}
+            </select>
+          </div>
+
+          {/* Type Filter Dropdown */}
+          <div className="flex items-center gap-2 bg-white rounded-lg shadow px-3 py-2 w-full sm:w-48">
+            <select
+              value={selectedType}
+              onChange={(e) => {
+                setSelectedType(e.target.value as 'all' | Participant['type']);
+                setCurrentPage(1);
+              }}
+              className="w-full border-none focus:ring-0 text-sm"
+            >
+              <option value="all">All Types ({participants.length})</option>
+              <option value="participant">Participants ({getTypeCount('participant')})</option>
+              <option value="guest">Guests ({getTypeCount('guest')})</option>
+              <option value="driver">Drivers ({getTypeCount('driver')})</option>
+              <option value="other">Others ({getTypeCount('other')})</option>
             </select>
           </div>
         </div>
@@ -910,141 +991,184 @@ export function ParticipantsPage() {
               <p className="text-sm text-gray-400 mt-1">Try selecting a different month or program</p>
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      No.
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Attendee Name
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Type
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Program
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Reception Check-In
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Reception Check-Out
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Duration
-                    </th>
-                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Actions
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {paginatedParticipants.map((participant, index) => (
-                    <tr key={participant.id} className={`hover:bg-gray-50 ${participant.has_date_error ? 'bg-red-50' : ''}`}>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {(currentPage - 1) * itemsPerPage + index + 1}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm font-medium text-gray-900 text-wrap">
-                          {participant.attendee_name}
-                          <div className="flex flex-wrap gap-1 mt-1">
-                            {/* Only show date validation errors if there are no attendance status tags */}
-                            {participant.has_date_error && 
-                             participant.date_error_message?.includes('before check-in') && (
-                              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800 text-wrap">
-                                {participant.date_error_message}
-                              </span>
-                            )}
-                            {!participant.reception_checkin && (
-                              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800">
-                                Missing Check-In
-                              </span>
-                            )}
-                            {!participant.reception_checkout && (
-                              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800">
-                                Missing Check-Out
-                              </span>
-                            )}
-                            {participant.program_id && 
-                             participant.reception_checkin && 
-                             participant.reception_checkout && (
-                              <>
-                                {getAttendanceStatus(
-                                  participant,
-                                  participant.program
-                                )?.map((tag, idx) => (
-                                  <span
-                                    key={idx}
-                                    className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
-                                      tag.type === 'early-arrival'
-                                        ? 'bg-blue-100 text-blue-800'
-                                        : 'bg-amber-100 text-amber-800'
-                                    }`}
-                                  >
-                                    {tag.message}
-                                  </span>
-                                ))}
-                              </>
-                            )}
+            <>
+              {/* Desktop Table View - Hidden on Mobile */}
+              <div className="hidden md:block overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        No.
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Attendee Name
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Type
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Program
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Reception Check-In
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Reception Check-Out
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Duration
+                      </th>
+                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Actions
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {paginatedParticipants.map((participant, index) => (
+                      <tr key={participant.id} className={`hover:bg-gray-50 ${participant.has_date_error ? 'bg-red-50' : ''}`}>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                          {(currentPage - 1) * itemsPerPage + index + 1}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="text-sm font-medium text-gray-900 text-wrap">
+                            {participant.attendee_name}
+                            <div className="flex flex-wrap gap-1 mt-1">
+                              {participant.has_date_error && 
+                               participant.date_error_message?.includes('before check-in') && (
+                                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800 text-wrap">
+                                  {participant.date_error_message}
+                                </span>
+                              )}
+                              {!participant.reception_checkin && (
+                                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800">
+                                  Missing Check-In
+                                </span>
+                              )}
+                              {!participant.reception_checkout && (
+                                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800">
+                                  Missing Check-Out
+                                </span>
+                              )}
+                              {participant.program_id && 
+                               participant.reception_checkin && 
+                               participant.reception_checkout && (
+                                <>
+                                  {getAttendanceStatus(
+                                    participant,
+                                    participant.program
+                                  )?.map((tag, idx) => (
+                                    <span
+                                      key={idx}
+                                      className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
+                                        tag.type === 'early-arrival'
+                                          ? 'bg-blue-100 text-blue-800'
+                                          : 'bg-amber-100 text-amber-800'
+                                      }`}
+                                    >
+                                      {tag.message}
+                                    </span>
+                                  ))}
+                                </>
+                              )}
+                            </div>
                           </div>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className={`inline-flex px-2 py-0.5 rounded-md text-xs font-medium
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-wrap">
+                          <span className={`inline-flex px-2 py-0.5 rounded-md text-xs font-medium
+                            ${participant.type === 'participant' ? 'bg-blue-100 text-blue-800' :
+                              participant.type === 'guest' ? 'bg-green-100 text-green-800' :
+                              participant.type === 'driver' ? 'bg-purple-100 text-purple-800' :
+                              'bg-gray-100 text-gray-800'}`}>
+                            {participant.type.charAt(0).toUpperCase() + participant.type.slice(1)}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-wrap">
+                          <div className="text-sm text-gray-500">
+                            {participant.program?.name || '-'}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-wrap">
+                          {participant.reception_checkin ? (
+                            <div className="text-sm text-gray-500">
+                              <div>{format(new Date(participant.reception_checkin), 'dd MMM yyyy')}</div>
+                              <div className="text-xs text-gray-400">
+                                {format(new Date(participant.reception_checkin), 'h:mm a')}
+                              </div>
+                            </div>
+                          ) : (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-50 text-red-700">
+                              Not Checked In
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-wrap">
+                          {participant.reception_checkout ? (
+                            <div className="text-sm text-gray-500">
+                              <div>{format(new Date(participant.reception_checkout), 'dd MMM yyyy')}</div>
+                              <div className="text-xs text-gray-400">
+                                {format(new Date(participant.reception_checkout), 'h:mm a')}
+                              </div>
+                            </div>
+                          ) : (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-50 text-red-700">
+                              Not Checked Out
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-wrap">
+                          {participant.reception_checkin && participant.reception_checkout ? (
+                            <div className="text-sm text-gray-500">
+                              {calculateDuration(participant.reception_checkin, participant.reception_checkout)}
+                            </div>
+                          ) : (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-700">
+                              Not Available
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-2">
+                          <button
+                            onClick={() => handleEdit(participant)}
+                            className="text-amber-600 hover:text-amber-900"
+                            title="Edit participant"
+                          >
+                            <RiEditLine className="w-5 h-5" />
+                          </button>
+                          <button
+                            onClick={() => handleDelete(participant.id)}
+                            className="text-red-600 hover:text-red-900"
+                            title="Delete participant"
+                          >
+                            <RiDeleteBinLine className="w-5 h-5" />
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Mobile Card View - Shown only on Mobile */}
+              <div className="md:hidden">
+                {paginatedParticipants.map((participant, index) => (
+                  <div 
+                    key={participant.id}
+                    className={`bg-white rounded-lg shadow-sm mb-4 p-4 ${participant.has_date_error ? 'bg-red-50' : ''}`}
+                  >
+                    <div className="flex justify-between items-start mb-2">
+                      <div className="flex-1">
+                        <h3 className="text-sm font-medium text-gray-900">
+                          {participant.attendee_name}
+                        </h3>
+                        <span className={`inline-flex px-2 py-0.5 rounded-md text-xs font-medium mt-1
                           ${participant.type === 'participant' ? 'bg-blue-100 text-blue-800' :
                             participant.type === 'guest' ? 'bg-green-100 text-green-800' :
                             participant.type === 'driver' ? 'bg-purple-100 text-purple-800' :
                             'bg-gray-100 text-gray-800'}`}>
                           {participant.type.charAt(0).toUpperCase() + participant.type.slice(1)}
                         </span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-wrap">
-                        <div className="text-sm text-gray-500">
-                          {participant.program?.name || '-'}
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-wrap">
-                        {participant.reception_checkin ? (
-                          <div className="text-sm text-gray-500">
-                            <div>{format(new Date(participant.reception_checkin), 'dd MMM yyyy')}</div>
-                            <div className="text-xs text-gray-400">
-                              {format(new Date(participant.reception_checkin), 'h:mm a')}
-                            </div>
-                          </div>
-                        ) : (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-50 text-red-700">
-                            Not Checked In
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-wrap">
-                        {participant.reception_checkout ? (
-                          <div className="text-sm text-gray-500">
-                            <div>{format(new Date(participant.reception_checkout), 'dd MMM yyyy')}</div>
-                            <div className="text-xs text-gray-400">
-                              {format(new Date(participant.reception_checkout), 'h:mm a')}
-                            </div>
-                          </div>
-                        ) : (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-50 text-red-700">
-                            Not Checked Out
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-wrap">
-                        {participant.reception_checkin && participant.reception_checkout ? (
-                          <div className="text-sm text-gray-500">
-                            {calculateDuration(participant.reception_checkin, participant.reception_checkout)}
-                          </div>
-                        ) : (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-700">
-                            Not Available
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-2">
+                      </div>
+                      <div className="flex gap-2">
                         <button
                           onClick={() => handleEdit(participant)}
                           className="text-amber-600 hover:text-amber-900"
@@ -1059,12 +1183,90 @@ export function ParticipantsPage() {
                         >
                           <RiDeleteBinLine className="w-5 h-5" />
                         </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                      </div>
+                    </div>
+
+                    {participant.program?.name && (
+                      <div className="text-xs text-gray-500 mb-2">
+                        Program: {participant.program.name}
+                      </div>
+                    )}
+
+                    <div className="grid grid-cols-2 gap-2 mt-2">
+                      <div>
+                        <div className="text-xs font-medium text-gray-500 mb-1">Check In</div>
+                        {participant.reception_checkin ? (
+                          <div className="text-sm text-gray-700">
+                            {format(new Date(participant.reception_checkin), 'dd MMM yyyy')}
+                            <div className="text-xs text-gray-500">
+                              {format(new Date(participant.reception_checkin), 'h:mm a')}
+                            </div>
+                          </div>
+                        ) : (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-50 text-red-700">
+                            Not Checked In
+                          </span>
+                        )}
+                      </div>
+
+                      <div>
+                        <div className="text-xs font-medium text-gray-500 mb-1">Check Out</div>
+                        {participant.reception_checkout ? (
+                          <div className="text-sm text-gray-700">
+                            {format(new Date(participant.reception_checkout), 'dd MMM yyyy')}
+                            <div className="text-xs text-gray-500">
+                              {format(new Date(participant.reception_checkout), 'h:mm a')}
+                            </div>
+                          </div>
+                        ) : (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-50 text-red-700">
+                            Not Checked Out
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Duration */}
+                    {participant.reception_checkin && participant.reception_checkout && (
+                      <div className="mt-2 text-xs text-gray-500">
+                        Duration: {calculateDuration(participant.reception_checkin, participant.reception_checkout)}
+                      </div>
+                    )}
+
+                    {/* Status Tags */}
+                    <div className="flex flex-wrap gap-1 mt-2">
+                      {participant.has_date_error && 
+                       participant.date_error_message?.includes('before check-in') && (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800 text-wrap">
+                          {participant.date_error_message}
+                        </span>
+                      )}
+                      {participant.program_id && 
+                       participant.reception_checkin && 
+                       participant.reception_checkout && (
+                        <>
+                          {getAttendanceStatus(
+                            participant,
+                            participant.program
+                          )?.map((tag, idx) => (
+                            <span
+                              key={idx}
+                              className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
+                                tag.type === 'early-arrival'
+                                  ? 'bg-blue-100 text-blue-800'
+                                  : 'bg-amber-100 text-amber-800'
+                              }`}
+                            >
+                              {tag.message}
+                            </span>
+                          ))}
+                        </>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
           )}
         </div>
 
@@ -1240,7 +1442,7 @@ export function ParticipantsPage() {
               
               <p className="text-gray-500 mb-6">
                 {selectedProgramId === 'all'
-                  ? `Are you sure you want to delete all participants for ${format(new Date(selectedMonth), 'MMMM yyyy')}? This action cannot be undone.`
+                  ? `Are you sure you want to delete all participants for ${format(new Date(selectedMonth), 'MMMM yyyy')}`
                   : `Are you sure you want to delete all participants from ${programs.find(p => p.id === selectedProgramId)?.name}? This action cannot be undone.`
                 }
               </p>

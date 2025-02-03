@@ -977,7 +977,7 @@ export function BillingEntriesPage() {
                   <thead>
                     <tr>
                       <th 
-                        className="border bg-gray-50 sticky top-0 left-0 z-50 min-w-[160px] sm:min-w-[200px] max-w-[300px] text-sm sm:text-base shadow-[2px_2px_4px_-2px_rgba(0,0,0,0.1)]"
+                        className="border bg-gray-50 sticky top-0 left-0 z-30 min-w-[160px] sm:min-w-[200px] max-w-[300px] text-sm sm:text-base shadow-[2px_2px_4px_-2px_rgba(0,0,0,0.1)]"
                         style={{ minHeight: '64px' }}
                       >
                         <div className="truncate p-2">Product Name</div>
@@ -985,7 +985,7 @@ export function BillingEntriesPage() {
                       {dateRange.map(date => (
                         <th 
                           key={date.toISOString()} 
-                          className="border bg-gray-50 sticky top-0 z-40 min-w-[70px] sm:min-w-[80px] max-w-[100px] text-xs sm:text-sm whitespace-nowrap shadow-[0_2px_4px_-2px_rgba(0,0,0,0.1)]"
+                          className="border bg-gray-50 sticky top-0 z-29 min-w-[70px] sm:min-w-[80px] max-w-[100px] text-xs sm:text-sm whitespace-nowrap shadow-[0_2px_4px_-2px_rgba(0,0,0,0.1)]"
                           style={{ minHeight: '64px' }}
                         >
                           <div className="flex flex-col items-center p-1 sm:p-2">
@@ -1011,11 +1011,11 @@ export function BillingEntriesPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {products
-                      .filter(product => 
-                        selectedProducts.length === 0 || 
-                        selectedProducts.some(sp => sp.id === product.id)
-                      )
+                    {(selectedProducts.length > 0 
+                      ? selectedProducts.map(selectedProduct => 
+                          products.find(p => p.id === selectedProduct.id)
+                        ).filter((product): product is Product => product !== undefined)
+                      : products)
                       .map((product, rowIndex) => (
                         <tr key={product.id}>
                           <td 
