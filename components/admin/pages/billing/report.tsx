@@ -29,6 +29,8 @@ interface Program {
   id: string;
   name: string;
   total_participants: number;
+  start_date: string;
+  end_date: string;
 }
 
 export interface ReportData {
@@ -248,12 +250,17 @@ export default function ReportPage() {
   const [monthlyData, setMonthlyData] = useState<MonthlyData[]>([]);
   const [cateringProducts, setCateringProducts] = useState<CateringProduct[]>([]);
   const [reportComments, setReportComments] = useState<{ [key: string]: string }>({});
+  const [programFilterDate, setProgramFilterDate] = useState(format(new Date(), 'yyyy-MM'));
 
   useEffect(() => {
     fetchPackages();
-    fetchPrograms();
+    if (reportType === 'program') {
+      fetchProgramsByDate();
+    } else {
+      fetchPrograms();
+    }
     fetchCateringProducts();
-  }, []);
+  }, [reportType, programFilterDate]);
 
   const fetchPackages = async () => {
     try {
@@ -282,6 +289,32 @@ export default function ReportPage() {
     } catch (error) {
       console.error('Error fetching programs:', error);
       toast.error('Failed to fetch programs');
+    }
+  };
+
+  const fetchProgramsByDate = async () => {
+    try {
+      const startDate = `${programFilterDate}-01`;
+      const endDate = new Date(programFilterDate + '-01');
+      endDate.setMonth(endDate.getMonth() + 1);
+      endDate.setDate(endDate.getDate() - 1);
+      const endDateStr = format(endDate, 'yyyy-MM-dd');
+
+      const { data, error } = await supabase
+        .from('programs')
+        .select('*')
+        .or(`and(start_date.gte.${startDate},start_date.lte.${endDateStr}),and(end_date.gte.${startDate},end_date.lte.${endDateStr})`)
+        .order('name');
+
+      if (error) throw error;
+      setPrograms(data || []);
+      
+      // Reset selected program when date changes
+      setSelectedProgram("");
+    } catch (error) {
+      console.error('Error fetching programs by date:', error);
+      toast.error('Failed to fetch programs');
+      setPrograms([]);
     }
   };
 
@@ -954,22 +987,31 @@ export default function ReportPage() {
   // Update the report type selector UI
   const reportTypes = [
     {
-      id: 'monthly',
-      name: 'Monthly Report',
-      description: 'View monthly billing summary',
+      id: 'day',
+      name: '1 Day Report',
+      description: 'View day-wise details',
       icon: RiCalendarLine
+
     },
     {
       id: 'program',
       name: 'Program Report',
       description: 'View program-wise details',
       icon: RiBuilding4Line
+
+    },
+    {
+      id: 'monthly',
+      name: 'Monthly Report',
+      description: 'View monthly billing summary',
+      icon: RiCalendarLine
     },
     {
       id: 'annual',
-      name: 'Annual Report',
-      description: 'View yearly summary',
+      name: 'Lifetime Report',
+      description: 'View lifetime billing summary',
       icon: RiFileChartLine
+
     }
   ];
 
@@ -980,11 +1022,11 @@ export default function ReportPage() {
       <div className="print:hidden bg-white p-6 rounded-lg shadow-md">
         {/* Report Type Selector */}
         <div className="mb-6">
-          <h2 className="text-lg font-semibold mb-4 flex items-center gap-2 text-gray-900">
+          <h2 className="text-lg font-semibold mb-3 flex items-center gap-2 text-gray-900">
             <RiFileChartLine className="w-5 h-5 text-amber-600" />
             Report Type
           </h2>
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-4 gap-3">
             {reportTypes.map((type) => (
               <button
                 key={type.id}
@@ -995,19 +1037,19 @@ export default function ReportPage() {
                   setSelectedProgram("");
                   setReportData([]);
                 }}
-                className={`p-4 rounded-lg border-2 transition-all ${
+                className={`p-3 rounded-lg border transition-all duration-200 shadow-sm hover:shadow-md ${
                   reportType === type.id
-                    ? 'border-amber-600 bg-amber-50 text-amber-900'
-                    : 'border-gray-200 hover:border-amber-300 hover:bg-amber-50/50'
+                    ? 'border-amber-500 bg-gradient-to-br from-amber-50 to-amber-100 text-amber-900 shadow-inner'
+                    : 'border-gray-200 hover:border-amber-200 hover:bg-amber-50/30'
                 }`}
               >
-                <div className="flex items-center gap-3">
+                <div className="flex flex-col items-center gap-2">
                   <type.icon className={`w-5 h-5 ${
                     reportType === type.id ? 'text-amber-600' : 'text-gray-400'
                   }`} />
-                  <div className="text-left">
-                    <p className="font-medium">{type.name}</p>
-                    <p className="text-sm text-gray-500">{type.description}</p>
+                  <div className="text-center">
+                    <p className="font-medium text-sm">{type.name}</p>
+                    <p className="text-xs text-gray-500 mt-0.5">{type.description}</p>
                   </div>
                 </div>
               </button>
@@ -1054,6 +1096,17 @@ export default function ReportPage() {
               <>
                 <div className="space-y-2">
                   <label className="block text-sm font-medium text-gray-700">
+                    Select Month/Year
+                  </label>
+                  <input
+                    type="month"
+                    value={programFilterDate}
+                    onChange={(e) => setProgramFilterDate(e.target.value)}
+                    className="w-full rounded-md border-gray-300 shadow-sm focus:border-amber-500 focus:ring-amber-500"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="block text-sm font-medium text-gray-700">
                     Select Program
                   </label>
                   <select
@@ -1064,7 +1117,7 @@ export default function ReportPage() {
                     <option value="">Choose a program</option>
                     {programs.map((program) => (
                       <option key={program.id} value={program.id}>
-                        {program.name}
+                        {program.name} ({format(new Date(program.start_date), 'dd/MM/yyyy')} - {format(new Date(program.end_date), 'dd/MM/yyyy')})
                       </option>
                     ))}
                   </select>
@@ -1135,24 +1188,6 @@ export default function ReportPage() {
       {/* Report Content */}
       {reportData.length > 0 && (
         <div className="bg-white rounded-lg shadow-md">
-          {/* Report Actions */}
-          <div className="print:hidden p-4 border-b flex justify-end space-x-4">
-            <button
-              onClick={handlePrint}
-              className="flex items-center gap-2 px-4 py-2 text-gray-600 hover:text-gray-900"
-            >
-              <RiPrinterLine className="w-5 h-5" />
-              Print
-            </button>
-            <button
-              onClick={handleDownloadPDF}
-              className="flex items-center gap-2 px-4 py-2 text-gray-600 hover:text-gray-900"
-            >
-              <RiDownloadLine className="w-5 h-5" />
-              Download PDF
-            </button>
-          </div>
-
           {/* Report Content based on type */}
           {reportType === 'monthly' && (
             <MonthlyReport 
@@ -1161,7 +1196,6 @@ export default function ReportPage() {
               type={selectedPackage as 'all' | 'normal'}
               cateringData={selectedPackage === 'normal' ? cateringData : undefined}
               products={selectedPackage === 'normal' ? cateringProducts : undefined}
-              // onCommentChange={handleCommentChange}
             />
           )}
           {reportType === 'program' && programReport && (
