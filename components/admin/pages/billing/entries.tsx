@@ -4,9 +4,9 @@ import { useState, useEffect, useRef } from "react";
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, parseISO } from "date-fns";
 import { supabase } from "@/lib/supabase";
 import { toast } from "react-hot-toast";
-import { 
-  RiDownloadLine, 
-  RiUploadLine, 
+import {
+  RiDownloadLine,
+  RiUploadLine,
   RiCalendarLine,
   RiSearchLine,
   RiHistoryLine,
@@ -24,7 +24,7 @@ import {
   RiCloseLine,
 } from "react-icons/ri";
 import Papa from 'papaparse';
-import {CiEdit} from "react-icons/ci";
+import { CiEdit } from "react-icons/ci";
 import { IoExitOutline } from "react-icons/io5";
 
 interface Program {
@@ -101,14 +101,14 @@ interface ProductChip {
   name: string;
 }
 
-const ProgramSelect = ({ 
-  value, 
-  onChange, 
-  programs 
-}: { 
-  value: string; 
-  onChange: (value: string) => void; 
-  programs: Program[]; 
+const ProgramSelect = ({
+  value,
+  onChange,
+  programs
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  programs: Program[];
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const selectedProgram = programs.find(p => p.id === value);
@@ -144,9 +144,8 @@ const ProgramSelect = ({
                 onChange(program.id);
                 setIsOpen(false);
               }}
-              className={`w-full px-3 py-2 text-left hover:bg-gray-50 ${
-                program.id === value ? 'bg-amber-50' : ''
-              }`}
+              className={`w-full px-3 py-2 text-left hover:bg-gray-50 ${program.id === value ? 'bg-amber-50' : ''
+                }`}
             >
               <div className="flex flex-col">
                 <span className="font-medium">{program.name}</span>
@@ -163,12 +162,12 @@ const ProgramSelect = ({
   );
 };
 
-const ProductSearch = ({ 
-  products, 
-  selectedProducts, 
-  onProductSelect, 
-  onProductRemove 
-}: { 
+const ProductSearch = ({
+  products,
+  selectedProducts,
+  onProductSelect,
+  onProductRemove
+}: {
   products: Product[];
   selectedProducts: ProductChip[];
   onProductSelect: (product: Product) => void;
@@ -178,7 +177,7 @@ const ProductSearch = ({
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(0);
 
-  const filteredProducts = products.filter(product => 
+  const filteredProducts = products.filter(product =>
     product.name.toLowerCase().includes(searchQuery.toLowerCase()) &&
     !selectedProducts.some(sp => sp.id === product.id)
   );
@@ -234,13 +233,12 @@ const ProductSearch = ({
 
         {/* Suggestions dropdown */}
         {showSuggestions && searchQuery && (
-          <div className="absolute z-50 w-full max-w-md mt-1 bg-white border rounded-md shadow-lg max-h-60 overflow-auto">
+          <div className="absolute z-[400] w-full max-w-md mt-1 bg-white border rounded-md shadow-lg max-h-60 overflow-auto">
             {filteredProducts.map((product, index) => (
               <button
                 key={product.id}
-                className={`w-full px-4 py-2 text-left hover:bg-gray-50 ${
-                  index === selectedIndex ? 'bg-amber-50' : ''
-                }`}
+                className={`w-full px-4 py-2 text-left hover:bg-gray-50 ${index === selectedIndex ? 'bg-amber-50' : ''
+                  }`}
                 onClick={() => {
                   onProductSelect(product);
                   setSearchQuery("");
@@ -409,7 +407,7 @@ export function BillingEntriesPage() {
         .order('start_date', { ascending: false });
 
       if (error) throw error;
-      
+
       // Filter programs that overlap with the selected month, but don't filter out completed programs
       const filteredPrograms = data?.filter(program => {
         const programStart = parseISO(program.start_date);
@@ -526,7 +524,7 @@ export function BillingEntriesPage() {
     const count = participants.filter(participant => {
       const checkin = new Date(participant.reception_checkin);
       const checkout = new Date(participant.reception_checkout);
-      
+
       // Check if participant was present during the slot
       const isPresent = (
         format(date, 'yyyy-MM-dd') === format(checkin, 'yyyy-MM-dd') &&
@@ -555,7 +553,7 @@ export function BillingEntriesPage() {
   const fetchEntries = async () => {
     try {
       setIsLoading(true);
-      
+
       // Debug logs
       console.log('Fetching entries with params:', {
         programId: selectedProgram,
@@ -585,7 +583,7 @@ export function BillingEntriesPage() {
 
       // Initialize entry data structure
       const newEntryData: EntryData = {};
-      
+
       // Initialize all dates with 0 quantities for all products
       dateRange.forEach(date => {
         const dateStr = format(date, 'yyyy-MM-dd');
@@ -606,7 +604,7 @@ export function BillingEntriesPage() {
       console.log('Transformed entry data:', newEntryData);
       console.log('Current products:', products);
       console.log('Current date range:', dateRange);
-      
+
       setEntryData(newEntryData);
 
     } catch (error) {
@@ -688,7 +686,7 @@ export function BillingEntriesPage() {
       if (insertError) throw insertError;
 
       toast.success('Entries saved successfully');
-      
+
       // Don't fetch entries here as it will reset the form
       // await fetchEntries();
     } catch (error: any) {
@@ -716,7 +714,7 @@ export function BillingEntriesPage() {
 
       // Convert to CSV
       const csv = Papa.unparse(csvData);
-      
+
       // Create download link
       const blob = new Blob([csv], { type: 'text/csv' });
       const url = window.URL.createObjectURL(blob);
@@ -743,7 +741,7 @@ export function BillingEntriesPage() {
         header: true,
         complete: (results) => {
           const newEntryData = { ...entryData };
-          
+
           results.data.forEach((row: any) => {
             const product = products.find(p => p.name === row['Product Name']);
             if (!product) return;
@@ -752,7 +750,7 @@ export function BillingEntriesPage() {
               const dateStr = format(date, 'yyyy-MM-dd');
               const displayDate = format(date, 'dd-MM-yyyy');
               const quantity = parseInt(row[displayDate]) || 0;
-              
+
               if (!newEntryData[dateStr]) {
                 newEntryData[dateStr] = {};
               }
@@ -798,7 +796,7 @@ export function BillingEntriesPage() {
 
     return {
       totalQuantity: quantities.reduce((sum, q) => sum + q, 0),
-      averagePerDay: quantities.length ? 
+      averagePerDay: quantities.length ?
         Math.round(quantities.reduce((sum, q) => sum + q, 0) / quantities.length) : 0,
       maxQuantity: Math.max(0, ...quantities),
       minQuantity: quantities.length ? Math.min(...quantities) : 0
@@ -847,7 +845,7 @@ export function BillingEntriesPage() {
     }
   };
 
-  const filteredPrograms = programs.filter(program => 
+  const filteredPrograms = programs.filter(program =>
     statusFilter === 'all' || program.status === statusFilter
   );
 
@@ -864,7 +862,7 @@ export function BillingEntriesPage() {
     const startDate = new Date(start);
     const endDate = new Date(end);
     const diff = endDate.getTime() - startDate.getTime();
-    
+
     if (unit === 'hours') {
       return Math.ceil(diff / (1000 * 60 * 60));
     }
@@ -889,11 +887,11 @@ export function BillingEntriesPage() {
 
   return (
     <div className={`${isFullScreenMode ? 'fixed inset-0 bg-white z-50' : 'p-2 sm:p-4'}`}>
-      {/* Toggle Full Screen Button - Only show when table is ready */}
-      {selectedPackage && dateRange.length > 0 && (
+      {/* Toggle Full Screen and Save Button Container */}
+      <div className="fixed top-2 sm:top-4 right-2 sm:right-4 z-50 flex items-center gap-2 sm:gap-4">
         <button
           onClick={() => setIsFullScreenMode(!isFullScreenMode)}
-          className="fixed top-2 sm:top-4 right-2 sm:right-4 z-50 bg-amber-500 text-white px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg shadow-lg hover:bg-amber-600 flex items-center gap-2 text-sm sm:text-base"
+          className="bg-amber-500 text-white px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg shadow-lg hover:bg-amber-600 flex items-center gap-2 text-sm sm:text-base"
         >
           {isFullScreenMode ? (
             <>Exit Edit Mode <IoExitOutline /></>
@@ -901,7 +899,7 @@ export function BillingEntriesPage() {
             <>Edit Mode <CiEdit /></>
           )}
         </button>
-      )}
+      </div>
 
       <div className={`${isFullScreenMode ? 'h-screen flex flex-col overflow-hidden' : ''}`}>
         {/* Filter Section - Hide in full screen mode */}
@@ -956,7 +954,7 @@ export function BillingEntriesPage() {
           `}>
             {/* Search Component - Sticky in full screen mode */}
             <div className={`
-              ${isFullScreenMode ? 'sticky top-0 bg-white z-30 py-2 sm:py-4 border-b' : ''}
+              ${isFullScreenMode ? 'sticky top-14 bg-white z-[300] py-2 sm:py-4 border-b' : ''}
             `}>
               <ProductSearch
                 products={products}
@@ -966,26 +964,37 @@ export function BillingEntriesPage() {
               />
             </div>
 
+            <div className="flex justify-end mb-2">
+              <button
+                onClick={handleSave}
+                className="bg-green-600 text-white px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg shadow-lg hover:bg-green-700 flex items-center gap-2 text-sm sm:text-base"
+
+              >
+                <RiSave3Line className="w-4 h-4 sm:w-5 sm:h-5" />
+                Save
+              </button>
+            </div>
+
             {/* Table Container */}
             {dateRange.length > 0 && (
-              <div 
+              <div
                 ref={tableRef}
-                className="overflow-auto flex-1 border rounded-lg"
+                className="overflow-auto flex-1 border rounded-lg relative"
                 style={{ maxHeight: isFullScreenMode ? 'calc(100vh - 180px)' : '70vh' }}
               >
                 <table className="min-w-full table-auto border-collapse bg-white relative">
                   <thead>
                     <tr>
-                      <th 
-                        className="border bg-gray-50 sticky top-0 left-0 z-30 min-w-[160px] sm:min-w-[200px] max-w-[300px] text-sm sm:text-base shadow-[2px_2px_4px_-2px_rgba(0,0,0,0.1)]"
+                      <th
+                        className="border bg-gray-50 sticky top-0 left-0 z-[60] min-w-[160px] sm:min-w-[200px] max-w-[300px] text-sm sm:text-base shadow-[2px_2px_4px_-2px_rgba(0,0,0,0.1)]"
                         style={{ minHeight: '64px' }}
                       >
                         <div className="truncate p-2">Product Name</div>
                       </th>
                       {dateRange.map(date => (
-                        <th 
-                          key={date.toISOString()} 
-                          className="border bg-gray-50 sticky top-0 z-29 min-w-[70px] sm:min-w-[80px] max-w-[100px] text-xs sm:text-sm whitespace-nowrap shadow-[0_2px_4px_-2px_rgba(0,0,0,0.1)]"
+                        <th
+                          key={date.toISOString()}
+                          className="border bg-gray-50 sticky top-0 z-[50] min-w-[70px] sm:min-w-[80px] max-w-[100px] text-xs sm:text-sm whitespace-nowrap shadow-[0_2px_4px_-2px_rgba(0,0,0,0.1)]"
                           style={{ minHeight: '64px' }}
                         >
                           <div className="flex flex-col items-center p-1 sm:p-2">
@@ -1011,14 +1020,14 @@ export function BillingEntriesPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {(selectedProducts.length > 0 
-                      ? selectedProducts.map(selectedProduct => 
-                          products.find(p => p.id === selectedProduct.id)
-                        ).filter((product): product is Product => product !== undefined)
+                    {(selectedProducts.length > 0
+                      ? selectedProducts.map(selectedProduct =>
+                        products.find(p => p.id === selectedProduct.id)
+                      ).filter((product): product is Product => product !== undefined)
                       : products)
                       .map((product, rowIndex) => (
                         <tr key={product.id}>
-                          <td 
+                          <td
                             className="border bg-gray-50 font-medium sticky left-0 z-30 text-sm sm:text-base shadow-[2px_0_4px_-2px_rgba(0,0,0,0.1)]"
                           >
                             <div className="truncate p-2" title={product.name}>
@@ -1028,24 +1037,25 @@ export function BillingEntriesPage() {
                           {dateRange.map((date, colIndex) => {
                             const dateStr = format(date, 'yyyy-MM-dd');
                             return (
-                              <td 
+                              <td
                                 key={`${date}-${product.id}`}
-                                className="border px-2 sm:px-4 py-1 sm:py-2 text-center bg-white"
+                                className="border text-center bg-white"
                               >
-                                <input
-                                  type="number"
-                                  value={entryData[dateStr]?.[product.id] || 0}
-                                  onChange={(e) => handleQuantityChange(dateStr, product.id, e.target.value)}
-                                  onKeyDown={(e) => handleKeyDown(e, rowIndex, colIndex)}
-                                  data-row={rowIndex}
-                                  data-col={colIndex}
-                                  className={`w-14 sm:w-20 text-center border rounded focus:ring-2 focus:ring-amber-500 focus:border-amber-500 text-sm sm:text-base py-1 ${
-                                    focusedCell?.row === rowIndex && focusedCell?.col === colIndex
+                                <div className="flex items-center justify-center p-1">
+                                  <input
+                                    type="number"
+                                    value={entryData[dateStr]?.[product.id] || 0}
+                                    onChange={(e) => handleQuantityChange(dateStr, product.id, e.target.value)}
+                                    onKeyDown={(e) => handleKeyDown(e, rowIndex, colIndex)}
+                                    data-row={rowIndex}
+                                    data-col={colIndex}
+                                    className={`w-16 text-center border rounded py-1.5 focus:ring-2 focus:ring-amber-500 focus:border-amber-500 text-sm sm:text-base [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${focusedCell?.row === rowIndex && focusedCell?.col === colIndex
                                       ? 'ring-2 ring-amber-500'
                                       : ''
-                                  }`}
-                                  min="0"
-                                />
+                                      }`}
+                                    min="0"
+                                  />
+                                </div>
                               </td>
                             );
                           })}
@@ -1058,58 +1068,9 @@ export function BillingEntriesPage() {
           </div>
         )}
 
-        {/* Keyboard Controls Guide */}
-        {isFullScreenMode && showKeyboardGuide && (
-          <div className="fixed bottom-2 sm:bottom-4 left-2 sm:left-4 bg-gray-800 text-white p-2 sm:p-4 rounded-lg shadow-lg z-50 max-w-[calc(100vw-1rem)] sm:max-w-2xl text-xs sm:text-sm">
-            <div className="flex justify-between items-center mb-2 sm:mb-3">
-              <span className="font-medium">Keyboard Shortcuts</span>
-              <button
-                onClick={() => setShowKeyboardGuide(false)}
-                className="text-gray-400 hover:text-white"
-              >
-                <RiCloseLine className="w-4 h-4 sm:w-5 sm:h-5" />
-              </button>
-            </div>
-            <div className="grid grid-cols-2 gap-2 sm:gap-4">
-              <div className="flex items-center gap-1 sm:gap-2">
-                <div className="flex gap-0.5 sm:gap-1">
-                  <kbd className="px-1 sm:px-2 py-0.5 sm:py-1 bg-gray-700 rounded text-xs sm:text-sm">↑</kbd>
-                  <kbd className="px-1 sm:px-2 py-0.5 sm:py-1 bg-gray-700 rounded text-xs sm:text-sm">↓</kbd>
-                  <kbd className="px-1 sm:px-2 py-0.5 sm:py-1 bg-gray-700 rounded text-xs sm:text-sm">←</kbd>
-                  <kbd className="px-1 sm:px-2 py-0.5 sm:py-1 bg-gray-700 rounded text-xs sm:text-sm">→</kbd>
-                </div>
-                <span>Navigate</span>
-              </div>
-              <div className="flex items-center gap-1 sm:gap-2">
-                <kbd className="px-1 sm:px-2 py-0.5 sm:py-1 bg-gray-700 rounded text-xs sm:text-sm">Tab</kbd>
-                <span>Next Cell</span>
-              </div>
-              <div className="flex items-center gap-1 sm:gap-2">
-                <kbd className="px-1 sm:px-2 py-0.5 sm:py-1 bg-gray-700 rounded text-xs sm:text-sm">Enter</kbd>
-                <span>Save Changes</span>
-              </div>
-              <div className="flex items-center gap-1 sm:gap-2">
-                <kbd className="px-1 sm:px-2 py-0.5 sm:py-1 bg-gray-700 rounded text-xs sm:text-sm">Esc</kbd>
-                <span>Exit Edit Mode</span>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Show keyboard guide button - Always visible in full screen */}
-        {isFullScreenMode && !showKeyboardGuide && (
-          <button
-            onClick={() => setShowKeyboardGuide(true)}
-            className="fixed bottom-2 sm:bottom-4 left-2 sm:left-4 bg-gray-800 text-white px-2 py-1.5 sm:px-3 sm:py-2 rounded-lg shadow-lg flex items-center gap-2 z-50 hover:bg-gray-700 text-xs sm:text-sm"
-          >
-            <RiKeyboardLine className="w-4 h-4 sm:w-5 sm:h-5" />
-            <span>Show Shortcuts</span>
-          </button>
-        )}
-
         {/* Loading indicator - Adjusted position */}
         {isLoading && (
-          <div className="fixed bottom-2 sm:bottom-4 right-2 sm:right-4 bg-white rounded-lg shadow-lg px-3 py-2 sm:px-4 sm:py-3 flex items-center gap-2 sm:gap-3 z-50 border border-amber-100">
+          <div className="fixed bottom-2 sm:bottom-4 right-2 sm:right-4 bg-white rounded-lg shadow-lg px-3 py-2 sm:px-4 sm:py-3 flex items-center gap-2 sm:gap-3 z-[1000] border border-amber-100">
             <div className="relative">
               <div className="w-4 h-4 sm:w-6 sm:h-6 border-3 sm:border-4 border-amber-200 border-t-amber-500 rounded-full animate-spin"></div>
               <div className="absolute inset-0 border-2 border-amber-100 rounded-full animate-pulse"></div>
