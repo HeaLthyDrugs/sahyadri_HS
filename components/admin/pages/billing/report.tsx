@@ -18,6 +18,7 @@ import jsPDF from 'jspdf';
 import MonthlyReport from "@/components/ui/report/MonthlyReport";
 import ProgramReport from "@/components/ui/report/ProgramReport";
 import AnnualReport from "@/components/ui/report/AnnualReport";
+import DayReport from "@/components/ui/report/DayReport";
 
 interface Package {
   id: string;
@@ -40,6 +41,17 @@ export interface ReportData {
   extraTotal: number;
   coldDrinkTotal: number;
   grandTotal: number;
+}
+
+// Add new interface for day report
+interface DayReportData extends ReportData {
+  entries: {
+    packageType: string;
+    productName: string;
+    quantity: number;
+    rate: number;
+    total: number;
+  }[];
 }
 
 interface ProgramReport {
@@ -110,8 +122,8 @@ interface CateringProduct {
   quantity: number;
 }
 
-// Add report type definition
-type ReportType = 'monthly' | 'program' | 'annual';
+// Update the report type definition
+type ReportType = 'day' | 'program' | 'monthly' | 'lifetime';
 
 const pdfStyles = `
   @media print {
@@ -237,14 +249,20 @@ export default function ReportPage() {
   const [selectedPackage, setSelectedPackage] = useState("");
   const [selectedProgram, setSelectedProgram] = useState("");
   const [selectedMonth, setSelectedMonth] = useState(format(new Date(), 'yyyy-MM'));
+  const [selectedDay, setSelectedDay] = useState(format(new Date(), 'yyyy-MM-dd'));
+  const [dateRange, setDateRange] = useState({
+    start: format(new Date(new Date().getFullYear(), 0, 1), 'yyyy-MM-dd'),
+    end: format(new Date(), 'yyyy-MM-dd')
+  });
   const [isLoading, setIsLoading] = useState(false);
   const [reportData, setReportData] = useState<ReportData[]>([]);
+  const [dayReportData, setDayReportData] = useState<DayReportData | null>(null);
   const [summary, setSummary] = useState({
     totalQuantity: 0,
     totalAmount: 0,
     averagePerDay: 0,
   });
-  const [reportType, setReportType] = useState<ReportType>('monthly');
+  const [reportType, setReportType] = useState<ReportType>('day');
   const [programReport, setProgramReport] = useState<ProgramReport | null>(null);
   const [cateringData, setCateringData] = useState<CateringData[]>([]);
   const [monthlyData, setMonthlyData] = useState<MonthlyData[]>([]);
@@ -360,12 +378,14 @@ export default function ReportPage() {
   };
 
   const generateReport = async () => {
-    if (reportType === 'monthly') {
+    if (reportType === 'day') {
+      await generateDayReport();
+    } else if (reportType === 'monthly') {
       await generateMonthlyReport();
     } else if (reportType === 'program') {
       await generateProgramReport();
     } else {
-      await generateAnnualReport();
+      await generateLifetimeReport();
     }
   };
 
@@ -736,6 +756,200 @@ export default function ReportPage() {
     }
   };
 
+  const generateDayReport = async () => {
+    if (!selectedDay) {
+      toast.error('Please select a day');
+      return;
+    }
+
+    if (!selectedPackage) {
+      toast.error('Please select a package');
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      let query = supabase
+        .from('billing_entries')
+        .select(`
+          entry_date,
+          quantity,
+          program_id,
+          package_id,
+          product_id,
+          programs:programs!inner (
+            id,
+            name
+          ),
+          packages:packages!inner (
+            id,
+            name,
+            type
+          ),
+          products:products!inner (
+            id,
+            name,
+            rate
+          )
+        `)
+        .eq('entry_date', selectedDay);
+
+      // Add package filter if specific package is selected
+      if (selectedPackage !== 'all') {
+        query = query.eq('packages.type', selectedPackage);
+      }
+
+      const { data: entriesData, error } = await query;
+
+      if (error) throw error;
+
+      if (!entriesData || entriesData.length === 0) {
+        throw new Error('No entries found for the selected day');
+      }
+
+      const programTotals = new Map<string, DayReportData>();
+
+      entriesData.forEach((entry: any) => {
+        const programId = entry.programs.id;
+        const programName = entry.programs.name;
+        const amount = entry.quantity * entry.products.rate;
+        const packageType = entry.packages.type.toLowerCase();
+
+        if (!programTotals.has(programId)) {
+          programTotals.set(programId, {
+            date: format(new Date(entry.entry_date), 'yyyy-MM-dd'),
+            program: programName,
+            cateringTotal: 0,
+            extraTotal: 0,
+            coldDrinkTotal: 0,
+            grandTotal: 0,
+            entries: []
+          });
+        }
+
+        const programData = programTotals.get(programId)!;
+        
+        // Update totals based on package type
+        switch (packageType) {
+          case 'normal':
+            programData.cateringTotal += amount;
+            break;
+          case 'extra':
+            programData.extraTotal += amount;
+            break;
+          case 'cold drink':
+            programData.coldDrinkTotal += amount;
+            break;
+        }
+        
+        programData.grandTotal += amount;
+        programData.entries.push({
+          packageType: entry.packages.type,
+          productName: entry.products.name,
+          quantity: entry.quantity,
+          rate: entry.products.rate,
+          total: amount
+        });
+      });
+
+      const dayData = Array.from(programTotals.values());
+      setReportData(dayData);
+      setDayReportData(dayData[0]);
+      toast.success('Day report generated successfully');
+    } catch (error) {
+      console.error('Error generating day report:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to generate report');
+      setReportData([]);
+      setDayReportData(null);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const generateLifetimeReport = async () => {
+    if (!dateRange.start || !dateRange.end) {
+      toast.error('Please select both start and end dates');
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      // Build query for billing entries
+      let query = supabase
+        .from('billing_entries')
+        .select(`
+          entry_date,
+          quantity,
+          packages (id, name, type),
+          products (name, rate)
+        `)
+        .gte('entry_date', dateRange.start)
+        .lte('entry_date', dateRange.end)
+        .order('entry_date', { ascending: true });
+
+      // Add package filter if selected
+      if (selectedPackage && selectedPackage !== 'all') {
+        query = query.eq('packages.type', selectedPackage);
+      }
+
+      const { data: entriesData, error } = await query;
+
+      if (error) throw error;
+
+      if (!entriesData || entriesData.length === 0) {
+        throw new Error('No entries found for the selected period');
+      }
+
+      // Process and group data by month and package type
+      const monthlyGroups = new Map<string, MonthlyData>();
+
+      entriesData.forEach(entry => {
+        const month = format(new Date(entry.entry_date), 'yyyy-MM');
+        const packageType = entry.packages?.[0]?.type?.toLowerCase() || 'unknown';
+        const quantity = entry.quantity || 0;
+        const rate = entry.products?.[0]?.rate || 0;
+        const total = quantity * rate;
+
+        if (!monthlyGroups.has(month)) {
+          monthlyGroups.set(month, {
+            month,
+            packages: {},
+            total: 0
+          });
+        }
+
+        const monthData = monthlyGroups.get(month)!;
+
+        if (!monthData.packages[packageType]) {
+          monthData.packages[packageType] = {
+            packageName: packageType,
+            items: [],
+            packageTotal: 0
+          };
+        }
+
+        monthData.packages[packageType].items.push({
+          productName: entry.products?.[0]?.name || 'Unknown',
+          quantity,
+          rate,
+          total
+        });
+
+        monthData.packages[packageType].packageTotal += total;
+        monthData.total += total;
+      });
+
+      setMonthlyData(Array.from(monthlyGroups.values()));
+      toast.success('Lifetime report generated successfully');
+    } catch (error) {
+      console.error('Error generating lifetime report:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to generate report');
+      setMonthlyData([]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const downloadCSV = () => {
     if (reportData.length === 0) {
       toast.error('No data to download');
@@ -991,14 +1205,12 @@ export default function ReportPage() {
       name: '1 Day Report',
       description: 'View day-wise details',
       icon: RiCalendarLine
-
     },
     {
       id: 'program',
       name: 'Program Report',
       description: 'View program-wise details',
       icon: RiBuilding4Line
-
     },
     {
       id: 'monthly',
@@ -1007,11 +1219,10 @@ export default function ReportPage() {
       icon: RiCalendarLine
     },
     {
-      id: 'annual',
+      id: 'lifetime',
       name: 'Lifetime Report',
       description: 'View lifetime billing summary',
       icon: RiFileChartLine
-
     }
   ];
 
@@ -1064,7 +1275,37 @@ export default function ReportPage() {
             Report Filters
           </h2>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {reportType === 'monthly' ? (
+            {reportType === 'day' ? (
+              <>
+                <div className="space-y-2">
+                  <label className="block text-sm font-medium text-gray-700">
+                    Select Day
+                  </label>
+                  <input
+                    type="date"
+                    value={selectedDay}
+                    onChange={(e) => setSelectedDay(e.target.value)}
+                    className="w-full rounded-md border-gray-300 shadow-sm focus:border-amber-500 focus:ring-amber-500"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="block text-sm font-medium text-gray-700">
+                    Select Package
+                  </label>
+                  <select
+                    value={selectedPackage}
+                    onChange={(e) => setSelectedPackage(e.target.value)}
+                    className="w-full rounded-md border-gray-300 shadow-sm focus:border-amber-500 focus:ring-amber-500 p-2 border-2"
+                  >
+                    <option value="">Select Package</option>
+                    <option value="all">All Packages</option>
+                    <option value="normal">Catering Package</option>
+                    <option value="extra">Extra Package</option>
+                    <option value="cold drink">Cold Drink Package</option>
+                  </select>
+                </div>
+              </>
+            ) : reportType === 'monthly' ? (
               <>
                 <div className="space-y-2">
                   <label className="block text-sm font-medium text-gray-700">
@@ -1142,24 +1383,48 @@ export default function ReportPage() {
                 </div>
               </>
             ) : (
-              <div className="space-y-2">
-                <label className="block text-sm font-medium text-gray-700">
-                  Select Package
-                </label>
-                <select
-                  value={selectedPackage}
-                  onChange={(e) => setSelectedPackage(e.target.value)}
-                  className="w-full rounded-md border-gray-300 shadow-sm focus:border-amber-500 focus:ring-amber-500 p-2 border-2"
-                >
-                  <option value="">Select Package</option>
-                  <option value="all">All Packages</option>
-                  {packages.map((pkg) => (
-                    <option key={pkg.id} value={pkg.type.toLowerCase()}>
-                      {pkg.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              <>
+                <div className="space-y-2">
+                  <label className="block text-sm font-medium text-gray-700">
+                    Start Date
+                  </label>
+                  <input
+                    type="date"
+                    value={dateRange.start}
+                    onChange={(e) => setDateRange(prev => ({ ...prev, start: e.target.value }))}
+                    className="w-full rounded-md border-gray-300 shadow-sm focus:border-amber-500 focus:ring-amber-500"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="block text-sm font-medium text-gray-700">
+                    End Date
+                  </label>
+                  <input
+                    type="date"
+                    value={dateRange.end}
+                    onChange={(e) => setDateRange(prev => ({ ...prev, end: e.target.value }))}
+                    className="w-full rounded-md border-gray-300 shadow-sm focus:border-amber-500 focus:ring-amber-500"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="block text-sm font-medium text-gray-700">
+                    Select Package
+                  </label>
+                  <select
+                    value={selectedPackage}
+                    onChange={(e) => setSelectedPackage(e.target.value)}
+                    className="w-full rounded-md border-gray-300 shadow-sm focus:border-amber-500 focus:ring-amber-500 p-2 border-2"
+                  >
+                    <option value="">Select Package</option>
+                    <option value="all">All Packages</option>
+                    {packages.map((pkg) => (
+                      <option key={pkg.id} value={pkg.type.toLowerCase()}>
+                        {pkg.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </>
             )}
 
             <div className="flex items-end">
@@ -1189,6 +1454,13 @@ export default function ReportPage() {
       {reportData.length > 0 && (
         <div className="bg-white rounded-lg shadow-md">
           {/* Report Content based on type */}
+          {reportType === 'day' && (
+            <DayReport 
+              data={reportData as DayReportData[]} 
+              selectedDay={selectedDay}
+              selectedPackage={selectedPackage || 'all'}
+            />
+          )}
           {reportType === 'monthly' && (
             <MonthlyReport 
               data={reportData} 
@@ -1209,9 +1481,10 @@ export default function ReportPage() {
               grandTotal={programReport.grandTotal}
             />
           )}
-          {reportType === 'annual' && monthlyData.length > 0 && (
+          {reportType === 'lifetime' && monthlyData.length > 0 && (
             <AnnualReport 
-              year={new Date().getFullYear()}
+              startDate={dateRange.start}
+              endDate={dateRange.end}
               selectedPackage={selectedPackage}
               monthlyData={monthlyData}
             />

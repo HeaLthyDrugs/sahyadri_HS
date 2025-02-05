@@ -23,13 +23,15 @@ interface MonthlyData {
 }
 
 interface AnnualReportProps {
-  year: number;
+  startDate: string;
+  endDate: string;
   selectedPackage: string;
   monthlyData: MonthlyData[];
 }
 
 const AnnualReport = ({
-  year,
+  startDate,
+  endDate,
   selectedPackage,
   monthlyData
 }: AnnualReportProps) => {
@@ -39,12 +41,12 @@ const AnnualReport = ({
       data: month.packages[packageType] || { packageTotal: 0, items: [] }
     }));
 
-    const yearlyTotal = monthlyTotals.reduce((sum, month) => sum + month.data.packageTotal, 0);
+    const totalAmount = monthlyTotals.reduce((sum, month) => sum + month.data.packageTotal, 0);
 
     return (
       <div className="mb-8">
         <h3 className="text-xl font-semibold mb-4 text-gray-900 print:text-lg print:mb-2">
-          {packageType.toUpperCase()} PACKAGE - YEARLY SUMMARY
+          {packageType.toUpperCase()} PACKAGE - SUMMARY
         </h3>
         <div className="relative overflow-x-auto">
           <div className="border border-gray-900">
@@ -70,12 +72,12 @@ const AnnualReport = ({
                     </td>
                   </tr>
                 ))}
-                <tr>
-                  <td className="p-2 text-gray-900 text-right border-r border-gray-900 print:p-1">
-                    YEARLY TOTAL
+                <tr className="bg-gray-50">
+                  <td className="p-2 text-gray-900 text-right border-r border-gray-900 print:p-1 font-semibold">
+                    TOTAL
                   </td>
-                  <td className="p-2 text-gray-900 text-right print:p-1">
-                    {yearlyTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                  <td className="p-2 text-gray-900 text-right print:p-1 font-semibold">
+                    {totalAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                   </td>
                 </tr>
               </tbody>
@@ -111,15 +113,15 @@ const AnnualReport = ({
       {/* Report Header */}
       <div className="mb-6 print:mb-4">
         <h2 className="text-2xl font-bold text-center mb-4 print:text-xl print:mb-2">
-          Annual Billing Report
+          Lifetime Billing Report
         </h2>
         <div className="grid grid-cols-2 gap-4 text-sm text-gray-900 print:text-[10pt]">
           <div className="space-y-1">
-            <p><span className="font-semibold">Year:</span> {year}</p>
+            <p><span className="font-semibold">Period:</span> {format(new Date(startDate), 'dd/MM/yyyy')} - {format(new Date(endDate), 'dd/MM/yyyy')}</p>
             <p><span className="font-semibold">Report Type:</span> {selectedPackage ? selectedPackage.toUpperCase() : 'All Packages'}</p>
           </div>
           <div className="space-y-1 text-right">
-            <p><span className="font-semibold">Report Date:</span> {format(new Date(), 'dd/MM/yyyy')}</p>
+            <p><span className="font-semibold">Report Generated:</span> {format(new Date(), 'dd/MM/yyyy')}</p>
           </div>
         </div>
       </div>
@@ -136,11 +138,11 @@ const AnnualReport = ({
             <div className="border border-gray-900">
               <table className="w-full text-sm print:text-[10pt] border-collapse">
                 <tbody>
-                  <tr>
-                    <td className="p-2 text-gray-900 text-right border-r border-gray-900 print:p-1">
-                      ANNUAL GRAND TOTAL
+                  <tr className="bg-amber-50">
+                    <td className="p-2 text-gray-900 text-right border-r border-gray-900 print:p-1 font-bold">
+                      LIFETIME GRAND TOTAL
                     </td>
-                    <td className="p-2 text-gray-900 text-right w-48 print:p-1">
+                    <td className="p-2 text-gray-900 text-right w-48 print:p-1 font-bold">
                       {calculateGrandTotal().toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                     </td>
                   </tr>

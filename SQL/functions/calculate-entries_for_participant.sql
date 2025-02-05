@@ -1,6 +1,4 @@
--- Function to calculate entries when a participant is inserted/updated/deleted
-CREATE OR REPLACE FUNCTION calculate_entries_for_participant()
-RETURNS TRIGGER AS $$
+
 DECLARE
     program_record RECORD;
     product_record RECORD;
@@ -145,13 +143,3 @@ BEGIN
     END IF;
     RETURN NEW;
 END;
-$$ LANGUAGE plpgsql;
-
--- Drop existing triggers if they exist
-DROP TRIGGER IF EXISTS participant_entry_calculator ON participants;
-
--- Create triggers for INSERT, UPDATE, and DELETE operations
-CREATE TRIGGER participant_entry_calculator
-    AFTER INSERT OR UPDATE OR DELETE ON participants
-    FOR EACH ROW
-    EXECUTE FUNCTION calculate_entries_for_participant();
