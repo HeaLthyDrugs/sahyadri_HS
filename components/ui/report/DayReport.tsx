@@ -27,6 +27,18 @@ interface DayReportProps {
   selectedPackage?: string;
 }
 
+// Add package type mapping and order
+const PACKAGE_TYPE_DISPLAY = {
+  'normal': 'Catering Package',
+  'extra': 'Extra Catering Package',
+  'cold': 'Cold Drinks Package',
+  'Normal': 'Catering Package',
+  'Extra': 'Extra Catering Package',
+  'Cold Drink': 'Cold Drinks Package'
+} as const;
+
+const PACKAGE_TYPE_ORDER = ['normal', 'Normal', 'extra', 'Extra', 'cold', 'Cold Drink'];
+
 const DayReport = ({ data, selectedDay, selectedPackage = 'all' }: DayReportProps) => {
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
 
@@ -120,9 +132,13 @@ const DayReport = ({ data, selectedDay, selectedPackage = 'all' }: DayReportProp
   };
 
   const renderProgramTable = (programData: DayReportData) => {
+    if (!programData.entries || programData.entries.length === 0) {
+      return null;
+    }
+
     // Group entries by package type
     const packageGroups = programData.entries.reduce((groups, entry) => {
-      const type = entry.packageType.toLowerCase();
+      const type = (entry.packageType || '').toLowerCase();
       if (!groups[type]) {
         groups[type] = [];
       }
@@ -132,21 +148,32 @@ const DayReport = ({ data, selectedDay, selectedPackage = 'all' }: DayReportProp
 
     // Filter package groups based on selected package
     const filteredPackageTypes = Object.keys(packageGroups).filter(type => {
-      if (selectedPackage === 'all') return true;
-      return type.toLowerCase() === selectedPackage.toLowerCase();
+      if (!selectedPackage || selectedPackage === 'all') return true;
+      return type.toLowerCase() === selectedPackage.toLowerCase() || 
+             type.toLowerCase() === (selectedPackage === 'cold drink' ? 'cold' : selectedPackage).toLowerCase();
     });
 
     if (filteredPackageTypes.length === 0) return null;
 
+    // Sort package types according to defined order
+    const sortedPackageTypes = filteredPackageTypes.sort((a, b) => {
+      const indexA = PACKAGE_TYPE_ORDER.indexOf(a);
+      const indexB = PACKAGE_TYPE_ORDER.indexOf(b);
+      if (indexA === -1 && indexB === -1) return 0;
+      if (indexA === -1) return 1;
+      if (indexB === -1) return -1;
+      return indexA - indexB;
+    });
+
     return (
-      <div className="mb-8 page-break-before">
-        {filteredPackageTypes.map((packageType) => (
-          <div key={packageType} className="mb-6">
-            {/* Simple header showing just the package type and date */}
-            <div className="mb-4 p-4 bg-gray-50 border-b">
+      <div className="mb-8">
+        {sortedPackageTypes.map((packageType, packageIndex) => (
+          <div key={packageType} className={packageIndex > 0 ? 'mt-4' : ''}>
+            {/* Header showing the mapped package type name and date */}
+            <div className="mb-2 p-3 bg-white border-b">
               <div className="flex justify-between items-center">
                 <h3 className="text-base font-semibold text-gray-900">
-                  {packageType.toUpperCase()} PACKAGE CONSUMPTION
+                  {PACKAGE_TYPE_DISPLAY[packageType.toLowerCase() as keyof typeof PACKAGE_TYPE_DISPLAY] || packageType.toUpperCase()}
                 </h3>
                 <span className="text-sm text-gray-600">
                   {format(new Date(selectedDay), 'dd/MM/yyyy')}
@@ -155,7 +182,7 @@ const DayReport = ({ data, selectedDay, selectedPackage = 'all' }: DayReportProp
             </div>
 
             <div className="relative overflow-x-auto">
-              <div className="border border-gray-900">
+              <div className="border border-gray-900 w-full">
                 <table className="w-full text-sm border-collapse">
                   <thead>
                     <tr>
@@ -176,16 +203,17 @@ const DayReport = ({ data, selectedDay, selectedPackage = 'all' }: DayReportProp
                   <tbody>
                     {/* Combine quantities for same products */}
                     {Object.values(packageGroups[packageType].reduce((acc, entry) => {
-                      if (!acc[entry.productName]) {
-                        acc[entry.productName] = {
-                          productName: entry.productName,
+                      const productName = entry.productName || 'Unknown Product';
+                      if (!acc[productName]) {
+                        acc[productName] = {
+                          productName,
                           quantity: 0,
-                          rate: entry.rate,
+                          rate: entry.rate || 0,
                           total: 0
                         };
                       }
-                      acc[entry.productName].quantity += entry.quantity;
-                      acc[entry.productName].total += entry.total;
+                      acc[productName].quantity += entry.quantity || 0;
+                      acc[productName].total += entry.total || 0;
                       return acc;
                     }, {} as { [key: string]: { productName: string; quantity: number; rate: number; total: number } }))
                     .map((entry, index) => (
@@ -209,7 +237,7 @@ const DayReport = ({ data, selectedDay, selectedPackage = 'all' }: DayReportProp
                         Package Total
                       </td>
                       <td className="p-2 text-gray-900 text-right print:p-1 font-semibold">
-                        {packageGroups[packageType].reduce((sum, entry) => sum + entry.total, 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        {packageGroups[packageType].reduce((sum, entry) => sum + (entry.total || 0), 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                       </td>
                     </tr>
                   </tbody>
@@ -224,28 +252,29 @@ const DayReport = ({ data, selectedDay, selectedPackage = 'all' }: DayReportProp
 
   // Filter programs that have entries for the selected package type
   const filteredData = data.filter(program => {
-    if (selectedPackage === 'all') return true;
+    if (!program.entries || program.entries.length === 0) return false;
+    if (!selectedPackage || selectedPackage === 'all') return true;
     return program.entries.some(entry => 
-      entry.packageType.toLowerCase() === selectedPackage.toLowerCase()
+      (entry.packageType || '').toLowerCase() === selectedPackage.toLowerCase()
     );
   });
 
   return (
-    <div>
+    <div className="bg-white w-full">
       {/* Action Buttons */}
-      <div className="flex justify-end gap-4 mb-6 print:hidden">
+      <div className="flex justify-end gap-4 mb-6 print:hidden max-w-5xl mx-auto">
         <button
           onClick={handlePrint}
-          disabled={isGeneratingPDF}
-          className="inline-flex items-center px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-800 rounded-md transition-colors"
+          disabled={isGeneratingPDF || !filteredData.length}
+          className="inline-flex items-center px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-800 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <RiPrinterLine className="w-5 h-5 mr-2" />
           Print
         </button>
         <button
           onClick={handleDownloadPDF}
-          disabled={isGeneratingPDF}
-          className="inline-flex items-center px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-800 rounded-md transition-colors"
+          disabled={isGeneratingPDF || !filteredData.length}
+          className="inline-flex items-center px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-800 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <RiDownloadLine className="w-5 h-5 mr-2" />
           Download PDF
@@ -253,16 +282,33 @@ const DayReport = ({ data, selectedDay, selectedPackage = 'all' }: DayReportProp
       </div>
 
       {/* Report Content */}
-      <div id="report-content" className="bg-white">
+      <div id="report-content" className="bg-white max-w-5xl mx-auto px-4">
+        <style type="text/css" media="print">
+          {`
+            @media print {
+              .page-break-before {
+                page-break-before: always;
+              }
+              /* Ensure packages within a program stay together */
+              #report-content > div > div {
+                page-break-inside: avoid;
+              }
+              /* Allow packages to flow continuously */
+              #report-content > div > div > div {
+                page-break-inside: auto;
+              }
+            }
+          `}
+        </style>
         {filteredData.map((programData, index) => (
-          <div key={index} className={index > 0 ? 'mt-8' : ''}>
+          <div key={index} className={`${index > 0 ? 'mt-8 page-break-before' : ''}`}>
             {renderProgramTable(programData)}
           </div>
         ))}
 
         {filteredData.length === 0 && (
-          <div className="text-center py-8">
-            <p className="text-gray-500">No entries found for the selected criteria.</p>
+          <div className="text-center py-8 bg-gray-50 rounded-lg border border-gray-200">
+            <p className="text-gray-500">No entries found for {format(new Date(selectedDay), 'dd/MM/yyyy')}{selectedPackage !== 'all' ? ` in ${selectedPackage} package` : ''}.</p>
           </div>
         )}
       </div>

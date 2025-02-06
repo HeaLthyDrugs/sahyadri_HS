@@ -769,92 +769,63 @@ export default function ReportPage() {
 
     setIsLoading(true);
     try {
-      let query = supabase
-        .from('billing_entries')
-        .select(`
-          entry_date,
-          quantity,
-          program_id,
-          package_id,
-          product_id,
-          programs:programs!inner (
-            id,
-            name
-          ),
-          packages:packages!inner (
-            id,
-            name,
-            type
-          ),
-          products:products!inner (
-            id,
-            name,
-            rate
-          )
-        `)
-        .eq('entry_date', selectedDay);
+      // The date from the input is already in YYYY-MM-DD format
+      const formattedDate = selectedDay;
 
-      // Add package filter if specific package is selected
-      if (selectedPackage !== 'all') {
-        query = query.eq('packages.type', selectedPackage);
-      }
+      // Map the package type to the correct value
+      const packageTypeMap = {
+        'normal': 'Normal',
+        'extra': 'Extra',
+        'cold drink': 'Cold Drink',
+        'all': 'all'
+      };
 
-      const { data: entriesData, error } = await query;
+      const mappedPackageType = packageTypeMap[selectedPackage.toLowerCase()] || selectedPackage;
 
-      if (error) throw error;
-
-      if (!entriesData || entriesData.length === 0) {
-        throw new Error('No entries found for the selected day');
-      }
-
-      const programTotals = new Map<string, DayReportData>();
-
-      entriesData.forEach((entry: any) => {
-        const programId = entry.programs.id;
-        const programName = entry.programs.name;
-        const amount = entry.quantity * entry.products.rate;
-        const packageType = entry.packages.type.toLowerCase();
-
-        if (!programTotals.has(programId)) {
-          programTotals.set(programId, {
-            date: format(new Date(entry.entry_date), 'yyyy-MM-dd'),
-            program: programName,
-            cateringTotal: 0,
-            extraTotal: 0,
-            coldDrinkTotal: 0,
-            grandTotal: 0,
-            entries: []
-          });
-        }
-
-        const programData = programTotals.get(programId)!;
-        
-        // Update totals based on package type
-        switch (packageType) {
-          case 'normal':
-            programData.cateringTotal += amount;
-            break;
-          case 'extra':
-            programData.extraTotal += amount;
-            break;
-          case 'cold drink':
-            programData.coldDrinkTotal += amount;
-            break;
-        }
-        
-        programData.grandTotal += amount;
-        programData.entries.push({
-          packageType: entry.packages.type,
-          productName: entry.products.name,
-          quantity: entry.quantity,
-          rate: entry.products.rate,
-          total: amount
-        });
+      console.log('Generating report for:', { 
+        selectedDay,
+        formattedDate,
+        selectedPackage,
+        mappedPackageType 
       });
 
-      const dayData = Array.from(programTotals.values());
-      setReportData(dayData);
-      setDayReportData(dayData[0]);
+      const response = await fetch('/api/reports/day', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          date: formattedDate,
+          packageType: mappedPackageType
+        }),
+      });
+
+      const result = await response.json();
+      console.log('API Response:', {
+        status: response.status,
+        ok: response.ok,
+        result
+      });
+
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to generate report');
+      }
+
+      const { data, debug } = result;
+
+      if (!data || data.length === 0) {
+        console.log('No data found:', debug); // Log debug info
+        setReportData([]);
+        setDayReportData(null);
+        toast.error(
+          `No entries found for ${format(new Date(selectedDay), 'dd/MM/yyyy')}` +
+          (selectedPackage !== 'all' ? ` in ${packageTypeMap[selectedPackage.toLowerCase()] || selectedPackage} package` : '')
+        );
+        return;
+      }
+
+      setReportData(data);
+      setDayReportData(data[0]);
       toast.success('Day report generated successfully');
     } catch (error) {
       console.error('Error generating day report:', error);

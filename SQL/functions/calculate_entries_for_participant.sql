@@ -9,6 +9,7 @@ DECLARE
     program_id UUID;
     participant_start_date DATE;
     participant_end_date DATE;
+    affected_dates DATE[];
 BEGIN
     -- Get the normal package ID
     SELECT id INTO normal_package_id 
@@ -38,9 +39,88 @@ BEGIN
         RETURN NULL;
     END IF;
 
-    -- Handle INSERT or UPDATE
-    IF (TG_OP = 'INSERT' OR TG_OP = 'UPDATE') THEN
-        -- Use participant's actual dates
+    -- For UPDATE operations, collect all affected dates
+    IF TG_OP = 'UPDATE' THEN
+        -- Get all dates that need to be recalculated
+        WITH date_range AS (
+            SELECT generate_series(
+                LEAST(DATE(OLD.reception_checkin), DATE(NEW.reception_checkin)),
+                GREATEST(DATE(OLD.reception_checkout), DATE(NEW.reception_checkout)),
+                '1 day'::interval
+            )::date as date
+        )
+        SELECT array_agg(date) INTO affected_dates FROM date_range;
+
+        -- First, remove all entries for affected dates
+        DELETE FROM billing_entries be
+        WHERE be.program_id = program_record.id
+        AND be.package_id = normal_package_id
+        AND be.entry_date = ANY(affected_dates);
+
+        -- Recalculate entries for all participants on affected dates
+        INSERT INTO billing_entries (
+            id,
+            program_id,
+            package_id,
+            product_id,
+            entry_date,
+            quantity
+        )
+        SELECT 
+            gen_random_uuid(),
+            program_record.id,
+            normal_package_id,
+            pr.id as product_id,
+            d.date as entry_date,
+            COUNT(DISTINCT p.id) as quantity
+        FROM 
+            unnest(affected_dates) as d(date)
+            CROSS JOIN products pr
+            LEFT JOIN participants p ON 
+                p.program_id = program_record.id
+                AND DATE(p.reception_checkin) <= d.date
+                AND DATE(p.reception_checkout) >= d.date
+                AND (
+                    -- For check-in day
+                    (DATE(p.reception_checkin) = d.date AND 
+                     (d.date + pr.slot_end::time) > p.reception_checkin AND
+                     (
+                         -- For slots that span across midnight
+                         (pr.slot_end::time < pr.slot_start::time AND
+                          ((d.date + pr.slot_start::time) <= p.reception_checkin OR
+                           ((d.date + INTERVAL '1 day')::timestamp + pr.slot_end::time) > p.reception_checkin))
+                         OR
+                         -- For normal slots
+                         (pr.slot_end::time >= pr.slot_start::time AND
+                          (d.date + pr.slot_start::time) <= p.reception_checkin)
+                     ))
+                    OR
+                    -- For check-out day
+                    (DATE(p.reception_checkout) = d.date AND 
+                     (d.date + pr.slot_start::time) < p.reception_checkout AND
+                     (
+                         -- For slots that span across midnight
+                         (pr.slot_end::time < pr.slot_start::time AND
+                          ((d.date + pr.slot_start::time) < p.reception_checkout OR
+                           ((d.date + INTERVAL '1 day')::timestamp + pr.slot_end::time) >= p.reception_checkout))
+                         OR
+                         -- For normal slots
+                         (pr.slot_end::time >= pr.slot_start::time AND
+                          (d.date + pr.slot_end::time) >= p.reception_checkout)
+                     ))
+                    OR
+                    -- For days in between
+                    (DATE(p.reception_checkin) < d.date AND 
+                     DATE(p.reception_checkout) > d.date)
+                )
+        WHERE 
+            pr.package_id = normal_package_id
+        GROUP BY 
+            pr.id,
+            d.date;
+
+    -- For INSERT operations
+    ELSIF TG_OP = 'INSERT' THEN
         participant_start_date := DATE(NEW.reception_checkin);
         participant_end_date := DATE(NEW.reception_checkout);
 
@@ -65,7 +145,7 @@ BEGIN
                     slot_start := check_date + product_record.slot_start::time;
                     slot_end := check_date + product_record.slot_end::time;
                     
-                    -- Handle overnight slots (when end time is less than start time)
+                    -- Handle overnight slots
                     IF product_record.slot_end::time < product_record.slot_start::time THEN
                         slot_end := slot_end + INTERVAL '1 day';
                     END IF;
@@ -76,42 +156,48 @@ BEGIN
 
                     -- Determine if this slot should be counted
                     IF check_date = participant_start_date THEN
-                        -- On check-in day:
-                        -- 1. For slots that end before check-in time: Don't count
-                        -- 2. For slots that start before but end after check-in time: Count
-                        -- 3. For slots that start after check-in time: Count
-                        should_count := slot_end > checkin_time;
+                        -- For check-in day, only count if:
+                        -- 1. Slot ends after check-in time AND
+                        -- 2. For overnight slots, either starts before check-in or ends after check-in
+                        -- 3. For normal slots, starts before check-in
+                        should_count := slot_end > checkin_time AND
+                            (
+                                (product_record.slot_end::time < product_record.slot_start::time AND
+                                 (slot_start <= checkin_time OR slot_end > checkin_time))
+                                OR
+                                (product_record.slot_end::time >= product_record.slot_start::time AND
+                                 slot_start <= checkin_time)
+                            );
                     ELSIF check_date = participant_end_date THEN
-                        -- On check-out day:
-                        -- 1. For slots that start after check-out time: Don't count
-                        -- 2. For slots that start before but end after check-out time: Count
-                        -- 3. For slots that end before check-out time: Count
-                        should_count := slot_start < checkout_time;
+                        -- For check-out day, only count if:
+                        -- 1. Slot starts before check-out time AND
+                        -- 2. For overnight slots, either starts before check-out or ends after check-out
+                        -- 3. For normal slots, ends after check-out
+                        should_count := slot_start < checkout_time AND
+                            (
+                                (product_record.slot_end::time < product_record.slot_start::time AND
+                                 (slot_start < checkout_time OR slot_end >= checkout_time))
+                                OR
+                                (product_record.slot_end::time >= product_record.slot_start::time AND
+                                 slot_end >= checkout_time)
+                            );
                     ELSE
-                        -- For full days in between, count all slots
+                        -- For full days in between
                         should_count := true;
                     END IF;
 
-                    -- If slot should be counted, create or update entry
+                    -- If slot should be counted, update entry
                     IF should_count THEN
-                        -- Check if entry exists
-                        SELECT COUNT(*) INTO entry_exists
-                        FROM billing_entries be
+                        -- Update or insert entry
+                        UPDATE billing_entries be
+                        SET quantity = quantity + 1
                         WHERE be.program_id = program_record.id
                         AND be.package_id = normal_package_id
                         AND be.product_id = product_record.id
                         AND be.entry_date = check_date;
 
-                        -- If entry exists, increment quantity
-                        IF entry_exists > 0 THEN
-                            UPDATE billing_entries be
-                            SET quantity = quantity + 1
-                            WHERE be.program_id = program_record.id
-                            AND be.package_id = normal_package_id
-                            AND be.product_id = product_record.id
-                            AND be.entry_date = check_date;
-                        ELSE
-                            -- If entry doesn't exist, create new entry
+                        -- If no row was updated, insert new entry
+                        IF NOT FOUND THEN
                             INSERT INTO billing_entries (
                                 id,
                                 program_id,
@@ -133,11 +219,10 @@ BEGIN
             END LOOP;
             check_date := check_date + INTERVAL '1 day';
         END LOOP;
-    END IF;
 
-    -- Handle DELETE or UPDATE (old record cleanup)
-    IF (TG_OP = 'DELETE' OR TG_OP = 'UPDATE') THEN
-        -- Delete or decrement old entries
+    -- For DELETE operations
+    ELSIF TG_OP = 'DELETE' THEN
+        -- Decrement quantities for the deleted participant
         UPDATE billing_entries be
         SET quantity = quantity - 1
         WHERE be.program_id = program_record.id

@@ -432,7 +432,6 @@ export function BillingEntriesPage() {
       const { data, error } = await supabase
         .from('packages')
         .select('*')
-        .eq('type', 'Normal')  // Only fetch Normal package type
         .order('name');
 
       if (error) throw error;
