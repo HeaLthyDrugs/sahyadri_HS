@@ -429,10 +429,10 @@ export function BillingEntriesPage() {
   const fetchPackages = async (programId: string) => {
     try {
       console.log('Fetching packages for program:', programId);
-      // For now, fetch all packages since there's no direct relation to programs
       const { data, error } = await supabase
         .from('packages')
         .select('*')
+        .eq('type', 'Normal')  // Only fetch Normal package type
         .order('name');
 
       if (error) throw error;
@@ -931,19 +931,21 @@ export function BillingEntriesPage() {
               />
             </div>
 
-            <select
-              value={selectedPackage}
-              onChange={(e) => setSelectedPackage(e.target.value)}
-              className="w-full sm:w-auto border rounded px-2 py-1.5 sm:px-3 sm:py-2 text-sm sm:text-base min-w-[200px]"
-              disabled={!selectedProgram}
-            >
-              <option value="">Select Package</option>
-              {packages.map(pkg => (
-                <option key={pkg.id} value={pkg.id}>
-                  {pkg.name} ({pkg.type})
-                </option>
-              ))}
-            </select>
+            <div className="flex items-center gap-2 bg-white rounded-lg shadow px-3 py-2">
+              <select
+                value={selectedPackage}
+                onChange={(e) => setSelectedPackage(e.target.value)}
+                className="w-full sm:w-auto border-none focus:ring-0 text-sm"
+                disabled={!selectedProgram}
+              >
+                <option value="">Select Package</option>
+                {packages.map(pkg => (
+                  <option key={pkg.id} value={pkg.id}>
+                    {pkg.name} ({pkg.type})
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
         )}
 

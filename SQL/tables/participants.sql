@@ -1,4 +1,8 @@
-create table public.participants (
+-- Drop existing trigger first
+DROP TRIGGER IF EXISTS participant_entry_calculator ON participants;
+
+-- Create or update table
+CREATE TABLE IF NOT EXISTS public.participants (
   id uuid not null default extensions.uuid_generate_v4 (),
   program_id uuid null,
   attendee_name text not null,
@@ -28,19 +32,23 @@ create table public.participants (
   )
 ) TABLESPACE pg_default;
 
-create index IF not exists participants_created_at_idx on public.participants using btree (created_at desc) TABLESPACE pg_default;
+-- Create or update indexes
+DROP INDEX IF EXISTS participants_created_at_idx;
+CREATE INDEX IF NOT EXISTS participants_created_at_idx ON public.participants using btree (created_at desc) TABLESPACE pg_default;
 
-create index IF not exists participants_attendee_name_idx on public.participants using btree (attendee_name) TABLESPACE pg_default;
+DROP INDEX IF EXISTS participants_attendee_name_idx;
+CREATE INDEX IF NOT EXISTS participants_attendee_name_idx ON public.participants using btree (attendee_name) TABLESPACE pg_default;
 
-create index IF not exists participants_type_idx on public.participants using btree (type) TABLESPACE pg_default;
+DROP INDEX IF EXISTS participants_type_idx;
+CREATE INDEX IF NOT EXISTS participants_type_idx ON public.participants using btree (type) TABLESPACE pg_default;
 
-create index IF not exists participants_actual_arrival_date_idx on public.participants using btree (actual_arrival_date) TABLESPACE pg_default;
+DROP INDEX IF EXISTS participants_actual_arrival_date_idx;
+CREATE INDEX IF NOT EXISTS participants_actual_arrival_date_idx ON public.participants using btree (actual_arrival_date) TABLESPACE pg_default;
 
-create index IF not exists participants_actual_departure_date_idx on public.participants using btree (actual_departure_date) TABLESPACE pg_default;
+DROP INDEX IF EXISTS participants_actual_departure_date_idx;
+CREATE INDEX IF NOT EXISTS participants_actual_departure_date_idx ON public.participants using btree (actual_departure_date) TABLESPACE pg_default;
 
-create trigger participant_entry_calculator
-after INSERT
-or DELETE
-or
-update on participants for EACH row
-execute FUNCTION calculate_entries_for_participant ();
+-- Create trigger
+CREATE TRIGGER participant_entry_calculator
+AFTER INSERT OR UPDATE OR DELETE ON participants FOR EACH ROW
+EXECUTE FUNCTION calculate_entries_for_participant();

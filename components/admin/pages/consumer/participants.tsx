@@ -87,6 +87,8 @@ export function ParticipantsPage() {
     type: "participant",
   });
   const [editingParticipant, setEditingParticipant] = useState<Participant | null>(null);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [participantToDelete, setParticipantToDelete] = useState<Participant | null>(null);
 
   const calculateDuration = (checkin: string, checkout: string): string => {
     try {
@@ -655,23 +657,33 @@ export function ParticipantsPage() {
     setIsModalOpen(true);
   };
 
-  const handleDelete = async (id: string) => {
-    if (window.confirm("Are you sure you want to delete this participant?")) {
-      try {
-        const { error } = await supabase
-          .from('participants')
-          .delete()
-          .eq('id', id);
+  const handleDelete = async () => {
+    if (!participantToDelete) return;
+    
+    try {
+      setIsLoading(true);
+      const { error } = await supabase
+        .from('participants')
+        .delete()
+        .eq('id', participantToDelete.id);
 
-        if (error) throw error;
+      if (error) throw error;
 
-        setParticipants(prev => prev.filter(p => p.id !== id));
-        toast.success('Participant deleted successfully');
-      } catch (error) {
-        console.error('Error deleting participant:', error);
-        toast.error('Failed to delete participant');
-      }
+      toast.success('Participant and their billing entries deleted successfully');
+      setParticipants(prev => prev.filter(p => p.id !== participantToDelete.id));
+      setIsDeleteModalOpen(false);
+      setParticipantToDelete(null);
+    } catch (error) {
+      console.error('Error deleting participant:', error);
+      toast.error('Failed to delete participant');
+    } finally {
+      setIsLoading(false);
     }
+  };
+
+  const openDeleteModal = (participant: Participant) => {
+    setParticipantToDelete(participant);
+    setIsDeleteModalOpen(true);
   };
 
   const handleDeleteAll = async () => {
@@ -705,8 +717,8 @@ export function ParticipantsPage() {
       // Refresh participants list
       fetchParticipants();
       toast.success(selectedProgramId === 'all' 
-        ? `Successfully deleted all participants for ${format(new Date(selectedMonth), 'MMMM yyyy')}`
-        : `Successfully deleted all participants from ${programs.find(p => p.id === selectedProgramId)?.name}`
+        ? `Successfully deleted all participants and their billing entries for ${format(new Date(selectedMonth), 'MMMM yyyy')}`
+        : `Successfully deleted all participants and their billing entries from ${programs.find(p => p.id === selectedProgramId)?.name}`
       );
       setIsDeleteAllModalOpen(false);
     } catch (error) {
@@ -751,6 +763,7 @@ export function ParticipantsPage() {
     let totalErrors = 0;
 
     participants.forEach(participant => {
+      // Only count actual validation errors (wrong dates)
       if (participant.has_date_error && participant.program) {
         const programName = participant.program.name;
         errorSummary[programName] = (errorSummary[programName] || 0) + 1;
@@ -942,7 +955,7 @@ export function ParticipantsPage() {
                     <div className="flex items-center gap-2">
                       <RiAlertLine className="w-5 h-5" />
                       <p>
-                        Found {totalErrors} participant{totalErrors === 1 ? '' : 's'} with date errors or attendance issues across programs:
+                        Found {totalErrors} participant{totalErrors === 1 ? '' : 's'} with date validation errors:
                       </p>
                     </div>
                     <ul className="ml-5 list-disc">
@@ -963,7 +976,7 @@ export function ParticipantsPage() {
                 <div className="flex items-center gap-2 text-red-700">
                   <RiAlertLine className="w-5 h-5" />
                   <p>
-                    This program has {getProgramErrors(selectedProgramId)} participant{getProgramErrors(selectedProgramId) === 1 ? '' : 's'} with date errors or attendance issues that need attention.
+                    This program has {getProgramErrors(selectedProgramId)} participant{getProgramErrors(selectedProgramId) === 1 ? '' : 's'} with date validation errors that need attention.
                   </p>
                 </div>
               </div>
@@ -1033,12 +1046,13 @@ export function ParticipantsPage() {
                           <div className="text-sm font-medium text-gray-900 text-wrap">
                             {participant.attendee_name}
                             <div className="flex flex-wrap gap-1 mt-1">
-                              {participant.has_date_error && 
-                               participant.date_error_message?.includes('before check-in') && (
+                              {/* Show error only for actual validation errors (wrong dates) */}
+                              {participant.has_date_error && (
                                 <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800 text-wrap">
                                   {participant.date_error_message}
                                 </span>
                               )}
+                              {/* Show missing check-in/out warnings */}
                               {!participant.reception_checkin && (
                                 <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800">
                                   Missing Check-In
@@ -1049,26 +1063,11 @@ export function ParticipantsPage() {
                                   Missing Check-Out
                                 </span>
                               )}
-                              {participant.program_id && 
-                               participant.reception_checkin && 
-                               participant.reception_checkout && (
-                                <>
-                                  {getAttendanceStatus(
-                                    participant,
-                                    participant.program
-                                  )?.map((tag, idx) => (
-                                    <span
-                                      key={idx}
-                                      className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
-                                        tag.type === 'early-arrival'
-                                          ? 'bg-blue-100 text-blue-800'
-                                          : 'bg-amber-100 text-amber-800'
-                                      }`}
-                                    >
-                                      {tag.message}
-                                    </span>
-                                  ))}
-                                </>
+                              {/* Show early/late warning message if exists and no validation error */}
+                              {!participant.has_date_error && participant.date_error_message && (
+                                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800">
+                                  {participant.date_error_message}
+                                </span>
                               )}
                             </div>
                           </div>
@@ -1135,7 +1134,7 @@ export function ParticipantsPage() {
                             <RiEditLine className="w-5 h-5" />
                           </button>
                           <button
-                            onClick={() => handleDelete(participant.id)}
+                            onClick={() => openDeleteModal(participant)}
                             className="text-red-600 hover:text-red-900"
                             title="Delete participant"
                           >
@@ -1177,7 +1176,7 @@ export function ParticipantsPage() {
                           <RiEditLine className="w-5 h-5" />
                         </button>
                         <button
-                          onClick={() => handleDelete(participant.id)}
+                          onClick={() => openDeleteModal(participant)}
                           className="text-red-600 hover:text-red-900"
                           title="Delete participant"
                         >
@@ -1235,32 +1234,17 @@ export function ParticipantsPage() {
 
                     {/* Status Tags */}
                     <div className="flex flex-wrap gap-1 mt-2">
-                      {participant.has_date_error && 
-                       participant.date_error_message?.includes('before check-in') && (
+                      {/* Show error only for actual validation errors (wrong dates) */}
+                      {participant.has_date_error && (
                         <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800 text-wrap">
                           {participant.date_error_message}
                         </span>
                       )}
-                      {participant.program_id && 
-                       participant.reception_checkin && 
-                       participant.reception_checkout && (
-                        <>
-                          {getAttendanceStatus(
-                            participant,
-                            participant.program
-                          )?.map((tag, idx) => (
-                            <span
-                              key={idx}
-                              className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
-                                tag.type === 'early-arrival'
-                                  ? 'bg-blue-100 text-blue-800'
-                                  : 'bg-amber-100 text-amber-800'
-                              }`}
-                            >
-                              {tag.message}
-                            </span>
-                          ))}
-                        </>
+                      {/* Show early/late warning message if exists and no validation error */}
+                      {!participant.has_date_error && participant.date_error_message && (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800">
+                          {participant.date_error_message}
+                        </span>
                       )}
                     </div>
                   </div>
@@ -1440,11 +1424,15 @@ export function ParticipantsPage() {
                 </h2>
               </div>
               
-              <p className="text-gray-500 mb-6">
+              <p className="text-gray-500 mb-2">
                 {selectedProgramId === 'all'
-                  ? `Are you sure you want to delete all participants for ${format(new Date(selectedMonth), 'MMMM yyyy')}`
-                  : `Are you sure you want to delete all participants from ${programs.find(p => p.id === selectedProgramId)?.name}? This action cannot be undone.`
+                  ? `Are you sure you want to delete all participants for ${format(new Date(selectedMonth), 'MMMM yyyy')}?`
+                  : `Are you sure you want to delete all participants from ${programs.find(p => p.id === selectedProgramId)?.name}`
                 }
+              </p>
+              
+              <p className="text-red-600 text-sm mb-6">
+                This will also delete all billing entries associated with these participants. This action cannot be undone.
               </p>
 
               <div className="flex justify-end gap-3">
@@ -1460,6 +1448,47 @@ export function ParticipantsPage() {
                   className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 disabled:opacity-50"
                 >
                   {isLoading ? 'Deleting...' : 'Delete All'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Single Delete Confirmation Modal */}
+        {isDeleteModalOpen && participantToDelete && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-lg p-6 w-full max-w-md">
+              <div className="flex items-center mb-4">
+                <RiAlertLine className="w-6 h-6 text-red-600 mr-2" />
+                <h2 className="text-xl font-semibold text-gray-900">
+                  Delete Participant
+                </h2>
+              </div>
+              
+              <p className="text-gray-500 mb-2">
+                Are you sure you want to delete <span className="font-medium">{participantToDelete.attendee_name}</span>?
+              </p>
+              
+              <p className="text-red-600 text-sm mb-6">
+                This will also delete all billing entries associated with this participant. This action cannot be undone.
+              </p>
+
+              <div className="flex justify-end gap-3">
+                <button
+                  onClick={() => {
+                    setIsDeleteModalOpen(false);
+                    setParticipantToDelete(null);
+                  }}
+                  className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleDelete}
+                  disabled={isLoading}
+                  className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 disabled:opacity-50"
+                >
+                  {isLoading ? 'Deleting...' : 'Delete'}
                 </button>
               </div>
             </div>
