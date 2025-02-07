@@ -28,12 +28,49 @@ interface Product {
   index: number;
 }
 
+interface Program {
+  id: string;
+  name: string;
+  customer_name: string;
+}
+
 interface BillingEntry {
   id: string;
   entry_date: string;
   quantity: number;
-  programs: { id: string; name: string; }[];
+  programs: Program;
   products: Product;
+}
+
+interface SupabaseBillingEntry {
+  id: string;
+  entry_date: string;
+  quantity: number;
+  program_id: string;
+  package_id: string;
+  product_id: string;
+  programs: Program;
+  products: Product;
+}
+
+interface DatabaseBillingEntry {
+  id: string;
+  entry_date: string;
+  quantity: number;
+  program_id: string;
+  package_id: string;
+  product_id: string;
+  programs: {
+    id: string;
+    name: string;
+    customer_name: string;
+  };
+  products: {
+    id: string;
+    name: string;
+    rate: number;
+    index: number;
+  };
 }
 
 interface InvoiceData {
@@ -328,9 +365,6 @@ export default function InvoicePage() {
 
   useEffect(() => {
     fetchPackages();
-  }, []);
-
-  useEffect(() => {
     fetchInvoiceConfig();
   }, []);
 
@@ -364,7 +398,7 @@ export default function InvoicePage() {
           bill_to_address: Array.isArray(data.bill_to_address) 
             ? data.bill_to_address 
             : data.bill_to_address ? [data.bill_to_address] : [],
-          logo_url: data.logo_url || '/logo.png'
+          logo_url: 'https://sahyadriservices.in/production/images/logo.png'
         });
       }
     } catch (error) {
@@ -444,9 +478,9 @@ export default function InvoicePage() {
       }
 
       // Transform and aggregate the entries by product, maintaining the index order
-      const transformedEntries = entriesData.reduce((acc: any[], entry) => {
-        if (!entry.products || !entry.products.name) {
-          console.error('Invalid product data:', entry);
+      const transformedEntries = (entriesData as unknown as DatabaseBillingEntry[]).reduce((acc: BillingEntry[], entry) => {
+        if (!entry.products || !entry.programs) {
+          console.error('Invalid product or program data:', entry);
           return acc;
         }
 
@@ -486,6 +520,13 @@ export default function InvoicePage() {
         totalAmount: total
       });
 
+      console.log('Generated Invoice Data:', {
+        packageDetails: packageData,
+        entries: transformedEntries,
+        totalAmount: total,
+        month: selectedMonth
+      });
+
       toast.success('Invoice generated successfully');
 
     } catch (error) {
@@ -496,99 +537,94 @@ export default function InvoicePage() {
     }
   };
 
-  const handlePrint = () => {
-    window.print();
+  const handlePrint = async () => {
+    try {
+      toast.loading('Preparing invoice for print...');
+      
+      const response = await fetch('/api/invoice', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          packageId: selectedPackage,
+          month: selectedMonth,
+          action: 'print'
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to generate invoice');
+      }
+
+      // Get the PDF blob and open in new window for printing
+      const pdfBlob = await response.blob();
+      const pdfUrl = URL.createObjectURL(pdfBlob);
+      const printWindow = window.open(pdfUrl);
+
+      if (printWindow) {
+        printWindow.onload = () => {
+          printWindow.print();
+          URL.revokeObjectURL(pdfUrl);
+        };
+      }
+
+      toast.dismiss();
+    } catch (error) {
+      console.error('Error printing invoice:', error);
+      toast.dismiss();
+      toast.error(error instanceof Error ? error.message : 'Failed to print invoice');
+    }
   };
 
   const downloadAsPDF = async () => {
     try {
       toast.loading('Generating PDF...');
       
-      const invoiceElement = document.getElementById('invoice-content');
-      if (!invoiceElement) {
-        throw new Error('Invoice element not found');
-      }
-  
-      // Apply specific styles for PDF generation
-      const pdfSpecificStyles = document.createElement('style');
-      pdfSpecificStyles.textContent = pdfStyles;
-      document.head.appendChild(pdfSpecificStyles);
-  
-      const canvas = await html2canvas(invoiceElement, {
-        scale: 2,
-        useCORS: true,
-        logging: false,
-        backgroundColor: '#ffffff',
-        onclone: (clonedDoc) => {
-          const clonedElement = clonedDoc.getElementById('invoice-content');
-          if (clonedElement) {
-            clonedElement.style.width = '210mm';
-            clonedElement.style.padding = '20mm';
-            clonedElement.style.boxSizing = 'border-box';
-            clonedElement.style.fontSize = '12px';
-          }
-        }
+      const response = await fetch('/api/invoice', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          packageId: selectedPackage,
+          month: selectedMonth,
+          action: 'download'
+        }),
       });
-  
-      // Create PDF
-      const imgData = canvas.toDataURL('image/jpeg', 1.0);
-      const pdf = new jsPDF({
-        orientation: 'portrait',
-        unit: 'mm',
-        format: 'a4',
-        compress: true
-      });
-  
-      const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = pdf.internal.pageSize.getHeight();
-      
-      // Calculate dimensions
-      const imgProps = pdf.getImageProperties(imgData);
-      const pdfRatio = pdfWidth / pdfHeight;
-      const imgRatio = imgProps.width / imgProps.height;
-      
-      let imgWidth = pdfWidth;
-      let imgHeight = pdfWidth / imgRatio;
-      
-      // Calculate number of pages needed
-      const pageCount = Math.ceil(imgHeight / pdfHeight);
-      
-      // Add pages one by one
-      for (let page = 0; page < pageCount; page++) {
-        if (page > 0) {
-          pdf.addPage();
-        }
-        
-        // Calculate the slice of the image to use for this page
-        const position = -page * pdfHeight;
-        
-        pdf.addImage(
-          imgData,
-          'JPEG',
-          0,
-          position,
-          imgWidth,
-          imgHeight,
-          undefined,
-          'FAST'
-        );
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to generate PDF');
       }
-  
-      // Generate filename
-      const fileName = `Invoice-${format(new Date(), 'yyyyMMdd')}-${invoiceData.packageDetails?.name || 'unknown'}.pdf`;
-      
-      pdf.save(fileName);
-      
-      // Clean up
-      document.head.removeChild(pdfSpecificStyles);
-      
+
+      // Get the PDF blob and trigger download
+      const pdfBlob = await response.blob();
+      const url = window.URL.createObjectURL(pdfBlob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Invoice-${format(new Date(), 'yyyyMMdd')}-${invoiceData.packageDetails?.name || 'unknown'}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+
       toast.dismiss();
       toast.success('PDF downloaded successfully');
     } catch (error) {
       console.error('Error generating PDF:', error);
       toast.dismiss();
-      toast.error('Failed to generate PDF');
+      toast.error(error instanceof Error ? error.message : 'Failed to generate PDF');
     }
+  };
+
+  // Add this function to get the full logo URL
+  const getLogoUrl = (logoPath: string) => {
+    if (logoPath.startsWith('http')) {
+      return logoPath;
+    }
+    return `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/logos/${logoPath}`;
   };
 
   return (
@@ -662,41 +698,44 @@ export default function InvoicePage() {
           {/* Updated Invoice Content */}
           <div id="invoice-content" className="p-8 bg-white">
             {/* Company Header */}
-            <div className="company-header">
-              <div className="flex items-center gap-4">
+            <div className="flex justify-between items-start mb-4 pb-2 border-b">
+              <div className="flex items-start gap-4">
                 <Image
-                  src={invoiceConfig.logo_url}
+                  src="https://sahyadriservices.in/production/images/logo.png"
                   alt="Company Logo"
                   width={64}
                   height={64}
-                  className="rounded-lg"
+                  className="rounded-lg object-contain"
+                  priority
+                  unoptimized
                 />
                 <div>
                   <h1 className="text-2xl font-bold text-gray-900">{invoiceConfig.company_name}</h1>
                   {invoiceConfig.from_address.map((line, index) => (
-                    <p key={index} className="text-gray-600">{line}</p>
+                    <p key={index} className="text-gray-600 text-sm">{line}</p>
                   ))}
                 </div>
               </div>
               <div className="text-right">
                 <h2 className="text-3xl font-bold text-amber-600">INVOICE</h2>
-                <p className="text-gray-600 mt-2">Date: {format(new Date(), 'dd/MM/yyyy')}</p>
               </div>
             </div>
 
             {/* Billing Details */}
-            <div className="billing-details">
+            <div className="grid grid-cols-2 gap-4 my-4">
               <div className="space-y-1">
-                <h3 className="text-lg font-semibold">From:</h3>
-                <div className="text-gray-600">
+                <h3 className="text-lg font-semibold">Ship to:</h3>
+                <div className="text-gray-600 text-sm">
                   {invoiceConfig.from_address.map((line, index) => (
                     <p key={index}>{line}</p>
                   ))}
+                  <p className="mt-1">GSTIN: {invoiceConfig.gstin}</p>
+                  <p>PAN: {invoiceConfig.pan}</p>
                 </div>
               </div>
               <div className="space-y-1">
-                <h3 className="text-lg font-semibold">Bill To:</h3>
-                <div className="text-gray-600">
+                <h3 className="text-lg font-semibold">Bill to:</h3>
+                <div className="text-gray-600 text-sm">
                   {invoiceConfig.bill_to_address.map((line, index) => (
                     <p key={index}>{line}</p>
                   ))}
@@ -712,83 +751,96 @@ export default function InvoicePage() {
               </h3>
             </div>
 
-            {/* Entries Tables with Pagination */}
-            {(() => {
-              const ITEMS_PER_PAGE = 25;
-              
-              return (
-                <table className="min-w-full divide-y divide-gray-200 border-2 border-gray-200 entries-table">
-                  <thead className="bg-amber-50">
-                    <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase">Sr. No</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase">Product Name</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase">Quantity</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase">Basic Rate</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase">Total</th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
-                    {invoiceData.entries.map((entry, index) => {
-                      const rate = entry.products.rate || 0;
-                      const quantity = entry.quantity || 0;
-                      const lineTotal = rate * quantity;
+            {/* Entries Table */}
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200 border-2 border-gray-200">
+                <thead className="bg-amber-50">
+                  <tr>
+                    <th className="w-[10%] px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase">Sr. No</th>
+                    <th className="w-[40%] px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase">Product Name</th>
+                    <th className="w-[15%] px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase">Quantity</th>
+                    <th className="w-[15%] px-6 py-3 text-right text-xs font-medium text-gray-700 uppercase">Basic Rate</th>
+                    <th className="w-[20%] px-6 py-3 text-right text-xs font-medium text-gray-700 uppercase">Total</th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {invoiceData.entries.map((entry, index) => {
+                    const rate = entry.products.rate || 0;
+                    const quantity = entry.quantity || 0;
+                    const lineTotal = rate * quantity;
 
-                      return (
-                        <tr key={entry.id}>
-                          <td className="px-6 py-1 whitespace-nowrap text-sm text-gray-500">
-                            {index + 1}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                            {entry.products.name}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                            {quantity}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                            ₹{rate.toFixed(2)}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                            ₹{lineTotal.toFixed(2)}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                  <tfoot className="bg-gray-50">
-                    <tr>
-                      <td colSpan={4} className="px-6 py-4 text-right font-semibold">Total Amount:</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-bold">
-                        ₹{invoiceData.totalAmount.toFixed(2)}
-                      </td>
-                    </tr>
-                  </tfoot>
-                </table>
-              );
-            })()}
-
-            {/* Updated Footer */}
-            <div className="mt-8 pt-8 border-t grid grid-cols-2 gap-8">
-              <div className="space-y-1">
-                <h4 className="font-semibold text-gray-900">Company Details:</h4>
-                <div className="text-sm text-gray-600 space-y-0.5">
-                  <p>PAN: {invoiceConfig.pan}</p>
-                  <p>GSTIN: {invoiceConfig.gstin}</p>
-                </div>
-              </div>
-              <div className="space-y-2">
-                <h4 className="font-semibold text-gray-900">Authorized Signatory:</h4>
-                  {/* Signature space  */}
-              </div>
+                    return (
+                      <tr key={entry.id}>
+                        <td className="px-6 py-1 whitespace-nowrap text-sm text-gray-500">
+                          {index + 1}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          {entry.products.name}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                          {quantity}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-right">
+                          ₹{rate.toFixed(2)}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">
+                          ₹{lineTotal.toFixed(2)}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+                <tfoot className="bg-gray-50">
+                  <tr>
+                    <td colSpan={4} className="px-6 py-4 text-right font-semibold">Total Amount:</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-right">
+                      ₹{invoiceData.totalAmount.toFixed(2)}
+                    </td>
+                  </tr>
+                </tfoot>
+              </table>
             </div>
 
-            {invoiceConfig.footer_note && (
-              <div className="mt-8 text-center text-sm text-gray-600">
-                <p>{invoiceConfig.footer_note}</p>
+            {/* Footer */}
+            <div className="mt-8 pt-8 border-t">
+              <div className="flex justify-between">
+                <div className="space-y-1">
+                  <h4 className="font-semibold text-gray-900">Company Details:</h4>
+                  <div className="text-sm text-gray-600 space-y-0.5">
+                    <p>PAN: {invoiceConfig.pan}</p>
+                    <p>GSTIN: {invoiceConfig.gstin}</p>
+                  </div>
+                </div>
+                <div className="text-right space-y-2">
+                  <h4 className="font-semibold text-gray-900">Authorized Signatory:</h4>
+                  <div className="mt-8 w-48 border-t border-gray-300 inline-block"></div>
+                </div>
               </div>
-            )}
+
+              {invoiceConfig.footer_note && (
+                <div className="mt-8 text-center text-sm text-gray-600">
+                  <p>{invoiceConfig.footer_note}</p>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}
+
+      {/* Add print-specific styles */}
+      <style jsx global>{`
+        @media print {
+          img {
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
+          .company-logo {
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+            print-color: exact !important;
+          }
+        }
+      `}</style>
     </div>
   );
 }
