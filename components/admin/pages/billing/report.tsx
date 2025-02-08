@@ -576,7 +576,8 @@ export default function ReportPage() {
             rate
           )
         `)
-        .eq('program_id', selectedProgram);
+        .eq('program_id', selectedProgram)
+        .order('entry_date', { ascending: true });
 
       // Add package filter if selected
       if (selectedPackage && selectedPackage !== 'all') {
@@ -601,51 +602,65 @@ export default function ReportPage() {
       const packageGroups: { [key: string]: any } = {};
       let grandTotal = 0;
 
+      // First, organize data by package type
       billingData.forEach((entry: any) => {
         const packageType = entry.packages.type;
-        const packageName = entry.packages.name;
-        const quantity = entry.quantity || 0;
-        const rate = entry.products.rate || 0;
-        const total = quantity * rate;
-
         if (!packageGroups[packageType]) {
           packageGroups[packageType] = {
-            packageName: packageName,
-            items: [],
-            packageTotal: 0
+            packageName: entry.packages.name,
+            products: new Map(),
+            entries: new Map(),
+            totals: {},
+            rates: {},
+            totalAmounts: {},
+            grandTotal: 0
           };
         }
 
-        // Check if product already exists in items
-        const existingItem = packageGroups[packageType].items.find(
-          (item: any) => item.productName === entry.products.name
-        );
+        // Store unique products
+        packageGroups[packageType].products.set(entry.product_id, {
+          id: entry.product_id,
+          name: entry.products.name,
+          rate: entry.products.rate
+        });
 
-        if (existingItem) {
-          existingItem.quantity += quantity;
-          existingItem.total = existingItem.quantity * rate;
-        } else {
-          packageGroups[packageType].items.push({
-            productName: entry.products.name,
-            quantity,
-            rate,
-            total
+        // Group quantities by date and product
+        const dateKey = entry.entry_date;
+        if (!packageGroups[packageType].entries.has(dateKey)) {
+          packageGroups[packageType].entries.set(dateKey, {
+            date: dateKey,
+            quantities: {}
           });
         }
 
-        packageGroups[packageType].packageTotal = packageGroups[packageType].items.reduce(
-          (sum: number, item: any) => sum + item.total,
-          0
-        );
+        const dateEntry = packageGroups[packageType].entries.get(dateKey);
+        dateEntry.quantities[entry.product_id] = (dateEntry.quantities[entry.product_id] || 0) + entry.quantity;
+
+        // Update totals
+        packageGroups[packageType].totals[entry.product_id] = 
+          (packageGroups[packageType].totals[entry.product_id] || 0) + entry.quantity;
+        packageGroups[packageType].rates[entry.product_id] = entry.products.rate;
+        packageGroups[packageType].totalAmounts[entry.product_id] = 
+          packageGroups[packageType].totals[entry.product_id] * entry.products.rate;
+        
+        // Update package grand total
+        packageGroups[packageType].grandTotal += entry.quantity * entry.products.rate;
+        grandTotal += entry.quantity * entry.products.rate;
       });
 
-      // Calculate grand total after all items are processed
-      grandTotal = Object.values(packageGroups).reduce(
-        (sum: number, pkg: any) => sum + pkg.packageTotal,
-        0
-      );
-
-      console.log('Package Groups:', packageGroups); // Debug log
+      // Convert Map objects to arrays and sort products by name
+      const processedPackages: { [key: string]: any } = {};
+      Object.entries(packageGroups).forEach(([type, data]) => {
+        processedPackages[type] = {
+          packageName: data.packageName,
+          products: Array.from(data.products.values()).sort((a: any, b: any) => a.name.localeCompare(b.name)),
+          entries: Array.from(data.entries.values()).sort((a: any, b: any) => a.date.localeCompare(b.date)),
+          totals: data.totals,
+          rates: data.rates,
+          totalAmounts: data.totalAmounts,
+          grandTotal: data.grandTotal
+        };
+      });
 
       setProgramReport({
         programDetails: {
@@ -655,7 +670,7 @@ export default function ReportPage() {
           totalParticipants: programData.total_participants,
           customerName: programData.customer_name
         },
-        packages: packageGroups,
+        packages: processedPackages,
         grandTotal
       });
 
