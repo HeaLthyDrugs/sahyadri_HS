@@ -1,5 +1,9 @@
+'use client';
+
 import { format } from "date-fns";
 import React from "react";
+import { Button } from "@/components/ui/button";
+import { Printer, Download } from "lucide-react";
 
 interface ProductEntry {
   productName: string;
@@ -16,6 +20,7 @@ interface PackageData {
 
 interface ProgramReportProps {
   programName: string;
+  customerName: string;
   startDate: string;
   endDate: string;
   totalParticipants: number;
@@ -36,6 +41,7 @@ const PACKAGE_NAMES = {
 
 const ProgramReport = ({
   programName,
+  customerName,
   startDate,
   endDate,
   totalParticipants,
@@ -43,6 +49,85 @@ const ProgramReport = ({
   packages,
   grandTotal
 }: ProgramReportProps) => {
+  const handlePrint = async () => {
+    try {
+      const response = await fetch('/api/reports/program', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          programName,
+          customerName,
+          startDate,
+          endDate,
+          totalParticipants,
+          selectedPackage,
+          packages,
+          grandTotal,
+          action: 'view'
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to generate PDF');
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const printWindow = window.open(url);
+      
+      if (printWindow) {
+        printWindow.onload = () => {
+          printWindow.print();
+          window.URL.revokeObjectURL(url);
+        };
+      }
+    } catch (error) {
+      console.error('Error printing report:', error);
+      alert('Failed to print report. Please try again.');
+    }
+  };
+
+  const handleDownload = async () => {
+    try {
+      const response = await fetch('/api/reports/program', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          programName,
+          customerName,
+          startDate,
+          endDate,
+          totalParticipants,
+          selectedPackage,
+          packages,
+          grandTotal,
+          action: 'download'
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to generate PDF');
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `program-report-${format(new Date(), 'yyyy-MM-dd')}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Error downloading report:', error);
+      alert('Failed to download report. Please try again.');
+    }
+  };
+
   const renderPackageTable = (packageType: string, data: PackageData) => {
     return (
       <div className="mb-8 print:mb-6 page-break-inside-avoid" key={packageType}>
@@ -103,28 +188,23 @@ const ProgramReport = ({
 
   const getFilteredPackages = () => {
     const allPackages = Object.entries(packages);
-    console.log('All packages:', allPackages);
-    console.log('Selected package:', selectedPackage);
     
     // If a specific package is selected
     if (selectedPackage && selectedPackage !== 'all') {
-      // Map package types to their internal keys
+      // Map package IDs to their types
       const packageTypeMap: { [key: string]: string } = {
-        '3e46279d-c2ff-4bb6-ab0d-935e32ed7820': 'Normal',  // Catering Package ID
-        '620e67e9-8d50-4505-930a-f571629147a2': 'Extra',   // Extra Catering Package ID
-        '752a6bcb-d6d6-43ba-ab5b-84a787182b41': 'Cold Drink'  // Cold Drink Package ID
+        '3e46279d-c2ff-4bb6-ab0d-935e32ed7820': 'Normal',  // Catering Package
+        '620e67e9-8d50-4505-930a-f571629147a2': 'Extra',   // Extra Package
+        '752a6bcb-d6d6-43ba-ab5b-84a787182b41': 'Cold Drink'  // Cold Drink Package
       };
 
       const packageType = packageTypeMap[selectedPackage];
-      console.log('Mapped package type:', packageType);
       
       if (!packageType) {
-        console.log('No package type found for ID:', selectedPackage);
         return [];
       }
 
       const packageData = allPackages.find(([type]) => type === packageType);
-      console.log('Found package data:', packageData);
       return packageData ? [packageData] : [];
     }
 
@@ -141,18 +221,24 @@ const ProgramReport = ({
       <div id="report-content" className="container mx-auto p-6 print:p-4 bg-white print:w-full print:max-w-none">
         {/* Report Header */}
         <div className="mb-8 print:mb-6 break-inside-avoid">
-          <h2 className="text-2xl font-bold text-center mb-4 print:text-xl print:mb-4">
-            Program Billing Report
-          </h2>
-          <div className="grid grid-cols-2 gap-4 text-base print:text-sm">
-            <div className="space-y-2">
-              <p><span className="font-semibold">Program Name:</span> {programName}</p>
-              <p><span className="font-semibold">Duration:</span> {format(new Date(startDate), 'dd/MM/yyyy')} - {format(new Date(endDate), 'dd/MM/yyyy')}</p>
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-2xl font-bold text-gray-900 print:text-xl print:mb-4">
+              {customerName}, {programName}
+            </h2>
+            <div className="flex gap-2 print:hidden">
+              <Button onClick={handlePrint} variant="outline" size="sm">
+                <Printer className="h-4 w-4 mr-2" />
+                Print
+              </Button>
+              <Button onClick={handleDownload} variant="outline" size="sm">
+                <Download className="h-4 w-4 mr-2" />
+                Download
+              </Button>
             </div>
-            <div className="space-y-2 text-right">
-              <p><span className="font-semibold">Total Participants:</span> {totalParticipants}</p>
-              <p><span className="font-semibold">Report Date:</span> {format(new Date(), 'dd/MM/yyyy')}</p>
-            </div>
+          </div>
+          <div className="space-y-1 text-center">
+            <p className="text-gray-600">Duration: {format(new Date(startDate), 'dd/MM/yyyy')} - {format(new Date(endDate), 'dd/MM/yyyy')}</p>
+            <p className="text-gray-600">Total Participants: {totalParticipants}</p>
           </div>
         </div>
 
@@ -172,18 +258,24 @@ const ProgramReport = ({
     <div id="report-content" className="container mx-auto p-6 print:p-4 bg-white print:w-full print:max-w-none">
       {/* Report Header */}
       <div className="mb-8 print:mb-6 break-inside-avoid">
-        <h2 className="text-2xl font-bold text-center mb-4 print:text-xl print:mb-4">
-          Program Billing Report
-        </h2>
-        <div className="grid grid-cols-2 gap-4 text-base print:text-sm">
-          <div className="space-y-2">
-            <p><span className="font-semibold">Program Name:</span> {programName}</p>
-            <p><span className="font-semibold">Duration:</span> {format(new Date(startDate), 'dd/MM/yyyy')} - {format(new Date(endDate), 'dd/MM/yyyy')}</p>
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-2xl font-bold text-gray-900 print:text-xl print:mb-4">
+            {customerName}, {programName}
+          </h2>
+          <div className="flex gap-2 print:hidden">
+            <Button onClick={handlePrint} variant="outline" size="sm">
+              <Printer className="h-4 w-4 mr-2" />
+              Print
+            </Button>
+            <Button onClick={handleDownload} variant="outline" size="sm">
+              <Download className="h-4 w-4 mr-2" />
+              Download
+            </Button>
           </div>
-          <div className="space-y-2 text-right">
-            <p><span className="font-semibold">Total Participants:</span> {totalParticipants}</p>
-            <p><span className="font-semibold">Report Date:</span> {format(new Date(), 'dd/MM/yyyy')}</p>
-          </div>
+        </div>
+        <div className="space-y-1 text-center">
+          <p className="text-gray-600">Duration: {format(new Date(startDate), 'dd/MM/yyyy')} - {format(new Date(endDate), 'dd/MM/yyyy')}</p>
+          <p className="text-gray-600">Total Participants: {totalParticipants}</p>
         </div>
       </div>
 

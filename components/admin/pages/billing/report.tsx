@@ -60,6 +60,7 @@ interface ProgramReport {
     startDate: string;
     endDate: string;
     totalParticipants: number;
+    customerName: string;
   };
   packages: {
     [key: string]: {
@@ -651,7 +652,8 @@ export default function ReportPage() {
           name: programData.name,
           startDate: programData.start_date,
           endDate: programData.end_date,
-          totalParticipants: programData.total_participants
+          totalParticipants: programData.total_participants,
+          customerName: programData.customer_name
         },
         packages: packageGroups,
         grandTotal
@@ -780,7 +782,7 @@ export default function ReportPage() {
         'all': 'all'
       };
 
-      const mappedPackageType = packageTypeMap[selectedPackage.toLowerCase()] || selectedPackage;
+      const mappedPackageType = packageTypeMap[selectedPackage.toLowerCase() as keyof typeof packageTypeMap] || selectedPackage;
 
       console.log('Generating report for:', { 
         selectedDay,
@@ -819,7 +821,7 @@ export default function ReportPage() {
         setDayReportData(null);
         toast.error(
           `No entries found for ${format(new Date(selectedDay), 'dd/MM/yyyy')}` +
-          (selectedPackage !== 'all' ? ` in ${packageTypeMap[selectedPackage.toLowerCase()] || selectedPackage} package` : '')
+          (selectedPackage !== 'all' ? ` in ${packageTypeMap[selectedPackage.toLowerCase() as keyof typeof packageTypeMap] || selectedPackage} package` : '')
         );
         return;
       }
@@ -1270,9 +1272,9 @@ export default function ReportPage() {
                   >
                     <option value="">Select Package</option>
                     <option value="all">All Packages</option>
-                    <option value="normal">Catering Package</option>
-                    <option value="extra">Extra Package</option>
-                    <option value="cold drink">Cold Drink Package</option>
+                    <option value="3e46279d-c2ff-4bb6-ab0d-935e32ed7820">Catering Package</option>
+                    <option value="620e67e9-8d50-4505-930a-f571629147a2">Extra Package</option>
+                    <option value="752a6bcb-d6d6-43ba-ab5b-84a787182b41">Cold Drink Package</option>
                   </select>
                 </div>
               </>
@@ -1444,6 +1446,7 @@ export default function ReportPage() {
           {reportType === 'program' && programReport && (
             <ProgramReport 
               programName={programReport.programDetails.name}
+              customerName={programReport.programDetails.customerName}
               startDate={programReport.programDetails.startDate}
               endDate={programReport.programDetails.endDate}
               totalParticipants={programReport.programDetails.totalParticipants}
