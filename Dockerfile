@@ -22,6 +22,14 @@ RUN npm install
 # Copy local code to container
 COPY . .
 
+# Set build-time variables with default empty values
+ARG NEXT_PUBLIC_SUPABASE_URL=""
+ARG NEXT_PUBLIC_SUPABASE_ANON_KEY=""
+
+# Set environment variables
+ENV NEXT_PUBLIC_SUPABASE_URL=$NEXT_PUBLIC_SUPABASE_URL
+ENV NEXT_PUBLIC_SUPABASE_ANON_KEY=$NEXT_PUBLIC_SUPABASE_ANON_KEY
+
 # Build the application
 RUN npm run build
 
