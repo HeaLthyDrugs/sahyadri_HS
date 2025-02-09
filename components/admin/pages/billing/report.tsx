@@ -1287,9 +1287,9 @@ export default function ReportPage() {
                   >
                     <option value="">Select Package</option>
                     <option value="all">All Packages</option>
-                    <option value="3e46279d-c2ff-4bb6-ab0d-935e32ed7820">Catering Package</option>
-                    <option value="620e67e9-8d50-4505-930a-f571629147a2">Extra Package</option>
-                    <option value="752a6bcb-d6d6-43ba-ab5b-84a787182b41">Cold Drink Package</option>
+                    <option value="normal">Catering Package</option>
+                    <option value="extra">Extra Package</option>
+                    <option value="cold drink">Cold Drink Package</option>
                   </select>
                 </div>
               </>

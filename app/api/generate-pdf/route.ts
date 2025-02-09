@@ -95,43 +95,67 @@ function generateDayReportHTML(data: any, selectedDay: string, selectedPackage: 
         margin: 0;
         padding: 20px;
         color: #333;
+        background-color: #ffffff;
       }
       .package-section {
+        margin-bottom: 2rem;
+        page-break-inside: avoid;
+      }
+      .package-section:not(:first-child) {
         page-break-before: always;
-        margin-bottom: 30px;
       }
       .package-header {
-        background: #f8f9fa;
-        padding: 15px;
-        margin-bottom: 20px;
-        border-bottom: 1px solid #dee2e6;
+        margin-bottom: 1rem;
+      }
+      .header-content {
         display: flex;
-        justify-content: space-between;
+        justify-content: center;
         align-items: center;
+        background-color: #f9fafb;
+        padding: 2rem;
+        margin-bottom: 0.5rem;
       }
-      .package-header h3 {
+      .header-content h3 {
         margin: 0;
-        font-size: 16px;
-        color: #333;
+        font-size: 1rem;
+        font-weight: 600;
+        color: #111827;
       }
-      .package-header .date {
-        font-size: 14px;
-        color: #666;
+      .table-container {
+        position: relative;
+        overflow-x: auto;
+      }
+      .table-wrapper {
+        border: 1px solid #111827;
+        width: 100%;
       }
       table {
         width: 100%;
-        border-collapse: collapse;
-        margin-bottom: 20px;
-        font-size: 12px;
-      }
-      th, td {
-        border: 1px solid #333;
-        padding: 8px;
         text-align: left;
+        border-collapse: collapse;
+        font-size: 0.875rem;
       }
       th {
-        background-color: #f8f9fa;
+        background-color: #f3f4f6;
         font-weight: normal;
+        color: #111827;
+        text-align: left;
+        padding: 0.5rem;
+        border-right: 1px solid #111827;
+        border-bottom: 1px solid #111827;
+      }
+      td {
+        padding: 0.5rem;
+        color: #111827;
+        border-right: 1px solid #111827;
+        border-bottom: 1px solid #111827;
+      }
+      th:last-child,
+      td:last-child {
+        border-right: none;
+      }
+      tr:last-child td {
+        border-bottom: none;
       }
       .text-right {
         text-align: right;
@@ -140,12 +164,26 @@ function generateDayReportHTML(data: any, selectedDay: string, selectedPackage: 
         text-align: center;
       }
       .total-row {
-        background-color: #f8f9fa;
-        font-weight: bold;
+        background-color: #f3f4f6;
+        font-weight: 600;
+      }
+      .quantity-cell {
+        text-align: center;
+        border-right: 1px solid #111827;
+      }
+      .rate-cell {
+        text-align: right;
+        border-right: 1px solid #111827;
+      }
+      .amount-cell {
+        text-align: right;
       }
       @media print {
-        .package-section:first-child {
-          page-break-before: avoid;
+        .package-section {
+          page-break-inside: avoid;
+        }
+        .package-section:not(:first-child) {
+          margin-top: 2rem;
         }
       }
     </style>
@@ -165,7 +203,7 @@ function generateDayReportHTML(data: any, selectedDay: string, selectedPackage: 
 
   // Group entries by package type
   const packageGroups = allEntries.reduce((groups: any, entry: any) => {
-    const type = entry.packageType.toLowerCase();
+    const type = entry.packageType;
     if (!groups[type]) {
       groups[type] = [];
     }
@@ -176,7 +214,7 @@ function generateDayReportHTML(data: any, selectedDay: string, selectedPackage: 
   // Filter package types based on selection
   const packageTypes = Object.keys(packageGroups).filter(type => {
     if (selectedPackage === 'all') return true;
-    return type.toLowerCase() === selectedPackage.toLowerCase();
+    return type === selectedPackage;
   });
 
   // Generate content for each package type
@@ -199,29 +237,32 @@ function generateDayReportHTML(data: any, selectedDay: string, selectedPackage: 
     content += `
       <div class="package-section">
         <div class="package-header">
-          <h3>${packageType.toUpperCase()} PACKAGE CONSUMPTION</h3>
-          <span class="date">${format(new Date(selectedDay), 'dd/MM/yyyy')}</span>
+          <div class="header-content">
+            <h3>${packageType} for ${format(new Date(selectedDay), 'dd/MM/yyyy')}</h3>
+          </div>
         </div>
 
-        <table>
-          <thead>
-            <tr>
-              <th>Product Name</th>
-              <th class="text-center">Total Quantity</th>
-              <th class="text-right">Rate</th>
-              <th class="text-right">Total Amount</th>
-            </tr>
-          </thead>
-          <tbody>
+        <div class="table-container">
+          <div class="table-wrapper">
+            <table>
+              <thead>
+                <tr>
+                  <th>Product Name</th>
+                  <th class="text-center">Total Quantity</th>
+                  <th class="text-right">Rate</th>
+                  <th class="text-right">Total Amount</th>
+                </tr>
+              </thead>
+              <tbody>
     `;
 
     Object.values(combinedProducts).forEach((product: any) => {
       content += `
         <tr>
           <td>${product.productName}</td>
-          <td class="text-center">${product.quantity}</td>
-          <td class="text-right">${product.rate.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-          <td class="text-right">${product.total.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+          <td class="quantity-cell">${product.quantity}</td>
+          <td class="rate-cell">${product.rate.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+          <td class="amount-cell">${product.total.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
         </tr>
       `;
     });
@@ -232,12 +273,14 @@ function generateDayReportHTML(data: any, selectedDay: string, selectedPackage: 
     );
 
     content += `
-          <tr class="total-row">
-            <td colspan="3" class="text-right">Package Total</td>
-            <td class="text-right">${packageTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-          </tr>
-        </tbody>
-      </table>
+              <tr class="total-row">
+                <td colspan="3" class="text-right">Package Total</td>
+                <td class="amount-cell">${packageTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
     `;
   });

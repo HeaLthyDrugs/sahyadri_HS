@@ -58,7 +58,7 @@ export async function POST(req: NextRequest) {
       style.textContent = `
         @page {
           margin: 20mm;
-          size: A4 landscape;
+          size: A4;
         }
         .page-break-before {
           page-break-before: always;
@@ -82,7 +82,6 @@ export async function POST(req: NextRequest) {
     // Generate PDF
     const pdf = await page.pdf({
       format: 'A4',
-      landscape: true,
       printBackground: true,
       margin: {
         top: '20mm',
@@ -167,7 +166,7 @@ function generateProgramReportHTML({ programName, customerName, startDate, endDa
         font-weight: 600;
       }
       .date-cell {
-        text-align: left;
+        text-align: center;
         font-weight: 500;
         background-color: #f9fafb;
       }
@@ -268,8 +267,8 @@ function generateProgramReportHTML({ programName, customerName, startDate, endDa
       </head>
       <body>
         <div class="report-header">
-          <h2>${customerName}, ${programName}</h2>
-          <p>${format(new Date(startDate), 'dd/MM/yyyy')} to ${format(new Date(endDate), 'dd/MM/yyyy')}</p>
+          <h3>${customerName}, ${programName}</h3>
+          <p>${format(new Date(startDate), 'dd/MM/yyyy')} - ${format(new Date(endDate), 'dd/MM/yyyy')}</p>
           <p>Total Participants: ${totalParticipants}</p>
         </div>
 
@@ -289,9 +288,12 @@ function generateProgramReportHTML({ programName, customerName, startDate, endDa
             const indexB = REPORT_PACKAGE_ORDER.indexOf(typeB);
             return indexA - indexB;
           })
-          .map(([type, data]) => {
-            const productChunks = chunkProducts(data.products, 7); // Reduced to 7 products per chunk for better fit
+          .map(([type, data], index) => {
+            const productChunks = chunkProducts(data.products, 7);
+            // Only add page break before Cold Drink package
+            const needsPageBreak = type === 'Cold Drink';
             return `
+              ${needsPageBreak ? '<div class="page-break-before"></div>' : ''}
               <div class="package-section">
                 ${productChunks.map((chunk, index) => 
                   generateTableHTML(data, chunk, index === 0)
@@ -299,7 +301,7 @@ function generateProgramReportHTML({ programName, customerName, startDate, endDa
               </div>
             `;
           })
-          .join('<div class="page-break-before"></div>')}
+          .join('')}
 
         <div class="pageNumber"></div>
       </body>

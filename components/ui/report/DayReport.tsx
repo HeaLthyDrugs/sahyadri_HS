@@ -31,13 +31,13 @@ interface DayReportProps {
 const PACKAGE_TYPE_DISPLAY = {
   'normal': 'Catering Package',
   'extra': 'Extra Catering Package',
-  'cold': 'Cold Drinks Package',
+  'cold drink': 'Cold Drinks Package',
   'Normal': 'Catering Package',
   'Extra': 'Extra Catering Package',
   'Cold Drink': 'Cold Drinks Package'
 } as const;
 
-const PACKAGE_TYPE_ORDER = ['normal', 'Normal', 'extra', 'Extra', 'cold', 'Cold Drink'];
+const PACKAGE_TYPE_ORDER = ['normal', 'Normal', 'extra', 'Extra', 'cold drink', 'Cold Drink'];
 
 const DayReport = ({ data, selectedDay, selectedPackage = 'all' }: DayReportProps) => {
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
@@ -149,8 +149,11 @@ const DayReport = ({ data, selectedDay, selectedPackage = 'all' }: DayReportProp
     // Filter package groups based on selected package
     const filteredPackageTypes = Object.keys(packageGroups).filter(type => {
       if (!selectedPackage || selectedPackage === 'all') return true;
-      return type.toLowerCase() === selectedPackage.toLowerCase() || 
-             type.toLowerCase() === (selectedPackage === 'cold drink' ? 'cold' : selectedPackage).toLowerCase();
+      const normalizedType = type.toLowerCase();
+      const normalizedSelected = selectedPackage.toLowerCase();
+      return normalizedType === normalizedSelected || 
+             (normalizedSelected === 'cold drink' && normalizedType === 'cold') ||
+             (normalizedType === 'normal' && normalizedSelected === 'catering');
     });
 
     if (filteredPackageTypes.length === 0) return null;
@@ -171,13 +174,11 @@ const DayReport = ({ data, selectedDay, selectedPackage = 'all' }: DayReportProp
           <div key={packageType} className={packageIndex > 0 ? 'mt-4' : ''}>
             {/* Header showing the mapped package type name and date */}
             <div className="mb-2 p-3 bg-white border-b">
-              <div className="flex justify-between items-center">
+              <div className="flex justify-center items-center bg-gray-50 p-8">
                 <h3 className="text-base font-semibold text-gray-900">
-                  {PACKAGE_TYPE_DISPLAY[packageType.toLowerCase() as keyof typeof PACKAGE_TYPE_DISPLAY] || packageType.toUpperCase()}
+                  {PACKAGE_TYPE_DISPLAY[packageType.toLowerCase() as keyof typeof PACKAGE_TYPE_DISPLAY] || packageType.toUpperCase()} for {format(new Date(selectedDay), 'dd/MM/yyyy')}
                 </h3>
-                <span className="text-sm text-gray-600">
-                  {format(new Date(selectedDay), 'dd/MM/yyyy')}
-                </span>
+
               </div>
             </div>
 
@@ -185,7 +186,7 @@ const DayReport = ({ data, selectedDay, selectedPackage = 'all' }: DayReportProp
               <div className="border border-gray-900 w-full">
                 <table className="w-full text-sm border-collapse">
                   <thead>
-                    <tr>
+                    <tr className="bg-gray-100">
                       <th className="p-2 font-normal text-gray-900 text-left border-r border-b border-gray-900 print:p-1">
                         Product Name
                       </th>
@@ -227,7 +228,7 @@ const DayReport = ({ data, selectedDay, selectedPackage = 'all' }: DayReportProp
                         <td className="p-2 text-gray-900 text-right border-r border-gray-900 print:p-1">
                           {entry.rate.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                         </td>
-                        <td className="p-2 text-gray-900 text-right print:p-1">
+                        <td className="p-2 text-gray-900 text-right print:p-1 border-r border-gray-900">
                           {entry.total.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                         </td>
                       </tr>
@@ -236,7 +237,7 @@ const DayReport = ({ data, selectedDay, selectedPackage = 'all' }: DayReportProp
                       <td colSpan={3} className="p-2 text-gray-900 text-right border-r border-gray-900 print:p-1 font-semibold">
                         Package Total
                       </td>
-                      <td className="p-2 text-gray-900 text-right print:p-1 font-semibold">
+                      <td className="p-2 text-gray-900 text-right print:p-1 font-semibold border-r border-gray-900">
                         {packageGroups[packageType].reduce((sum, entry) => sum + (entry.total || 0), 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                       </td>
                     </tr>
@@ -254,9 +255,14 @@ const DayReport = ({ data, selectedDay, selectedPackage = 'all' }: DayReportProp
   const filteredData = data.filter(program => {
     if (!program.entries || program.entries.length === 0) return false;
     if (!selectedPackage || selectedPackage === 'all') return true;
-    return program.entries.some(entry => 
-      (entry.packageType || '').toLowerCase() === selectedPackage.toLowerCase()
-    );
+    
+    return program.entries.some(entry => {
+      const normalizedType = (entry.packageType || '').toLowerCase();
+      const normalizedSelected = selectedPackage.toLowerCase();
+      return normalizedType === normalizedSelected || 
+             (normalizedSelected === 'cold drink' && normalizedType === 'cold') ||
+             (normalizedType === 'normal' && normalizedSelected === 'catering');
+    });
   });
 
   return (
@@ -282,8 +288,9 @@ const DayReport = ({ data, selectedDay, selectedPackage = 'all' }: DayReportProp
       </div>
 
       {/* Report Content */}
-      <div id="report-content" className="bg-white max-w-5xl mx-auto px-4">
+      <div className="bg-white max-w-5xl mx-auto px-4">
         <style type="text/css" media="print">
+
           {`
             @media print {
               .page-break-before {
