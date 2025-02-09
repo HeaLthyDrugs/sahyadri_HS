@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { format } from 'date-fns';
 import { generatePDF } from '@/lib/pdf-generator';
 
-export const maxDuration = 300; // Set max duration to 5 minutes
+export const maxDuration = 60; // Set max duration to 60 seconds (Vercel Hobby plan limit)
 export const dynamic = 'force-dynamic';
 
 export async function POST(req: NextRequest) {
