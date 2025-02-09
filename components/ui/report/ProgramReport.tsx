@@ -266,16 +266,21 @@ const ProgramReport = ({
 
     return (
       <div className={`package-section ${isCateringPackage ? 'print-avoid-break' : ''}`}>
-        <h3 className="package-header text-xl font-semibold text-gray-900 print-subheader underline mb-6">
-          • {PACKAGE_NAMES[packageType as keyof typeof PACKAGE_NAMES] || packageType}
-        </h3>
+        <div className="mb-2 p-3 bg-white border-b">
+          <div className="flex justify-center items-center bg-gray-50 p-8">
+            <h3 className="text-base font-semibold text-gray-900">
+              {PACKAGE_NAMES[packageType as keyof typeof PACKAGE_NAMES] || packageType}
+            </h3>
+          </div>
+        </div>
+
         <div className="w-full space-y-8">
           {productChunks.map((productChunk, chunkIndex) => {
             const columnWidth = `${(100 - 27) / productChunk.length}%`;
             
             return (
               <div key={chunkIndex} className="w-full">
-                <div className="border border-gray-200 rounded-lg">
+                <div className="border border-gray-900">
                   <table className={`w-full ${tableClassName}`} style={{ tableLayout: 'fixed' }}>
                     <colgroup>
                       <col style={{ width: '12%' }} />
@@ -284,38 +289,38 @@ const ProgramReport = ({
                       ))}
                       <col style={{ width: '15%' }} />
                     </colgroup>
-                    <thead className="bg-gray-50 print-avoid-break">
+                    <thead className="bg-gray-100 print-avoid-break">
                       <tr>
-                        <th className="p-3 font-semibold text-gray-900 text-center border-r border-gray-200 print-small-text bg-gray-100">
+                        <th className="p-2 font-normal text-gray-900 text-center border-r border-b border-gray-900 print:p-1">
                           Date
                         </th>
                         {productChunk.map((product) => (
                           <th 
                             key={product.id}
-                            className="p-3 font-semibold text-gray-900 text-center border-r border-gray-200 print-small-text bg-gray-100"
+                            className="p-2 font-normal text-gray-900 text-center border-r border-b border-gray-900 print:p-1"
                           >
                             {product.name}
                           </th>
                         ))}
-                        <th className="p-3 font-semibold text-gray-900 text-left border-r border-gray-200 print-small-text bg-gray-100">
+                        <th className="p-2 font-normal text-gray-900 text-left border-b border-gray-900 print:p-1">
                           Comment
                         </th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-gray-200">
+                    <tbody className="divide-y divide-gray-900">
                       {packageData.entries.map((entry, index) => {
                         const entryKey = entry.id || `${packageType}-${index}`;
                         return (
                           <tr key={entryKey} className="hover:bg-gray-50 relative group">
-                            <td className="p-3 text-gray-900 text-center border-r border-gray-200 font-medium print-small-text whitespace-nowrap bg-gray-50">
+                            <td className="p-2 text-gray-900 text-center border-r border-gray-900 font-medium print:p-1 whitespace-nowrap bg-gray-50">
                               {format(new Date(entry.date), 'dd/MM/yyyy')}
                             </td>
                             {productChunk.map((product) => (
-                              <td key={product.id} className="p-3 text-gray-900 text-center border-r border-gray-200 print-small-text">
+                              <td key={product.id} className="p-2 text-gray-900 text-center border-r border-gray-900 print:p-1">
                                 {entry.quantities[product.id] || 0}
                               </td>
                             ))}
-                            <td className="p-3 text-gray-600 text-left border-l border-gray-200 print-small-text whitespace-nowrap relative">
+                            <td className="p-2 text-gray-600 text-left border-r border-gray-900 print:p-1 whitespace-nowrap relative">
                               {editingComment?.entryKey === entryKey ? (
                                 <div className="flex items-center gap-2">
                                   <Input
@@ -360,38 +365,38 @@ const ProgramReport = ({
                           </tr>
                         );
                       })}
-                      <tr className="font-medium bg-gray-50 print-avoid-break border-t-2 border-gray-300">
-                        <td className="p-3 text-gray-900 text-center border-r border-gray-200 print-small-text font-semibold bg-gray-100">
+                      <tr className="font-medium bg-gray-50 print-avoid-break border-t-2 border-gray-900">
+                        <td className="p-2 text-gray-900 text-center border-r border-gray-900 print:p-1 font-semibold bg-gray-100">
                           Total
                         </td>
                         {productChunk.map((product) => (
-                          <td key={product.id} className="p-3 text-gray-900 text-center border-r border-gray-200 print-small-text font-medium">
+                          <td key={product.id} className="p-2 text-gray-900 text-center border-r border-gray-900 print:p-1 font-medium">
                             {packageData.totals[product.id] || 0}
                           </td>
                         ))}
-                        <td className="border-r border-gray-200"></td>
+                        <td className="border-r border-gray-900"></td>
                       </tr>
                       <tr className="bg-gray-50 print-avoid-break">
-                        <td className="p-3 text-gray-900 text-center border-r border-gray-200 print-small-text font-semibold bg-gray-100">
+                        <td className="p-2 text-gray-900 text-center border-r border-gray-900 print:p-1 font-semibold bg-gray-100">
                           Rate
                         </td>
                         {productChunk.map((product) => (
-                          <td key={product.id} className="p-3 text-gray-900 text-center border-r border-gray-200 print-small-text font-medium">
+                          <td key={product.id} className="p-2 text-gray-900 text-center border-r border-gray-900 print:p-1 font-medium">
                             {packageData.rates[product.id] || 0}
                           </td>
                         ))}
-                        <td className="border-r border-gray-200"></td>
+                        <td className="border-r border-gray-900"></td>
                       </tr>
                       <tr className="font-medium bg-gray-50 print-avoid-break">
-                        <td className="p-3 text-gray-900 text-center border-r border-gray-200 print-small-text font-semibold bg-gray-100">
+                        <td className="p-2 text-gray-900 text-center border-r border-gray-900 print:p-1 font-semibold bg-gray-100">
                           Amount
                         </td>
                         {productChunk.map((product) => (
-                          <td key={product.id} className="p-3 text-gray-900 text-center border-r border-gray-200 print-small-text font-medium">
+                          <td key={product.id} className="p-2 text-gray-900 text-center border-r border-gray-900 print:p-1 font-medium">
                             {(packageData.totalAmounts[product.id] || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                           </td>
                         ))}
-                        <td className="border-r border-gray-200"></td>
+                        <td className="border-r border-gray-900"></td>
                       </tr>
                     </tbody>
                   </table>
@@ -421,30 +426,28 @@ const ProgramReport = ({
   };
 
   return (
-    <div className="w-full min-h-screen bg-gray-50 p-4 md:p-6">
-      <div className="w-full mx-auto bg-white shadow-lg p-4 md:p-6 print:w-full print:max-w-none print:shadow-none print:p-0">
+    <div className="w-full bg-white">
+      <div className="max-w-5xl mx-auto bg-white p-4 md:p-6 print:w-full print:max-w-none print:shadow-none print:p-0">
         <style>{printStyles}</style>
+
+        <div className="flex justify-end gap-4 mb-4 print:hidden">
+            <Button onClick={handlePrint} variant="secondary" size="sm" className="hover:bg-gray-200">
+              <Printer className="h-4 w-4 mr-2" />
+              Print
+            </Button>
+            <Button onClick={handleDownload} variant="secondary" size="sm" className="hover:bg-gray-200">
+              <Download className="h-4 w-4 mr-2" />
+              Download
+            </Button>
+          </div>
         {/* Program Header */}
-        <div className="mb-6 print-avoid-break border-b pb-4">
-          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-4">
-            <h2 className="text-2xl font-bold text-gray-900 print-header">
-              {customerName}, {programName}
-            </h2>
-            <div className="flex gap-3 print:hidden">
-              <Button onClick={handlePrint} variant="outline" size="sm" className="hover:bg-gray-100">
-                <Printer className="h-4 w-4 mr-2" />
-                Print
-              </Button>
-              <Button onClick={handleDownload} variant="outline" size="sm" className="hover:bg-gray-100">
-                <Download className="h-4 w-4 mr-2" />
-                Download
-              </Button>
-            </div>
-          </div>
-          <div className="flex flex-col md:flex-row justify-between text-sm text-gray-600">
-            <p>Duration: {format(new Date(startDate), 'dd/MM/yyyy')}  to  {format(new Date(endDate), 'dd/MM/yyyy')}</p>
-            <p>Total Participants: {totalParticipants}</p>
-          </div>
+              <div className="flex justify-between items-center p-8 text-sm text-gray-600 bg-gray-50">
+                <h3 className="text-base font-semibold text-gray-900">
+                  {customerName}, {programName}
+                </h3>
+                <p>Duration : <strong>{format(new Date(startDate), 'dd/MM/yyyy')}</strong> - <strong>{format(new Date(endDate), 'dd/MM/yyyy')}</strong></p>
+                <p>No. of People : <strong>{totalParticipants}</strong></p>
+              </div>
         </div>
 
         {/* Package Tables */}
@@ -465,15 +468,14 @@ const ProgramReport = ({
         {/* Grand Total */}
         {(!selectedPackage || selectedPackage === 'all') && (
           <div className="mt-8 print-avoid-break">
-            <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg grand-total">
-              <p className="text-xl font-bold text-amber-900 text-right print-subheader">
+            <div className="p-4 bg-gray-50 border border-gray-900 rounded-lg grand-total">
+              <p className="text-xl font-bold text-gray-900 text-right print-subheader">
                 Grand Total: ₹{grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
               </p>
             </div>
           </div>
         )}
       </div>
-    </div>
   );
 }
 

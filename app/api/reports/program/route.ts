@@ -26,6 +26,14 @@ interface ProgramReport {
   };
 }
 
+const PACKAGE_NAMES = {
+  'Normal': 'Catering Package',
+  'Extra': 'Extra Catering Package',
+  'Cold Drink': 'Cold Drink Package'
+} as const;
+
+const PACKAGE_ORDER = ['Normal', 'Extra', 'Cold Drink'];
+
 export async function POST(req: NextRequest) {
   try {
     const { programName, customerName, startDate, endDate, totalParticipants, selectedPackage, packages, action } = await req.json();
@@ -114,78 +122,113 @@ export async function POST(req: NextRequest) {
   }
 }
 
-function generateProgramReportHTML({ programName, customerName, startDate, endDate, totalParticipants, selectedPackage, packages }: any) {
+function generateProgramReportHTML({ programName, customerName, startDate, endDate, totalParticipants, selectedPackage, packages }: {
+  programName: string;
+  customerName: string;
+  startDate: string;
+  endDate: string;
+  totalParticipants: number;
+  selectedPackage?: string;
+  packages: {
+    [key: string]: {
+      products: Array<{ id: string; name: string; }>;
+      entries: Array<{ date: string; quantities: Record<string, number>; comment?: string; }>;
+      totals: Record<string, number>;
+      rates: Record<string, number>;
+      totalAmounts: Record<string, number>;
+    };
+  };
+}) {
   const styles = `
     <style>
-      body {
-        font-family: Arial, sans-serif;
+      body { 
+        font-family: Arial, sans-serif; 
         margin: 0;
-        padding: 20px;
-        color: #1f2937;
+        padding: 12px;
+        font-size: 11px;
       }
       .report-header {
         text-align: center;
-        margin-bottom: 2rem;
+        margin-bottom: 20px;
+        padding: 12px;
+        background-color: #f8f9fa;
+        border-bottom: 1px solid #dee2e6;
       }
       .report-header h2 {
-        font-size: 1.5rem;
-        font-weight: 600;
-        color: #1f2937;
-        margin: 0 0 0.5rem 0;
+        margin: 0;
+        color: #1a1a1a;
+        font-size: 16px;
       }
       .report-header p {
-        margin: 0.25rem 0;
-        font-size: 0.875rem;
-        color: #4b5563;
+        margin: 6px 0 0;
+        color: #4a5568;
+        font-size: 12px;
       }
-      .package-section {
-        margin-bottom: 2rem;
-        page-break-inside: avoid;
+      table { 
+        width: 100%; 
+        border-collapse: collapse; 
+        margin-bottom: 16px;
+        border: 1px solid #dee2e6;
       }
-      .table-container {
-        margin-bottom: 1.5rem;
-      }
-      h3 {
-        color: #1f2937;
-        margin-bottom: 1rem;
-        page-break-after: avoid;
-      }
-      table {
-        width: 100%;
-        border-collapse: collapse;
-        margin-bottom: 1rem;
+      th, td { 
+        border: 1px solid #dee2e6; 
+        padding: 6px 8px;
         font-size: 11px;
       }
-      th, td {
-        border: 1px solid #e5e7eb;
-        padding: 0.4rem;
-        text-align: center;
+      th { 
+        background-color: #f8f9fa;
+        font-weight: 600;
+        color: #1a1a1a;
       }
-      th {
-        background-color: #f9fafb;
+      .package-section { 
+        page-break-before: always;
+        margin-bottom: 24px;
+      }
+      .package-section:first-of-type { 
+        page-break-before: avoid;
+      }
+      .package-header { 
+        background-color: #f8f9fa;
+        padding: 8px;
+        margin: 12px 0 8px;
+        text-align: center;
+        border: 1px solid #dee2e6;
+        border-radius: 3px;
+      }
+      .package-header h4 {
+        margin: 0;
+        color: #1a1a1a;
+        font-size: 13px;
+      }
+      .total-row { 
+        background-color: #f8f9fa;
         font-weight: 600;
       }
-      .date-cell {
-        text-align: center;
-        font-weight: 500;
-        background-color: #f9fafb;
-      }
-      .total-row {
-        font-weight: bold;
-        background-color: #f9fafb;
-      }
       .rate-row {
-        background-color: #f9fafb;
+        background-color: #f8f9fa;
       }
       .amount-row {
         font-weight: bold;
-        background-color: #f9fafb;
+        background-color: #f8f9fa;
+      }
+      .grand-total {
+        margin-top: 20px;
+        padding: 10px;
+        text-align: right;
+        background-color: #f8f9fa;
+        border: 1px solid #dee2e6;
+        border-radius: 3px;
+        page-break-inside: avoid;
+      }
+      .grand-total strong {
+        font-size: 13px;
+        color: #1a1a1a;
+      }
+      @page { 
+        margin: 15mm;
+        size: A4;
       }
       @media print {
-        body {
-          print-color-adjust: exact;
-          -webkit-print-color-adjust: exact;
-        }
         .page-break-before {
           page-break-before: always;
         }
@@ -195,14 +238,6 @@ function generateProgramReportHTML({ programName, customerName, startDate, endDa
       }
     </style>
   `;
-
-  // Define the fixed package order for the report
-  const REPORT_PACKAGE_ORDER = ['Normal', 'Extra', 'Cold Drink'];
-  const PACKAGE_DISPLAY_NAMES = {
-    'Normal': 'Catering Package',
-    'Extra': 'Extra Catering Package',
-    'Cold Drink': 'Cold Drink Package'
-  };
 
   // Helper function to split products into chunks for table pagination
   const chunkProducts = (products: any[], size: number) => {
@@ -214,44 +249,53 @@ function generateProgramReportHTML({ programName, customerName, startDate, endDa
   };
 
   // Helper function to generate table HTML for a package and product chunk
-  const generateTableHTML = (packageData: any, products: any[], isFirstChunk: boolean = true) => `
-    <div class="table-container">
-      ${isFirstChunk ? `<h3 style="text-decoration: underline">• ${packageData.packageName}</h3>` : ''}
+  const generateTableHTML = (packageType: string, packageData: any, products: any[], isFirstChunk: boolean = true) => `
+    <div class="table-container no-break">
+      ${isFirstChunk ? `
+        <div class="package-header">
+          <h4>${PACKAGE_NAMES[packageType as keyof typeof PACKAGE_NAMES] || packageType}</h4>
+        </div>
+      ` : ''}
       <table>
         <thead>
           <tr>
-            <th style="width: 15%">Date</th>
+            <th style="width: 12%; text-align: center">Date</th>
             ${products.map(product => `
-              <th style="width: ${85 / products.length}%">${product.name}</th>
+              <th style="text-align: center">${product.name}</th>
             `).join('')}
+            <th style="width: 15%; text-align: left">Comment</th>
           </tr>
         </thead>
         <tbody>
           ${packageData.entries.map((entry: any) => `
             <tr>
-              <td class="date-cell">${format(new Date(entry.date), 'dd/MM/yyyy')}</td>
+              <td style="text-align: center; background-color: #f8f9fa; font-weight: 500">${format(new Date(entry.date), 'dd/MM/yyyy')}</td>
               ${products.map(product => `
-                <td>${entry.quantities[product.id] || 0}</td>
+                <td style="text-align: center">${entry.quantities[product.id] || 0}</td>
               `).join('')}
+              <td style="text-align: left">${entry.comment || ''}</td>
             </tr>
           `).join('')}
           <tr class="total-row">
-            <td>Total</td>
+            <td style="text-align: center; background-color: #f8f9fa">Total</td>
             ${products.map(product => `
-              <td>${packageData.totals[product.id] || 0}</td>
+              <td style="text-align: center">${packageData.totals[product.id] || 0}</td>
             `).join('')}
+            <td></td>
           </tr>
           <tr class="rate-row">
-            <td>Rate</td>
+            <td style="text-align: center; background-color: #f8f9fa">Rate</td>
             ${products.map(product => `
-              <td>${packageData.rates[product.id] || 0}</td>
+              <td style="text-align: center">${packageData.rates[product.id] || 0}</td>
             `).join('')}
+            <td></td>
           </tr>
           <tr class="amount-row">
-            <td>Amount</td>
+            <td style="text-align: center; background-color: #f8f9fa">Amount</td>
             ${products.map(product => `
-              <td>${(packageData.totalAmounts[product.id] || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+              <td style="text-align: center">₹${(packageData.totalAmounts[product.id] || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
             `).join('')}
+            <td></td>
           </tr>
         </tbody>
       </table>
@@ -267,8 +311,8 @@ function generateProgramReportHTML({ programName, customerName, startDate, endDa
       </head>
       <body>
         <div class="report-header">
-          <h3>${customerName}, ${programName}</h3>
-          <p>${format(new Date(startDate), 'dd/MM/yyyy')} - ${format(new Date(endDate), 'dd/MM/yyyy')}</p>
+          <h2>${customerName}, ${programName}</h2>
+          <p>Duration: ${format(new Date(startDate), 'dd/MM/yyyy')} - ${format(new Date(endDate), 'dd/MM/yyyy')}</p>
           <p>Total Participants: ${totalParticipants}</p>
         </div>
 
@@ -284,26 +328,33 @@ function generateProgramReportHTML({ programName, customerName, startDate, endDa
             return type === packageType;
           })
           .sort(([typeA], [typeB]) => {
-            const indexA = REPORT_PACKAGE_ORDER.indexOf(typeA);
-            const indexB = REPORT_PACKAGE_ORDER.indexOf(typeB);
+            const indexA = PACKAGE_ORDER.indexOf(typeA);
+            const indexB = PACKAGE_ORDER.indexOf(typeB);
             return indexA - indexB;
           })
           .map(([type, data], index) => {
             const productChunks = chunkProducts(data.products, 7);
-            // Only add page break before Cold Drink package
-            const needsPageBreak = type === 'Cold Drink';
+            const needsPageBreak = type === 'Cold Drink' || (type === 'Extra' && data.products.length > 7);
             return `
               ${needsPageBreak ? '<div class="page-break-before"></div>' : ''}
               <div class="package-section">
-                ${productChunks.map((chunk, index) => 
-                  generateTableHTML(data, chunk, index === 0)
+                ${productChunks.map((chunk, chunkIndex) => 
+                  generateTableHTML(type, data, chunk, chunkIndex === 0)
                 ).join('')}
               </div>
             `;
           })
           .join('')}
 
-        <div class="pageNumber"></div>
+        ${(!selectedPackage || selectedPackage === 'all') ? `
+          <div class="grand-total">
+            <strong>Grand Total: ₹${(Object.values(packages as Record<string, { totalAmounts: Record<string, number> }>)
+              .reduce((total, pkg) => 
+                total + Object.values(pkg.totalAmounts).reduce((sum, amount) => sum + amount, 0), 
+                0
+              )).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong>
+          </div>
+        ` : ''}
       </body>
     </html>
   `;
