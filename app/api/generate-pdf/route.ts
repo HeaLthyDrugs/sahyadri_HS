@@ -1,22 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
-import puppeteer from 'puppeteer';
 import { format } from 'date-fns';
+import { generatePDF } from '@/lib/pdf-generator';
+
+export const maxDuration = 300; // Set max duration to 5 minutes
+export const dynamic = 'force-dynamic';
 
 export async function POST(req: NextRequest) {
   try {
     const { reportType, data, selectedDay, selectedPackage, action } = await req.json();
-
-    // Launch Puppeteer
-    const browser = await puppeteer.launch({
-      headless: true,
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-gpu'
-      ]
-    });
-    const page = await browser.newPage();
 
     // Generate HTML content based on report type
     let htmlContent = '';
@@ -26,51 +17,8 @@ export async function POST(req: NextRequest) {
       // ... existing monthly report generation
     }
 
-    // Set content and wait for network idle
-    await page.setContent(htmlContent, {
-      waitUntil: 'networkidle0'
-    });
-
-    // Add page numbers
-    await page.evaluate(() => {
-      const style = document.createElement('style');
-      style.textContent = `
-        @page {
-          margin: 20mm;
-          size: A4;
-        }
-        .page-break-before {
-          page-break-before: always;
-        }
-        .pageNumber:before {
-          content: counter(page);
-        }
-        @media print {
-          .pageNumber {
-            position: fixed;
-            bottom: 10px;
-            right: 10px;
-            font-size: 12px;
-            color: #666;
-          }
-        }
-      `;
-      document.head.appendChild(style);
-    });
-
-    // Generate PDF
-    const pdf = await page.pdf({
-      format: 'A4',
-      printBackground: true,
-      margin: {
-        top: '20mm',
-        right: '20mm',
-        bottom: '20mm',
-        left: '20mm'
-      }
-    });
-
-    await browser.close();
+    // Generate PDF using the optimized generator
+    const pdf = await generatePDF(htmlContent);
 
     // Return response based on action
     if (action === 'download') {
@@ -89,7 +37,17 @@ export async function POST(req: NextRequest) {
     }
   } catch (error) {
     console.error('Error generating PDF:', error);
-    return NextResponse.json({ error: 'Failed to generate PDF' }, { status: 500 });
+    
+    // Improved error response
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+    return NextResponse.json(
+      { 
+        error: 'Failed to generate PDF',
+        details: errorMessage,
+        timestamp: new Date().toISOString()
+      }, 
+      { status: 500 }
+    );
   }
 }
 

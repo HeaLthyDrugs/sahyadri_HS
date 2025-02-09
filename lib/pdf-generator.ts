@@ -1,8 +1,12 @@
-import puppeteer from 'puppeteer';
+import puppeteerCore from 'puppeteer-core';
+import chromium from '@sparticuz/chromium-min';
 
 export async function generatePDF(htmlContent: string): Promise<Buffer> {
-  const browser = await puppeteer.launch({
-    headless: 'new',
+  const browser = await puppeteerCore.launch({
+    args: chromium.args,
+    executablePath: await chromium.executablePath('https://github.com/Sparticuz/chromium/releases/download/v132.0.0/chromium-v132.0.0-pack.tar'),
+    headless: true,
+    defaultViewport: chromium.defaultViewport
   });
 
   try {
@@ -10,7 +14,8 @@ export async function generatePDF(htmlContent: string): Promise<Buffer> {
     
     // Set content and wait for network idle to ensure all resources are loaded
     await page.setContent(htmlContent, {
-      waitUntil: 'networkidle0'
+      waitUntil: 'networkidle0',
+      timeout: 30000, // 30 second timeout
     });
 
     // Add custom styles for PDF generation
@@ -41,7 +46,7 @@ export async function generatePDF(htmlContent: string): Promise<Buffer> {
       `
     });
 
-    // Generate PDF
+    // Generate PDF with optimized settings
     const pdf = await page.pdf({
       format: 'A4',
       printBackground: true,
@@ -58,11 +63,14 @@ export async function generatePDF(htmlContent: string): Promise<Buffer> {
         bottom: '20mm',
         left: '10mm',
         right: '10mm'
-      }
+      },
+      timeout: 30000, // 30 second timeout
     });
 
-    return pdf;
+    return Buffer.from(pdf);
   } finally {
-    await browser.close();
+    if (browser) {
+      await browser.close();
+    }
   }
 } 
