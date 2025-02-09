@@ -18,7 +18,11 @@ import {
   RiFileTextLine,
   RiPieChartLine,
   RiLogoutBoxLine,
-  RiSettingsLine
+  RiSettingsLine,
+  RiShieldUserLine,
+  RiUserSettingsLine,
+  RiMailLine,
+  RiAppsLine
 } from "react-icons/ri";
 import { auth } from "@/lib/auth";
 
@@ -69,6 +73,15 @@ export default function DashboardLayout({
         { name: "Entries", path: "/dashboard/billing/entries", icon: <RiFileListLine className="w-4 h-4" /> },
         { name: "Invoice", path: "/dashboard/billing/invoice", icon: <RiFileTextLine className="w-4 h-4" /> },
         { name: "Reports", path: "/dashboard/billing/reports", icon: <RiPieChartLine className="w-4 h-4" /> }
+      ]
+    },
+    {
+      title: "Roles Management",
+      icon: <RiShieldUserLine className="w-5 h-5" />,
+      items: [
+        { name: "Roles", path: "/dashboard/users/roles", icon: <RiUserSettingsLine className="w-4 h-4" /> },
+        { name: "Users", path: "/dashboard/users/manage", icon: <RiMailLine className="w-4 h-4" /> },
+        { name: "Modules", path: "/dashboard/users/modules", icon: <RiAppsLine className="w-4 h-4" /> }
       ]
     },
     {

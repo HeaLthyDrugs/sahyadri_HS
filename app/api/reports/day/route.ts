@@ -38,8 +38,9 @@ const generatePDF = async (data: DayReportData[], date: string, packageType?: st
   // Standardize package type mapping based on database structure
   const packageTypeMap: { [key: string]: string[] } = {
     'normal': ['Normal'],
+    'catering': ['Normal'],  // Add explicit mapping for catering
     'extra': ['Extra'],
-    'cold drink': ['Cold Drink'],
+    'cold drink': ['Cold Drink', 'cold'],
     'all': [] // Empty array means no filtering
   };
 
@@ -63,7 +64,6 @@ const generatePDF = async (data: DayReportData[], date: string, packageType?: st
   // Special handling for catering package
   if (effectivePackageType === 'catering') {
     effectivePackageType = 'normal';
-    packageTypeMap['normal'] = ['Normal']; // Ensure we're looking for exact database type
   }
 
   // Filter entries based on package type
@@ -202,8 +202,9 @@ const generatePDF = async (data: DayReportData[], date: string, packageType?: st
           return `
             <div class="program-section">
               <div class="program-date">
-                <strong>${format(parseISO(program.date), 'dd/MM/yyyy')}</strong>
+                <p>${format(parseISO(program.date), 'dd/MM/yyyy')}</p>
               </div>
+
               ${Object.entries(packageGroups).map(([pkgType, entries]) => {
                 // For catering package, always use 'CATERING' as display name
                 const displayName = packageType?.toLowerCase() === 'catering' 
@@ -334,9 +335,10 @@ export async function POST(request: Request) {
 
     if (packageType && packageType !== 'all') {
       const packageMapping: { [key: string]: string[] } = {
-        'catering': ['normal', 'Normal'],
-        'extra': ['extra', 'Extra'],
-        'cold drink': ['cold drink', 'Cold Drink', 'cold']
+        'catering': ['Normal'],
+        'normal': ['Normal'],
+        'extra': ['Extra'],
+        'cold drink': ['Cold Drink', 'cold']
       };
 
       const packageTypes = packageMapping[packageType.toLowerCase()] || [packageType];
