@@ -3,6 +3,8 @@ import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { format, parseISO } from 'date-fns';
 import puppeteer from 'puppeteer';
+import puppeteerCore from 'puppeteer-core';
+import chromium from '@sparticuz/chromium-min';
 
 // Types matching the frontend component
 interface DayReportEntry {
@@ -37,262 +39,285 @@ const PACKAGE_TYPE_ORDER = {
 };
 
 const generatePDF = async (data: DayReportData[], date: string, packageType?: string) => {
-  const browser = await puppeteer.launch({
-    headless: true
-  });
-  const page = await browser.newPage();
+  let browser;
+  try {
+    if (process.env.NODE_ENV === 'production' || process.env.VERCEL_ENV === 'production') {
+      // Configure chromium for production/Vercel environment
+      const executablePath = await chromium.executablePath('https://github.com/Sparticuz/chromium/releases/download/v123.0.0/chromium-v123.0.0-pack.tar');
+      browser = await puppeteerCore.launch({
+        executablePath,
+        args: chromium.args,
+        headless: true as const,
+        defaultViewport: chromium.defaultViewport
+      });
+    } else {
+      // Local development environment
+      browser = await puppeteer.launch({
+        headless: true as const,
+        args: ['--no-sandbox', '--disable-setuid-sandbox']
+      });
+    }
 
-  // Standardize package type mapping based on database structure
-  const packageTypeMap: { [key: string]: string[] } = {
-    'normal': ['Normal'],
-    'catering': ['Normal'],  // Add explicit mapping for catering
-    'extra': ['Extra'],
-    'cold drink': ['Cold Drink', 'cold'],
-    'all': [] // Empty array means no filtering
-  };
+    const page = await browser.newPage();
 
-  // Get display name for package type based on database names
-  const getPackageDisplayName = (type: string): string => {
-    const displayMap: { [key: string]: string } = {
-      'Normal': 'CATERING',
-      'Extra': 'EXTRA CATERING',
-      'Cold Drink': 'COLD DRINKS',
-      'normal': 'CATERING',
-      'extra': 'EXTRA CATERING',
-      'cold drink': 'COLD DRINKS',
-      'catering': 'CATERING'
+    // Standardize package type mapping based on database structure
+    const packageTypeMap: { [key: string]: string[] } = {
+      'normal': ['Normal'],
+      'catering': ['Normal'],  // Add explicit mapping for catering
+      'extra': ['Extra'],
+      'cold drink': ['Cold Drink', 'cold'],
+      'all': [] // Empty array means no filtering
     };
-    return displayMap[type] || type;
-  };
 
-  // Normalize the package type for filtering
-  let effectivePackageType = packageType?.toLowerCase();
-  
-  // Special handling for catering package
-  if (effectivePackageType === 'catering') {
-    effectivePackageType = 'normal';
-  }
+    // Get display name for package type based on database names
+    const getPackageDisplayName = (type: string): string => {
+      const displayMap: { [key: string]: string } = {
+        'Normal': 'CATERING',
+        'Extra': 'EXTRA CATERING',
+        'Cold Drink': 'COLD DRINKS',
+        'normal': 'CATERING',
+        'extra': 'EXTRA CATERING',
+        'cold drink': 'COLD DRINKS',
+        'catering': 'CATERING'
+      };
+      return displayMap[type] || type;
+    };
 
-  // Filter entries based on package type
-  const filteredData = data.map(program => ({
-    ...program,
-    entries: program.entries.filter(entry => {
-      if (!effectivePackageType || effectivePackageType === 'all') return true;
-      
-      // For catering package, we want entries with type 'Normal'
-      if (packageType?.toLowerCase() === 'catering') {
-        return entry.packageType === 'Normal';
-      }
-      
-      const allowedTypes = packageTypeMap[effectivePackageType] || [effectivePackageType];
-      return allowedTypes.includes(entry.packageType);
-    })
-  })).filter(program => program.entries.length > 0);
+    // Normalize the package type for filtering
+    let effectivePackageType = packageType?.toLowerCase();
+    
+    // Special handling for catering package
+    if (effectivePackageType === 'catering') {
+      effectivePackageType = 'normal';
+    }
 
-  // Calculate total for filtered data
-  const totalAmount = filteredData.reduce((sum, program) => 
-    sum + program.entries.reduce((pSum, entry) => pSum + entry.total, 0), 0
-  );
+    // Filter entries based on package type
+    const filteredData = data.map(program => ({
+      ...program,
+      entries: program.entries.filter(entry => {
+        if (!effectivePackageType || effectivePackageType === 'all') return true;
+        
+        // For catering package, we want entries with type 'Normal'
+        if (packageType?.toLowerCase() === 'catering') {
+          return entry.packageType === 'Normal';
+        }
+        
+        const allowedTypes = packageTypeMap[effectivePackageType] || [effectivePackageType];
+        return allowedTypes.includes(entry.packageType);
+      })
+    })).filter(program => program.entries.length > 0);
 
-  // Add debug logging
-  console.log('Package Type:', packageType);
-  console.log('Effective Package Type:', effectivePackageType);
-  console.log('Filtered Data:', JSON.stringify(filteredData, null, 2));
+    // Calculate total for filtered data
+    const totalAmount = filteredData.reduce((sum, program) => 
+      sum + program.entries.reduce((pSum, entry) => pSum + entry.total, 0), 0
+    );
 
-  // Generate HTML content
-  const htmlContent = `
-    <!DOCTYPE html>
-    <html>
-      <head>
-        <meta charset="UTF-8">
-        <title>Day Report - ${date}</title>
-        <style>
-          body { 
-            font-family: Arial, sans-serif; 
-            margin: 0;
-            padding: 12px;
-            font-size: 11px;
-          }
-          .report-header {
-            text-align: center;
-            margin-bottom: 20px;
-            padding: 12px;
-            background-color: #f8f9fa;
-            border-bottom: 1px solid #dee2e6;
-          }
-          .report-header h2 {
-            margin: 0;
-            color: #1a1a1a;
-            font-size: 16px;
-          }
-          .report-header p {
-            margin: 6px 0 0;
-            color: #4a5568;
-            font-size: 12px;
-          }
-          table { 
-            width: 100%; 
-            border-collapse: collapse; 
-            margin-bottom: 16px;
-            border: 1px solid #dee2e6;
-          }
-          th, td { 
-            border: 1px solid #dee2e6; 
-            padding: 6px 8px;
-            font-size: 11px;
-          }
-          th { 
-            background-color: #f8f9fa;
-            font-weight: 600;
-            color: #1a1a1a;
-          }
-          .program-section { 
-            page-break-before: always;
-            margin-bottom: 24px;
-          }
-          .program-section:first-of-type { 
-            page-break-before: avoid;
-          }
-          .program-date {
-            margin: 12px 0;
-            padding: 6px 8px;
-            background-color: #f8f9fa;
-            border-left: 3px solid #4a5568;
-            font-size: 12px;
-            color: #1a1a1a;
-          }
-          .program-date p {
-            margin: 0;
-            font-weight: 500;
-          }
-          .package-header { 
-            background-color: #f8f9fa;
-            padding: 8px;
-            margin: 12px 0 8px;
-            text-align: center;
-            border: 1px solid #dee2e6;
-            border-radius: 3px;
-          }
-          .package-header h4 {
-            margin: 0;
-            color: #1a1a1a;
-            font-size: 13px;
-          }
-          .total-row { 
-            background-color: #f8f9fa;
-            font-weight: 600;
-          }
-          .grand-total {
-            margin-top: 20px;
-            padding: 10px;
-            text-align: right;
-            background-color: #f8f9fa;
-            border: 1px solid #dee2e6;
-            border-radius: 3px;
-            page-break-inside: avoid;
-          }
-          .grand-total strong {
-            font-size: 13px;
-            color: #1a1a1a;
-          }
-          @page { 
-            margin: 15mm;
-            size: A4;
-          }
-        </style>
-      </head>
-      <body>
-        ${filteredData.map((program, index) => {
-          // Group entries by package type
-          const packageGroups = program.entries.reduce((groups: { [key: string]: any[] }, entry) => {
-            const type = entry.packageType;
-            if (!groups[type]) groups[type] = [];
-            groups[type].push(entry);
-            return groups;
-          }, {});
+    // Add debug logging
+    console.log('Package Type:', packageType);
+    console.log('Effective Package Type:', effectivePackageType);
+    console.log('Filtered Data:', JSON.stringify(filteredData, null, 2));
 
-          // Sort package groups by defined order
-          const sortedPackageEntries = Object.entries(packageGroups).sort(([typeA], [typeB]) => {
-            const orderA = PACKAGE_TYPE_ORDER[typeA as keyof typeof PACKAGE_TYPE_ORDER] || 999;
-            const orderB = PACKAGE_TYPE_ORDER[typeB as keyof typeof PACKAGE_TYPE_ORDER] || 999;
-            return orderA - orderB;
-          });
+    // Generate HTML content
+    const htmlContent = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <meta charset="UTF-8">
+          <title>Day Report - ${date}</title>
+          <style>
+            body { 
+              font-family: Arial, sans-serif; 
+              margin: 0;
+              padding: 12px;
+              font-size: 11px;
+            }
+            .report-header {
+              text-align: center;
+              margin-bottom: 20px;
+              padding: 12px;
+              background-color: #f8f9fa;
+              border-bottom: 1px solid #dee2e6;
+            }
+            .report-header h2 {
+              margin: 0;
+              color: #1a1a1a;
+              font-size: 16px;
+            }
+            .report-header p {
+              margin: 6px 0 0;
+              color: #4a5568;
+              font-size: 12px;
+            }
+            table { 
+              width: 100%; 
+              border-collapse: collapse; 
+              margin-bottom: 16px;
+              border: 1px solid #dee2e6;
+            }
+            th, td { 
+              border: 1px solid #dee2e6; 
+              padding: 6px 8px;
+              font-size: 11px;
+            }
+            th { 
+              background-color: #f8f9fa;
+              font-weight: 600;
+              color: #1a1a1a;
+            }
+            .program-section { 
+              page-break-before: always;
+              margin-bottom: 24px;
+            }
+            .program-section:first-of-type { 
+              page-break-before: avoid;
+            }
+            .program-date {
+              margin: 12px 0;
+              padding: 6px 8px;
+              background-color: #f8f9fa;
+              border-left: 3px solid #4a5568;
+              font-size: 12px;
+              color: #1a1a1a;
+            }
+            .program-date p {
+              margin: 0;
+              font-weight: 500;
+            }
+            .package-header { 
+              background-color: #f8f9fa;
+              padding: 8px;
+              margin: 12px 0 8px;
+              text-align: center;
+              border: 1px solid #dee2e6;
+              border-radius: 3px;
+            }
+            .package-header h4 {
+              margin: 0;
+              color: #1a1a1a;
+              font-size: 13px;
+            }
+            .total-row { 
+              background-color: #f8f9fa;
+              font-weight: 600;
+            }
+            .grand-total {
+              margin-top: 20px;
+              padding: 10px;
+              text-align: right;
+              background-color: #f8f9fa;
+              border: 1px solid #dee2e6;
+              border-radius: 3px;
+              page-break-inside: avoid;
+            }
+            .grand-total strong {
+              font-size: 13px;
+              color: #1a1a1a;
+            }
+            @page { 
+              margin: 15mm;
+              size: A4;
+            }
+          </style>
+        </head>
+        <body>
+          ${filteredData.map((program, index) => {
+            // Group entries by package type
+            const packageGroups = program.entries.reduce((groups: { [key: string]: any[] }, entry) => {
+              const type = entry.packageType;
+              if (!groups[type]) groups[type] = [];
+              groups[type].push(entry);
+              return groups;
+            }, {});
 
-          return `
-            <div class="program-section">
-              <div class="program-date">
-                <strong>Report for ${format(parseISO(program.date), 'dd/MM/yyyy')}</strong>
-              </div>
+            // Sort package groups by defined order
+            const sortedPackageEntries = Object.entries(packageGroups).sort(([typeA], [typeB]) => {
+              const orderA = PACKAGE_TYPE_ORDER[typeA as keyof typeof PACKAGE_TYPE_ORDER] || 999;
+              const orderB = PACKAGE_TYPE_ORDER[typeB as keyof typeof PACKAGE_TYPE_ORDER] || 999;
+              return orderA - orderB;
+            });
 
-
-              ${sortedPackageEntries.map(([pkgType, entries]) => {
-                const displayName = packageType?.toLowerCase() === 'catering' 
-                  ? 'CATERING'
-                  : getPackageDisplayName(pkgType);
-                return `
-                  <div class="package-header">
-                    <h4>${displayName}</h4>
-                  </div>
-                  <table>
-                    <thead>
-                      <tr>
-                        <th style="width: 40%">Product Name</th>
-                        <th style="width: 15%; text-align: center">Quantity</th>
-                        <th style="width: 20%; text-align: right">Rate</th>
-                        <th style="width: 25%; text-align: right">Total Amount</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      ${entries.map(entry => `
-                        <tr>
-                          <td>${entry.productName}</td>
-                          <td style="text-align: center">${entry.quantity}</td>
-                          <td style="text-align: right">₹${entry.rate.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-                          <td style="text-align: right">₹${entry.total.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-                        </tr>
-                      `).join('')}
-                      <tr class="total-row">
-                        <td colspan="3" style="text-align: right; padding-right: 12px">Package Total</td>
-                        <td style="text-align: right">₹${entries
-                          .reduce((sum, entry) => sum + entry.total, 0)
-                          .toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-                      </tr>
-                    </tbody>
-                  </table>
-                `;
-              }).join('')}
-              ${packageType === 'all' ? `
-                <div class="grand-total">
-                  <strong>Day Total: ₹${program.grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong>
+            return `
+              <div class="program-section">
+                <div class="program-date">
+                  <strong>Report for ${format(parseISO(program.date), 'dd/MM/yyyy')}</strong>
                 </div>
-              ` : ''}
+
+
+                ${sortedPackageEntries.map(([pkgType, entries]) => {
+                  const displayName = packageType?.toLowerCase() === 'catering' 
+                    ? 'CATERING'
+                    : getPackageDisplayName(pkgType);
+                  return `
+                    <div class="package-header">
+                      <h4>${displayName}</h4>
+                    </div>
+                    <table>
+                      <thead>
+                        <tr>
+                          <th style="width: 40%">Product Name</th>
+                          <th style="width: 15%; text-align: center">Quantity</th>
+                          <th style="width: 20%; text-align: right">Rate</th>
+                          <th style="width: 25%; text-align: right">Total Amount</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        ${entries.map(entry => `
+                          <tr>
+                            <td>${entry.productName}</td>
+                            <td style="text-align: center">${entry.quantity}</td>
+                            <td style="text-align: right">₹${entry.rate.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                            <td style="text-align: right">₹${entry.total.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                          </tr>
+                        `).join('')}
+                        <tr class="total-row">
+                          <td colspan="3" style="text-align: right; padding-right: 12px">Package Total</td>
+                          <td style="text-align: right">₹${entries
+                            .reduce((sum, entry) => sum + entry.total, 0)
+                            .toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  `;
+                }).join('')}
+                ${packageType === 'all' ? `
+                  <div class="grand-total">
+                    <strong>Day Total: ₹${program.grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong>
+                  </div>
+                ` : ''}
+              </div>
+            `;
+          }).join('')}
+          ${packageType !== 'all' ? `
+            <div class="grand-total">
+              <strong>Total Amount: ₹${totalAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong>
             </div>
-          `;
-        }).join('')}
-        ${packageType !== 'all' ? `
-          <div class="grand-total">
-            <strong>Total Amount: ₹${totalAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong>
-          </div>
-        ` : ''}
-      </body>
-    </html>
-  `;
+          ` : ''}
+        </body>
+      </html>
+    `;
 
-  await page.setContent(htmlContent);
-  const pdf = await page.pdf({
-    format: 'A4',
-    printBackground: true,
-    margin: {
-      top: '20px',
-      right: '20px',
-      bottom: '20px',
-      left: '20px'
-    },
-    displayHeaderFooter: false
-  });
+    await page.setContent(htmlContent);
+    const pdf = await page.pdf({
+      format: 'A4',
+      printBackground: true,
+      margin: {
+        top: '20px',
+        right: '20px',
+        bottom: '20px',
+        left: '20px'
+      },
+      displayHeaderFooter: false
+    });
 
-  await browser.close();
-  return pdf;
+    await browser.close();
+    return pdf;
+  } catch (error) {
+    console.error('Error generating PDF:', error);
+    if (browser) {
+      await browser.close();
+    }
+    throw error;
+  }
 };
 
 export async function POST(request: Request) {
