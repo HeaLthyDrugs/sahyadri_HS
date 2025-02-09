@@ -34,7 +34,8 @@ const PACKAGE_TYPE_DISPLAY = {
   'cold drink': 'Cold Drinks Package',
   'Normal': 'Catering Package',
   'Extra': 'Extra Catering Package',
-  'Cold Drink': 'Cold Drinks Package'
+  'Cold Drink': 'Cold Drinks Package',
+  'catering': 'Catering Package'
 } as const;
 
 const PACKAGE_TYPE_ORDER = ['normal', 'Normal', 'extra', 'Extra', 'cold drink', 'Cold Drink'];
@@ -47,17 +48,27 @@ const DayReport = ({ data, selectedDay, selectedPackage = 'all' }: DayReportProp
       toast.loading('Preparing document for print...');
       setIsGeneratingPDF(true);
 
-      const response = await fetch('/api/generate-pdf', {
+      // Map package types to backend expected format
+      const packageTypeMap: { [key: string]: string } = {
+        'normal': 'normal',
+        'extra': 'extra',
+        'cold drink': 'cold drink',
+        'catering': 'normal',
+        'all': 'all'
+      };
+
+      const mappedPackageType = packageTypeMap[selectedPackage.toLowerCase()] || selectedPackage;
+
+      const response = await fetch('/api/reports/day', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          reportType: 'day',
-          data,
-          selectedDay,
-          selectedPackage,
-          action: 'print'
+          date: selectedDay,
+          packageType: mappedPackageType,
+          action: 'print',
+          reportType: 'day'
         }),
       });
 
@@ -92,17 +103,27 @@ const DayReport = ({ data, selectedDay, selectedPackage = 'all' }: DayReportProp
       toast.loading('Generating PDF...');
       setIsGeneratingPDF(true);
 
-      const response = await fetch('/api/generate-pdf', {
+      // Map package types to backend expected format
+      const packageTypeMap: { [key: string]: string } = {
+        'normal': 'normal',
+        'extra': 'extra',
+        'cold drink': 'cold drink',
+        'catering': 'normal',
+        'all': 'all'
+      };
+
+      const mappedPackageType = packageTypeMap[selectedPackage.toLowerCase()] || selectedPackage;
+
+      const response = await fetch('/api/reports/day', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          reportType: 'day',
-          data,
-          selectedDay,
-          selectedPackage,
-          action: 'download'
+          date: selectedDay,
+          packageType: mappedPackageType,
+          action: 'download',
+          reportType: 'day'
         }),
       });
 
