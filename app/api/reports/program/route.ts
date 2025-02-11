@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import puppeteer from 'puppeteer';
+import puppeteerCore from 'puppeteer-core';
+import chromium from '@sparticuz/chromium-min';
 import { format } from 'date-fns';
 
 interface ProductEntry {
@@ -38,83 +40,102 @@ export async function POST(req: NextRequest) {
   try {
     const { programName, customerName, startDate, endDate, totalParticipants, selectedPackage, packages, action } = await req.json();
 
-    // Launch Puppeteer
-    const browser = await puppeteer.launch({
-      headless: true
-    });
-    const page = await browser.newPage();
-
-    // Generate HTML content
-    const htmlContent = generateProgramReportHTML({
-      programName,
-      customerName,
-      startDate,
-      endDate,
-      totalParticipants,
-      selectedPackage,
-      packages
-    });
-
-    // Set content and wait for network idle
-    await page.setContent(htmlContent, {
-      waitUntil: 'networkidle0'
-    });
-
-    // Add page numbers
-    await page.evaluate(() => {
-      const style = document.createElement('style');
-      style.textContent = `
-        @page {
-          margin: 20mm;
-          size: A4;
-        }
-        .page-break-before {
-          page-break-before: always;
-        }
-        .pageNumber:before {
-          content: counter(page);
-        }
-        @media print {
-          .pageNumber {
-            position: fixed;
-            bottom: 10px;
-            right: 10px;
-            font-size: 12px;
-            color: #666;
-          }
-        }
-      `;
-      document.head.appendChild(style);
-    });
-
-    // Generate PDF
-    const pdf = await page.pdf({
-      format: 'A4',
-      printBackground: true,
-      margin: {
-        top: '20mm',
-        right: '20mm',
-        bottom: '20mm',
-        left: '20mm'
+    let browser;
+    try {
+      if (process.env.NODE_ENV === 'production' || process.env.VERCEL_ENV === 'production') {
+        // Configure chromium for production/Vercel environment
+        const executablePath = await chromium.executablePath('https://github.com/Sparticuz/chromium/releases/download/v123.0.0/chromium-v123.0.0-pack.tar');
+        browser = await puppeteerCore.launch({
+          executablePath,
+          args: chromium.args,
+          headless: true as const,
+          defaultViewport: chromium.defaultViewport
+        });
+      } else {
+        // Local development environment
+        browser = await puppeteer.launch({
+          headless: true as const,
+          args: ['--no-sandbox', '--disable-setuid-sandbox']
+        });
       }
-    });
 
-    await browser.close();
+      const page = await browser.newPage();
 
-    // Return response based on action
-    if (action === 'download') {
-      return new NextResponse(pdf, {
-        headers: {
-          'Content-Type': 'application/pdf',
-          'Content-Disposition': `attachment; filename=program-report-${format(new Date(), 'yyyy-MM-dd')}.pdf`
+      // Generate HTML content
+      const htmlContent = generateProgramReportHTML({
+        programName,
+        customerName,
+        startDate,
+        endDate,
+        totalParticipants,
+        selectedPackage,
+        packages
+      });
+
+      // Set content and wait for network idle
+      await page.setContent(htmlContent, {
+        waitUntil: 'networkidle0'
+      });
+
+      // Add page numbers
+      await page.evaluate(() => {
+        const style = document.createElement('style');
+        style.textContent = `
+          @page {
+            margin: 20mm;
+            size: A4;
+          }
+          .page-break-before {
+            page-break-before: always;
+          }
+          .pageNumber:before {
+            content: counter(page);
+          }
+          @media print {
+            .pageNumber {
+              position: fixed;
+              bottom: 10px;
+              right: 10px;
+              font-size: 12px;
+              color: #666;
+            }
+          }
+        `;
+        document.head.appendChild(style);
+      });
+
+      // Generate PDF
+      const pdf = await page.pdf({
+        format: 'A4',
+        printBackground: true,
+        margin: {
+          top: '20mm',
+          right: '20mm',
+          bottom: '20mm',
+          left: '20mm'
         }
       });
-    } else {
-      return new NextResponse(pdf, {
-        headers: {
-          'Content-Type': 'application/pdf'
-        }
-      });
+
+      await browser.close();
+
+      // Return response based on action
+      if (action === 'download') {
+        return new NextResponse(pdf, {
+          headers: {
+            'Content-Type': 'application/pdf',
+            'Content-Disposition': `attachment; filename=program-report-${format(new Date(), 'yyyy-MM-dd')}.pdf`
+          }
+        });
+      } else {
+        return new NextResponse(pdf, {
+          headers: {
+            'Content-Type': 'application/pdf'
+          }
+        });
+      }
+    } catch (error) {
+      console.error('Error generating PDF:', error);
+      return NextResponse.json({ error: 'Failed to generate PDF' }, { status: 500 });
     }
   } catch (error) {
     console.error('Error generating PDF:', error);

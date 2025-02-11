@@ -14,6 +14,12 @@ import {
 import Image from 'next/image';
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
+import { createServerComponentClient } from '@supabase/auth-helpers-nextjs';
+import { cookies } from 'next/headers';
+import { generatePDF } from '@/lib/pdf-generator';
+import { revalidatePath } from 'next/cache';
+import InvoiceForm from "./invoice-form";
+
 
 interface Package {
   id: string;
@@ -339,360 +345,174 @@ const pdfStyles = `
   }
 `;
 
-export default function InvoicePage() {
-  const [packages, setPackages] = useState<Package[]>([]);
-  const [selectedPackage, setSelectedPackage] = useState("");
-  const [selectedMonth, setSelectedMonth] = useState(format(new Date(), 'yyyy-MM'));
-  const [isLoading, setIsLoading] = useState(false);
-  const [invoiceData, setInvoiceData] = useState<InvoiceData>({
-    packageDetails: null,
-    month: "",
-    entries: [],
-    totalAmount: 0
-  });
-  const [invoiceConfig, setInvoiceConfig] = useState<InvoiceConfig>({
-    id: '',
-    company_name: '',
-    from_address: [],
-    bill_to_address: [],
-    gstin: '',
-    pan: '',
-    footer_note: '',
-    logo_url: '/logo.png'
-  });
+async function getPackages() {
+  const supabase = createServerComponentClient({ cookies });
+  const { data, error } = await supabase
+    .from('packages')
+    .select('*')
+    .order('name');
 
-  const currentMonth = format(new Date(), 'yyyy-MM');
+  if (error) throw error;
+  return data || [];
+}
 
-  useEffect(() => {
-    fetchPackages();
-    fetchInvoiceConfig();
+async function getInvoiceConfig() {
+  const supabase = createServerComponentClient({ cookies });
+  const { data, error } = await supabase
+    .from('invoice_config')
+    .select('*')
+    .single();
+
+  if (error) throw error;
+  return {
+    ...data,
+    from_address: data?.from_address || [],
+    bill_to_address: Array.isArray(data?.bill_to_address) 
+      ? data.bill_to_address 
+      : data?.bill_to_address ? [data.bill_to_address] : [],
+    logo_url: 'https://sahyadriservices.in/production/images/logo.png'
+  };
+}
+
+async function generateInvoiceData(packageId: string, month: string) {
+  const supabase = createServerComponentClient({ cookies });
+
+  // Get start and end dates for the selected month
+  const startDate = `${month}-01`;
+  const endDate = new Date(month + '-01');
+  endDate.setMonth(endDate.getMonth() + 1);
+  endDate.setDate(endDate.getDate() - 1);
+  const endDateStr = format(endDate, 'yyyy-MM-dd');
+
+  // Get package details
+  const { data: packageData, error: packageError } = await supabase
+    .from('packages')
+    .select('*')
+    .eq('id', packageId)
+    .single();
+
+  if (packageError) throw packageError;
+
+  // Get billing entries
+  const { data: entriesData, error: entriesError } = await supabase
+    .from('billing_entries')
+    .select(`
+      id,
+      entry_date,
+      quantity,
+      programs:program_id (
+        id,
+        name,
+        customer_name
+      ),
+      products:product_id (
+        id,
+        name,
+        rate,
+        index
+      )
+    `)
+    .eq('package_id', packageId)
+    .gte('entry_date', startDate)
+    .lte('entry_date', endDateStr)
+    .order('products(index)', { ascending: true });
+
+  if (entriesError) throw entriesError;
+
+  if (!entriesData || entriesData.length === 0) {
+    throw new Error(`No entries found for package ${packageData.name} between ${format(new Date(startDate), 'dd/MM/yyyy')} and ${format(new Date(endDateStr), 'dd/MM/yyyy')}`);
+  }
+
+  // Transform and aggregate entries
+  const transformedEntries = entriesData.reduce((acc: BillingEntry[], entry) => {
+    if (!entry.products || !entry.programs) return acc;
+
+    const existingEntry = acc.find(e => e.products?.id === entry.products?.id);
+    if (existingEntry) {
+      existingEntry.quantity += entry.quantity || 0;
+    } else {
+      acc.push({
+        id: entry.id,
+        entry_date: entry.entry_date,
+        quantity: entry.quantity || 0,
+        programs: entry.programs,
+        products: entry.products
+      });
+    }
+    return acc;
   }, []);
 
-  const fetchPackages = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('packages')
-        .select('*')
-        .order('name');
+  // Sort entries by product index
+  transformedEntries.sort((a, b) => (a.products.index || 0) - (b.products.index || 0));
 
-      if (error) throw error;
-      setPackages(data || []);
-    } catch (error) {
-      console.error('Error fetching packages:', error);
-      toast.error('Failed to fetch packages');
-    }
+  // Calculate total
+  const totalAmount = transformedEntries.reduce((sum, entry) => {
+    const rate = entry.products.rate || 0;
+    const quantity = entry.quantity || 0;
+    return sum + (rate * quantity);
+  }, 0);
+
+  return {
+    packageDetails: packageData,
+    month,
+    entries: transformedEntries,
+    totalAmount
   };
+}
 
-  const fetchInvoiceConfig = async () => {
+export default async function InvoicePage({
+  searchParams
+}: {
+  searchParams: { packageId?: string; month?: string }
+}) {
+  const packages = await getPackages();
+  const invoiceConfig = await getInvoiceConfig();
+  const currentMonth = format(new Date(), 'yyyy-MM');
+
+  let invoiceData: InvoiceData | null = null;
+  
+  if (searchParams.packageId && searchParams.month) {
     try {
-      const { data, error } = await supabase
-        .from('invoice_config')
-        .select('*')
-        .single();
-
-      if (error) throw error;
-      if (data) {
-        setInvoiceConfig({
-          ...data,
-          from_address: data.from_address || [],
-          bill_to_address: Array.isArray(data.bill_to_address) 
-            ? data.bill_to_address 
-            : data.bill_to_address ? [data.bill_to_address] : [],
-          logo_url: 'https://sahyadriservices.in/production/images/logo.png'
-        });
-      }
-    } catch (error) {
-      console.error('Error fetching invoice config:', error);
-      toast.error('Failed to fetch invoice configuration');
-    }
-  };
-
-  const generateInvoice = async () => {
-    if (!selectedPackage || !selectedMonth) {
-      toast.error('Please select both package and month');
-      return;
-    }
-
-    // Check if selected month is in the future
-    const selectedDate = new Date(selectedMonth + '-01');
-    const currentDate = new Date();
-    if (selectedDate > currentDate) {
-      toast.error('Cannot generate invoice for future months. Please select current or past months only.');
-      return;
-    }
-
-    setIsLoading(true);
-    try {
-      // Get start and end dates for the selected month
-      const startDate = `${selectedMonth}-01`;
-      const endDate = new Date(selectedMonth + '-01');
-      endDate.setMonth(endDate.getMonth() + 1);
-      endDate.setDate(endDate.getDate() - 1);
-      const endDateStr = format(endDate, 'yyyy-MM-dd');
-
-      // First get package details
-      const { data: packageData, error: packageError } = await supabase
-        .from('packages')
-        .select('*')
-        .eq('id', selectedPackage)
-        .single();
-
-      if (packageError) throw packageError;
-
-      // Update the billing entries query to join with products and order by product index
-      const entriesQuery = supabase
-        .from('billing_entries')
-        .select(`
-          id,
-          entry_date,
-          quantity,
-          program_id,
-          package_id,
-          product_id,
-          programs:program_id (
-            id,
-            name,
-            customer_name
-          ),
-          products:product_id (
-            id,
-            name,
-            rate,
-            index
-          )
-        `)
-        .eq('package_id', selectedPackage)
-        .gte('entry_date', startDate)
-        .lte('entry_date', endDateStr)
-        .order('products(index)', { ascending: true });
-
-      const { data: entriesData, error: entriesError } = await entriesQuery;
-
-      if (entriesError) {
-        console.error('Entries Error:', entriesError);
-        throw entriesError;
-      }
-
-      if (!entriesData || entriesData.length === 0) {
-        throw new Error(`No entries found for package ${packageData.name} between ${format(new Date(startDate), 'dd/MM/yyyy')} and ${format(new Date(endDateStr), 'dd/MM/yyyy')}`);
-      }
-
-      // Transform and aggregate the entries by product, maintaining the index order
-      const transformedEntries = (entriesData as unknown as DatabaseBillingEntry[]).reduce((acc: BillingEntry[], entry) => {
-        if (!entry.products || !entry.programs) {
-          console.error('Invalid product or program data:', entry);
-          return acc;
-        }
-
-        const existingEntry = acc.find(e => e.products.id === entry.products.id);
-
-        if (existingEntry) {
-          existingEntry.quantity += entry.quantity || 0;
-        } else {
-          acc.push({
-            id: entry.id,
-            entry_date: entry.entry_date,
-            quantity: entry.quantity || 0,
-            programs: entry.programs,
-            products: entry.products
-          });
-        }
-
-        return acc;
-      }, []);
-
-      // Sort entries by product index
-      transformedEntries.sort((a, b) => 
-        (a.products.index || 0) - (b.products.index || 0)
-      );
-
-      // Calculate total with null checks
-      const total = transformedEntries.reduce((sum, entry) => {
-        const rate = entry.products.rate || 0;
-        const quantity = entry.quantity || 0;
-        return sum + (rate * quantity);
-      }, 0);
-
-      setInvoiceData({
-        packageDetails: packageData,
-        month: selectedMonth,
-        entries: transformedEntries,
-        totalAmount: total
-      });
-
-      console.log('Generated Invoice Data:', {
-        packageDetails: packageData,
-        entries: transformedEntries,
-        totalAmount: total,
-        month: selectedMonth
-      });
-
-      toast.success('Invoice generated successfully');
-
+      invoiceData = await generateInvoiceData(searchParams.packageId, searchParams.month);
     } catch (error) {
       console.error('Error generating invoice:', error);
-      toast.error(error instanceof Error ? error.message : 'Failed to generate invoice');
-    } finally {
-      setIsLoading(false);
     }
-  };
-
-  const handlePrint = async () => {
-    try {
-      toast.loading('Preparing invoice for print...');
-      
-      const response = await fetch('/api/invoice', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          packageId: selectedPackage,
-          month: selectedMonth,
-          action: 'print'
-        }),
-      });
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || 'Failed to generate invoice');
-      }
-
-      // Get the PDF blob and open in new window for printing
-      const pdfBlob = await response.blob();
-      const pdfUrl = URL.createObjectURL(pdfBlob);
-      const printWindow = window.open(pdfUrl);
-
-      if (printWindow) {
-        printWindow.onload = () => {
-          printWindow.print();
-          URL.revokeObjectURL(pdfUrl);
-        };
-      }
-
-      toast.dismiss();
-    } catch (error) {
-      console.error('Error printing invoice:', error);
-      toast.dismiss();
-      toast.error(error instanceof Error ? error.message : 'Failed to print invoice');
-    }
-  };
-
-  const downloadAsPDF = async () => {
-    try {
-      toast.loading('Generating PDF...');
-      
-      const response = await fetch('/api/invoice', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          packageId: selectedPackage,
-          month: selectedMonth,
-          action: 'download'
-        }),
-      });
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || 'Failed to generate PDF');
-      }
-
-      // Get the PDF blob and trigger download
-      const pdfBlob = await response.blob();
-      const url = window.URL.createObjectURL(pdfBlob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `Invoice-${format(new Date(), 'yyyyMMdd')}-${invoiceData.packageDetails?.name || 'unknown'}.pdf`;
-      document.body.appendChild(a);
-      a.click();
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
-
-      toast.dismiss();
-      toast.success('PDF downloaded successfully');
-    } catch (error) {
-      console.error('Error generating PDF:', error);
-      toast.dismiss();
-      toast.error(error instanceof Error ? error.message : 'Failed to generate PDF');
-    }
-  };
-
-  // Add this function to get the full logo URL
-  const getLogoUrl = (logoPath: string) => {
-    if (logoPath.startsWith('http')) {
-      return logoPath;
-    }
-    return `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/logos/${logoPath}`;
-  };
+  }
 
   return (
     <div className="space-y-6">
       <style>{pdfStyles}</style>
       {/* Controls Section */}
-      <div className="print:hidden flex flex-col sm:flex-row gap-4 bg-white p-4 rounded-lg shadow">
-        <div className="flex-1 space-y-2">
-          <label className="block text-sm font-medium text-gray-700">
-            Select Package
-          </label>
-          <select
-            value={selectedPackage}
-            onChange={(e) => setSelectedPackage(e.target.value)}
-            className="w-full rounded-md border border-gray-300 px-3 py-2 focus:border-amber-500 focus:ring-amber-500"
-          >
-            <option value="">Choose a package</option>
-            {packages.map((pkg) => (
-              <option key={pkg.id} value={pkg.id}>
-                {pkg.name} ({pkg.type})
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div className="flex-1 space-y-2">
-          <label className="block text-sm font-medium text-gray-700">
-            Select Month
-          </label>
-          <input
-            type="month"
-            value={selectedMonth}
-            onChange={(e) => setSelectedMonth(e.target.value)}
-            max={currentMonth}
-            className="w-full rounded-md border border-gray-300 px-3 py-2 focus:border-amber-500 focus:ring-amber-500"
-          />
-        </div>
-
-        <div className="flex items-end space-x-2">
-          <button
-            onClick={generateInvoice}
-            disabled={isLoading}
-            className="px-4 py-2 bg-amber-600 text-white rounded-md hover:bg-amber-700 disabled:opacity-50"
-          >
-            {isLoading ? "Generating..." : "Generate Invoice"}
-          </button>
-        </div>
-      </div>
+      <InvoiceForm 
+        packages={packages}
+        currentMonth={currentMonth}
+        selectedPackage={searchParams.packageId}
+        selectedMonth={searchParams.month || currentMonth}
+      />
 
       {/* Invoice Preview */}
-      {invoiceData.packageDetails && (
+      {invoiceData && (
         <div className="bg-white rounded-lg shadow">
           {/* Invoice Actions */}
           <div className="print:hidden p-4 border-b flex justify-end space-x-4">
-            <button
-              onClick={handlePrint}
-              className="flex items-center gap-2 px-4 py-2 text-gray-600 hover:text-gray-900"
-            >
-              <RiPrinterLine className="w-5 h-5" />
-              Print
-            </button>
-            <button
-              onClick={downloadAsPDF}
-              className="flex items-center gap-2 px-4 py-2 text-gray-600 hover:text-gray-900"
-            >
-              <RiDownloadLine className="w-5 h-5" />
-              Download PDF
-            </button>
+            <form action={`/api/invoice/print?packageId=${searchParams.packageId}&month=${searchParams.month}`} method="POST">
+              <button
+                type="submit"
+                className="flex items-center gap-2 px-4 py-2 text-gray-600 hover:text-gray-900"
+              >
+                <RiPrinterLine className="w-5 h-5" />
+                Print
+              </button>
+            </form>
+            <form action={`/api/invoice/download?packageId=${searchParams.packageId}&month=${searchParams.month}`} method="POST">
+              <button
+                type="submit"
+                className="flex items-center gap-2 px-4 py-2 text-gray-600 hover:text-gray-900"
+              >
+                <RiDownloadLine className="w-5 h-5" />
+                Download PDF
+              </button>
+            </form>
           </div>
 
           {/* Updated Invoice Content */}
@@ -701,7 +521,7 @@ export default function InvoicePage() {
             <div className="flex justify-between items-start mb-4 pb-2 border-b">
               <div className="flex items-start gap-4">
                 <Image
-                  src="https://sahyadriservices.in/production/images/logo.png"
+                  src={invoiceConfig.logo_url}
                   alt="Company Logo"
                   width={64}
                   height={64}
@@ -711,7 +531,7 @@ export default function InvoicePage() {
                 />
                 <div>
                   <h1 className="text-2xl font-bold text-gray-900">{invoiceConfig.company_name}</h1>
-                  {invoiceConfig.from_address.map((line, index) => (
+                  {invoiceConfig.from_address.map((line: string, index: number) => (
                     <p key={index} className="text-gray-600 text-sm">{line}</p>
                   ))}
                 </div>
@@ -726,17 +546,15 @@ export default function InvoicePage() {
               <div className="space-y-1">
                 <h3 className="text-lg font-semibold">Ship to:</h3>
                 <div className="text-gray-600 text-sm">
-                  {invoiceConfig.from_address.map((line, index) => (
+                  {invoiceConfig.from_address.map((line: string, index: number) => (
                     <p key={index}>{line}</p>
                   ))}
-                  <p className="mt-1">GSTIN: {invoiceConfig.gstin}</p>
-                  <p>PAN: {invoiceConfig.pan}</p>
                 </div>
               </div>
               <div className="space-y-1">
                 <h3 className="text-lg font-semibold">Bill to:</h3>
                 <div className="text-gray-600 text-sm">
-                  {invoiceConfig.bill_to_address.map((line, index) => (
+                  {invoiceConfig.bill_to_address.map((line: string, index: number) => (
                     <p key={index}>{line}</p>
                   ))}
                 </div>
@@ -747,7 +565,7 @@ export default function InvoicePage() {
             <div className="bg-gray-50 p-4 rounded-lg mb-6">
               <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
                 <RiFileTextLine className="w-4 h-4 text-amber-600" />
-                INVOICE for {format(new Date(invoiceData.month), 'MMMM yyyy')} - {invoiceData.packageDetails.name}
+                INVOICE for {format(new Date(invoiceData.month), 'MMMM yyyy')} - {invoiceData.packageDetails?.name}
               </h3>
             </div>
 

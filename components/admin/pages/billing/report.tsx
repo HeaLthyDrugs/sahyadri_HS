@@ -830,7 +830,7 @@ export default function ReportPage() {
 
       const { data, debug } = result;
 
-      if (!data || data.length === 0) {
+      if (!data || !data.entries || data.entries.length === 0) {
         console.log('No data found:', debug); // Log debug info
         setReportData([]);
         setDayReportData(null);
@@ -841,8 +841,9 @@ export default function ReportPage() {
         return;
       }
 
-      setReportData(data);
-      setDayReportData(data[0]);
+      // Set the data directly from the API response
+      setDayReportData(data);
+      setReportData([data]); // Wrap in array for compatibility with other report types
       toast.success('Day report generated successfully');
     } catch (error) {
       console.error('Error generating day report:', error);
@@ -1442,9 +1443,9 @@ export default function ReportPage() {
       {reportData.length > 0 && (
         <div className="bg-white rounded-lg shadow-md">
           {/* Report Content based on type */}
-          {reportType === 'day' && (
+          {reportType === 'day' && dayReportData && (
             <DayReport 
-              data={reportData as DayReportData[]} 
+              data={dayReportData}
               selectedDay={selectedDay}
               selectedPackage={selectedPackage || 'all'}
             />

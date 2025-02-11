@@ -1,15 +1,27 @@
+import puppeteer from 'puppeteer';
 import puppeteerCore from 'puppeteer-core';
 import chromium from '@sparticuz/chromium-min';
 
 export async function generatePDF(htmlContent: string): Promise<Buffer> {
-  const browser = await puppeteerCore.launch({
-    args: chromium.args,
-    executablePath: await chromium.executablePath('https://github.com/Sparticuz/chromium/releases/download/v132.0.0/chromium-v132.0.0-pack.tar'),
-    headless: true,
-    defaultViewport: chromium.defaultViewport
-  });
-
+  let browser;
   try {
+    if (process.env.NODE_ENV === 'production' || process.env.VERCEL_ENV === 'production') {
+      // Configure chromium for production/Vercel environment
+      const executablePath = await chromium.executablePath('https://github.com/Sparticuz/chromium/releases/download/v123.0.0/chromium-v123.0.0-pack.tar');
+      browser = await puppeteerCore.launch({
+        executablePath,
+        args: chromium.args,
+        headless: true as const,
+        defaultViewport: chromium.defaultViewport
+      });
+    } else {
+      // Local development environment
+      browser = await puppeteer.launch({
+        headless: true as const,
+        args: ['--no-sandbox', '--disable-setuid-sandbox']
+      });
+    }
+
     const page = await browser.newPage();
     
     // Set content and wait for network idle to ensure all resources are loaded
