@@ -284,8 +284,8 @@ const ProgramReport = ({
                   <table className={`w-full ${tableClassName}`} style={{ tableLayout: 'fixed' }}>
                     <colgroup>
                       <col style={{ width: '12%' }} />
-                      {productChunk.map((_, index) => (
-                        <col key={index} style={{ width: columnWidth }} />
+                      {productChunk.map((product) => (
+                        <col key={product.id} style={{ width: columnWidth }} />
                       ))}
                       <col style={{ width: '15%' }} />
                     </colgroup>
@@ -424,6 +424,212 @@ const ProgramReport = ({
     const filteredPackages = Object.entries(packagesState).filter(([type]) => type === packageType);
     return filteredPackages;
   };
+
+  const styles = `
+    <style>
+      body { 
+        font-family: Arial, sans-serif; 
+        margin: 0;
+        padding: 0;
+        font-size: 11px;
+      }
+      .report-header {
+        text-align: center;
+        margin: 0 0 12px 0;
+        padding: 12px;
+        background-color: #f8f9fa;
+        border-bottom: 1px solid #dee2e6;
+      }
+      .report-header h2 {
+        margin: 0;
+        color: #1a1a1a;
+        font-size: 16px;
+      }
+      .report-header p {
+        margin: 6px 0 0;
+        color: #4a5568;
+        font-size: 12px;
+      }
+      .report-content {
+        max-width: 5xl;
+        margin: 0 auto;
+        padding: 0 16px;
+      }
+      table { 
+        width: 100%;
+        border-collapse: collapse; 
+        margin-bottom: 16px;
+        border: 1px solid #dee2e6;
+        font-size: 11px;
+      }
+      th, td { 
+        border: 1px solid #dee2e6; 
+        padding: 6px 8px;
+        font-size: 11px;
+      }
+      th { 
+        background-color: #f8f9fa;
+        font-weight: normal;
+        color: #1a1a1a;
+      }
+      .package-section { 
+        margin-bottom: 24px;
+        max-width: 5xl;
+        margin-left: auto;
+        margin-right: auto;
+      }
+      .package-header { 
+        background-color: #f8f9fa;
+        padding: 8px;
+        margin: 12px 0 8px;
+        text-align: center;
+        border: 1px solid #dee2e6;
+      }
+      .package-header h4 {
+        margin: 0;
+        color: #1a1a1a;
+        font-size: 13px;
+      }
+      .total-row { 
+        background-color: #f8f9fa;
+        font-weight: 600;
+      }
+      .rate-row {
+        background-color: #f8f9fa;
+      }
+      .amount-row {
+        font-weight: bold;
+        background-color: #f8f9fa;
+      }
+      .grand-total {
+        margin-top: 20px;
+        padding: 10px;
+        text-align: right;
+        background-color: #f8f9fa;
+        border: 1px solid #dee2e6;
+        max-width: 5xl;
+        margin-left: auto;
+        margin-right: auto;
+      }
+      .grand-total strong {
+        font-size: 13px;
+        color: #1a1a1a;
+      }
+      @page { 
+        margin: 15mm;
+        size: A4;
+      }
+      @media print {
+        .page-break-before {
+          page-break-before: always;
+        }
+        .no-break {
+          page-break-inside: avoid;
+        }
+        .report-header {
+          position: relative;
+          top: 0;
+        }
+        .report-content {
+          max-width: none;
+          padding: 0;
+        }
+        .package-section {
+          max-width: none;
+        }
+        .grand-total {
+          max-width: none;
+        }
+      }
+    </style>
+  `;
+
+  // Helper function to generate table HTML for a package and product chunk
+  const generateTableHTML = (packageType: string, packageData: any, products: any[], isFirstChunk: boolean = true) => `
+    <div class="table-container no-break">
+      ${isFirstChunk ? `
+        <div class="package-header">
+          <h4>${PACKAGE_NAMES[packageType as keyof typeof PACKAGE_NAMES] || packageType}</h4>
+        </div>
+      ` : ''}
+      <div class="relative overflow-x-auto">
+        <div class="border border-gray-900">
+          <table class="w-full text-sm border-collapse">
+            <colgroup>
+              <col style="width: 12%" />
+              ${products.map(() => `<col style="width: ${(73 / products.length)}%" />`).join('')}
+              <col style="width: 15%" />
+            </colgroup>
+            <thead>
+              <tr class="bg-gray-100">
+                <th class="p-2 font-normal text-gray-900 text-center border-r border-b border-gray-900">
+                  Date
+                </th>
+                ${products.map(product => `
+                  <th class="p-2 font-normal text-gray-900 text-center border-r border-b border-gray-900">
+                    ${product.name}
+                  </th>
+                `).join('')}
+                <th class="p-2 font-normal text-gray-900 text-left border-b border-gray-900">
+                  Comment
+                </th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-900">
+              ${packageData.entries.map((entry: any) => `
+                <tr class="hover:bg-gray-50">
+                  <td class="p-2 text-gray-900 text-center border-r border-gray-900 font-medium bg-gray-50">
+                    ${format(new Date(entry.date), 'dd/MM/yyyy')}
+                  </td>
+                  ${products.map(product => `
+                    <td class="p-2 text-gray-900 text-center border-r border-gray-900">
+                      ${entry.quantities[product.id] || 0}
+                    </td>
+                  `).join('')}
+                  <td class="p-2 text-gray-600 text-left border-r border-gray-900">
+                    ${entry.comment || ''}
+                  </td>
+                </tr>
+              `).join('')}
+              <tr class="bg-gray-50 font-medium border-t-2 border-gray-900">
+                <td class="p-2 text-gray-900 text-center border-r border-gray-900 font-semibold bg-gray-100">
+                  Total
+                </td>
+                ${products.map(product => `
+                  <td class="p-2 text-gray-900 text-center border-r border-gray-900 font-medium">
+                    ${packageData.totals[product.id] || 0}
+                  </td>
+                `).join('')}
+                <td class="border-r border-gray-900"></td>
+              </tr>
+              <tr class="bg-gray-50">
+                <td class="p-2 text-gray-900 text-center border-r border-gray-900 font-semibold bg-gray-100">
+                  Rate
+                </td>
+                ${products.map(product => `
+                  <td class="p-2 text-gray-900 text-center border-r border-gray-900 font-medium">
+                    ${packageData.rates[product.id] || 0}
+                  </td>
+                `).join('')}
+                <td class="border-r border-gray-900"></td>
+              </tr>
+              <tr class="bg-gray-50 font-medium">
+                <td class="p-2 text-gray-900 text-center border-r border-gray-900 font-semibold bg-gray-100">
+                  Amount
+                </td>
+                ${products.map(product => `
+                  <td class="p-2 text-gray-900 text-center border-r border-gray-900 font-medium">
+                    ₹${(packageData.totalAmounts[product.id] || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                  </td>
+                `).join('')}
+                <td class="border-r border-gray-900"></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  `;
 
   return (
     <div className="w-full bg-white">

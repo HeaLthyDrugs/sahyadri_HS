@@ -2,7 +2,7 @@
 
 import { ReportData } from "@/components/admin/pages/billing/report";
 import { format } from "date-fns";
-import React from "react";
+import React, { useState } from "react";
 import { RiDownloadLine, RiPrinterLine } from "react-icons/ri";
 import { toast } from "react-hot-toast";
 
@@ -21,7 +21,7 @@ interface CateringData {
 interface MonthlyReportProps {
   data: ReportData[];
   month: string;
-  type: 'all' | 'normal';
+  type: 'all' | 'normal' | 'extra' | 'cold drink';
   cateringData?: CateringData[];
   products?: CateringProduct[];
 }
@@ -33,73 +33,29 @@ const MonthlyReport = ({
   cateringData,
   products = []
 }: MonthlyReportProps) => {
-  const totalAmount = data.reduce((sum, row) => sum + row.grandTotal, 0);
+  const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
 
   const handlePrint = async () => {
     try {
-      // Get the report content
-      const reportElement = document.getElementById('report-content');
-      if (!reportElement) return;
+      toast.loading('Preparing document for print...');
+      setIsGeneratingPDF(true);
 
-      // Create a clean copy of the HTML content for print
-      const htmlContent = `
-        <html>
-          <head>
-            <style>
-              @page {
-                size: A4;
-                margin: 20mm;
-              }
-              body {
-                font-family: Arial, sans-serif;
-                margin: 0;
-                padding: 20px;
-              }
-              table {
-                width: 100%;
-                border-collapse: collapse;
-                margin-bottom: 20px;
-              }
-              th, td {
-                border: 1px solid #ddd;
-                padding: 8px;
-                font-size: 11px;
-              }
-              th {
-                background-color: #f8f9fa;
-                font-weight: bold;
-              }
-              .text-right {
-                text-align: right;
-              }
-              .text-center {
-                text-align: center;
-              }
-            </style>
-          </head>
-          <body>
-            ${reportElement.innerHTML}
-          </body>
-        </html>
-      `;
-
-      // Call the API to generate PDF for printing
-      const response = await fetch('/api/generate-pdf', {
+      const response = await fetch('/api/reports/month', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          htmlContent,
+          month,
+          type,
           action: 'print'
         }),
       });
 
       if (!response.ok) {
-        throw new Error('Failed to generate printable PDF');
+        throw new Error('Failed to generate printable document');
       }
 
-      // Get the PDF blob and open in new window for printing
       const pdfBlob = await response.blob();
       const pdfUrl = URL.createObjectURL(pdfBlob);
       const printWindow = window.open(pdfUrl);
@@ -110,70 +66,31 @@ const MonthlyReport = ({
           URL.revokeObjectURL(pdfUrl);
         };
       }
+
+      toast.dismiss();
+      toast.success('Document ready for printing');
     } catch (error) {
-      console.error('Error printing:', error);
-      toast.error('Failed to print. Please try again.');
+      console.error('Error preparing print:', error);
+      toast.dismiss();
+      toast.error('Failed to prepare document for printing');
+    } finally {
+      setIsGeneratingPDF(false);
     }
   };
 
   const handleDownloadPDF = async () => {
     try {
       toast.loading('Generating PDF...');
+      setIsGeneratingPDF(true);
 
-      // Get the report content
-      const reportElement = document.getElementById('report-content');
-      if (!reportElement) return;
-
-      // Create a clean copy of the HTML content for PDF
-      const htmlContent = `
-        <html>
-          <head>
-            <style>
-              @page {
-                size: A4;
-                margin: 20mm;
-              }
-              body {
-                font-family: Arial, sans-serif;
-                margin: 0;
-                padding: 20px;
-              }
-              table {
-                width: 100%;
-                border-collapse: collapse;
-                margin-bottom: 20px;
-              }
-              th, td {
-                border: 1px solid #ddd;
-                padding: 8px;
-                font-size: 11px;
-              }
-              th {
-                background-color: #f8f9fa;
-                font-weight: bold;
-              }
-              .text-right {
-                text-align: right;
-              }
-              .text-center {
-                text-align: center;
-              }
-            </style>
-          </head>
-          <body>
-            ${reportElement.innerHTML}
-          </body>
-        </html>
-      `;
-
-      // Call the API to generate PDF for download
-      const response = await fetch('/api/generate-pdf', {
+      const response = await fetch('/api/reports/month', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          htmlContent,
+          month,
+          type,
           action: 'download'
         }),
       });
@@ -182,12 +99,11 @@ const MonthlyReport = ({
         throw new Error('Failed to generate PDF');
       }
 
-      // Get the PDF blob and trigger download
       const pdfBlob = await response.blob();
       const url = window.URL.createObjectURL(pdfBlob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `report-${format(new Date(month), 'yyyy-MM')}.pdf`;
+      a.download = `monthly-report-${format(new Date(month), 'yyyy-MM')}.pdf`;
       document.body.appendChild(a);
       a.click();
       window.URL.revokeObjectURL(url);
@@ -198,70 +114,80 @@ const MonthlyReport = ({
     } catch (error) {
       console.error('Error generating PDF:', error);
       toast.dismiss();
-      toast.error('Failed to generate PDF. Please try again.');
+      toast.error('Failed to generate PDF');
+    } finally {
+      setIsGeneratingPDF(false);
     }
   };
 
   const renderAllPackagesTable = () => (
-    <div className="w-full flex justify-center">
-      <div className="w-[90%] max-w-5xl print:w-[100%] print:max-w-none">
-        <table className="w-full text-[11px] print:text-[10pt] border-collapse bg-white">
-          <thead>
-            <tr className="print:bg-gray-50">
-              <th scope="col" className="w-[8%] p-2 print:p-2 font-medium text-gray-900 text-center border border-gray-300 break-words print:border-gray-400">
-                No.
-              </th>
-              <th scope="col" className="w-[32%] p-2 print:p-2 font-medium text-gray-900 text-left border border-gray-300 break-words print:border-gray-400">
-                Program Name
-              </th>
-              <th scope="col" className="w-[15%] p-2 print:p-2 font-medium text-gray-900 text-right border border-gray-300 break-words print:border-gray-400">
-                Catering
-              </th>
-              <th scope="col" className="w-[15%] p-2 print:p-2 font-medium text-gray-900 text-right border border-gray-300 break-words print:border-gray-400">
-                Extra Catering
-              </th>
-              <th scope="col" className="w-[15%] p-2 print:p-2 font-medium text-gray-900 text-right border border-gray-300 break-words print:border-gray-400">
-                Cold Drinks
-              </th>
-              <th scope="col" className="w-[15%] p-2 print:p-2 font-medium text-gray-900 text-right border border-gray-300 break-words print:border-gray-400">
-                Gr. Total
-              </th>
-            </tr>
-          </thead>
-
-          <tbody className="text-[10px] print:text-[9pt]">
-            {data.map((row, index) => (
-              <tr key={index} className="print:break-inside-avoid">
-                <td className="p-2 print:p-2 text-gray-900 text-center border border-gray-300 break-words print:border-gray-400">
-                  {index + 1}
+    <div className="w-full print-avoid-break">
+      <div className="mb-4 bg-white">
+        <div className="flex justify-center items-center bg-gray-50 p-6 border border-gray-200 rounded-t-lg">
+          <h3 className="text-lg font-semibold text-gray-900 print-subheader">
+            ALL PACKAGES SUMMARY
+          </h3>
+        </div>
+      </div>
+      <div className="relative overflow-x-auto shadow-sm rounded-b-lg">
+        <div className="border border-gray-200">
+          <table className="w-full text-sm border-collapse">
+            <thead>
+              <tr className="bg-gray-50">
+                <th className="p-4 font-medium text-gray-900 text-center border-b border-r border-gray-200 w-[8%] print-text">
+                  No.
+                </th>
+                <th className="p-4 font-medium text-gray-900 text-left border-b border-r border-gray-200 w-[32%] print-text">
+                  Program Name
+                </th>
+                <th className="p-4 font-medium text-gray-900 text-right border-b border-r border-gray-200 w-[15%] print-text">
+                  Catering
+                </th>
+                <th className="p-4 font-medium text-gray-900 text-right border-b border-r border-gray-200 w-[15%] print-text">
+                  Extra Catering
+                </th>
+                <th className="p-4 font-medium text-gray-900 text-right border-b border-r border-gray-200 w-[15%] print-text">
+                  Cold Drinks
+                </th>
+                <th className="p-4 font-medium text-gray-900 text-right border-b border-gray-200 w-[15%] print-text">
+                  Gr. Total
+                </th>
+              </tr>
+            </thead>
+            <tbody className="bg-white">
+              {data.map((row, index) => (
+                <tr key={index} className="border-b border-gray-200 hover:bg-gray-50 transition-colors">
+                  <td className="p-4 text-gray-900 text-center border-r border-gray-200 bg-gray-50 font-medium print-text">
+                    {index + 1}
+                  </td>
+                  <td className="p-4 text-gray-900 border-r border-gray-200 print-text">
+                    {row.program}
+                  </td>
+                  <td className="p-4 text-gray-900 text-right border-r border-gray-200 print-text">
+                    ₹{row.cateringTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                  </td>
+                  <td className="p-4 text-gray-900 text-right border-r border-gray-200 print-text">
+                    ₹{row.extraTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                  </td>
+                  <td className="p-4 text-gray-900 text-right border-r border-gray-200 print-text">
+                    ₹{row.coldDrinkTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                  </td>
+                  <td className="p-4 text-gray-900 text-right print-text">
+                    ₹{row.grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                  </td>
+                </tr>
+              ))}
+              <tr className="bg-gray-50 border-t-2 border-gray-200">
+                <td colSpan={5} className="p-4 text-gray-900 text-right border-r border-gray-200 font-semibold print-text">
+                  TOTAL
                 </td>
-                <td className="p-2 print:p-2 text-gray-900 border border-gray-300 break-words print:border-gray-400">
-                  {row.program}
-                </td>
-                <td className="p-2 print:p-2 text-gray-900 text-right border border-gray-300 break-words print:border-gray-400">
-                  {row.cateringTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                </td>
-                <td className="p-2 print:p-2 text-gray-900 text-right border border-gray-300 break-words print:border-gray-400">
-                  {row.extraTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                </td>
-                <td className="p-2 print:p-2 text-gray-900 text-right border border-gray-300 break-words print:border-gray-400">
-                  {row.coldDrinkTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                </td>
-                <td className="p-2 print:p-2 text-gray-900 text-right border border-gray-300 break-words print:border-gray-400">
-                  {row.grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                <td className="p-4 text-gray-900 text-right font-semibold bg-gray-50 print-text">
+                  ₹{data.reduce((sum, row) => sum + row.grandTotal, 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                 </td>
               </tr>
-            ))}
-            <tr className="font-medium print:break-inside-avoid print:border-t-2 print:border-gray-400">
-              <td colSpan={5} className="p-2 print:p-2 text-gray-900 text-right border border-gray-300 break-words print:border-gray-400">
-                TOTAL
-              </td>
-              <td className="p-2 print:p-2 text-gray-900 text-right border border-gray-300 break-words print:border-gray-400">
-                {totalAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-              </td>
-            </tr>
-          </tbody>
-        </table>
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );
@@ -281,108 +207,203 @@ const MonthlyReport = ({
     });
 
     return (
-      <div className="w-full flex justify-center">
-        <div className="w-[100%] max-w-5xl print:w-[100%] print:max-w-none">
-          <table className="w-full text-[11px] print:text-[10pt] border-collapse bg-white">
-            <thead>
-              <tr className="print:bg-gray-50">
-                <th scope="col" className="w-[10%] p-2 print:p-2 font-medium text-gray-900 text-center border border-gray-300 break-words print:border-gray-400">
-                  No.
-                </th>
-                <th scope="col" className="w-[22%] p-2 print:p-2 font-medium text-gray-900 text-left border border-gray-300 break-words print:border-gray-400">
-                  Program Name
-                </th>
-                {products.map(product => (
-                  <th
-                    key={product.id}
-                    scope="col"
-                    className="w-[20%] p-2 print:p-2 font-medium text-gray-900 text-center border border-gray-300 break-words print:border-gray-400"
-                  >
-                    {product.name}
-                  </th>
+      <div className="w-full print-avoid-break">
+        <div className="mb-4 bg-white">
+          <div className="flex justify-center items-center bg-gray-50 p-6 border border-gray-200 rounded-t-lg">
+            <h3 className="text-lg font-semibold text-gray-900 print-subheader">
+              CATERING PACKAGE DETAILS
+            </h3>
+          </div>
+        </div>
+        <div className="relative overflow-x-auto shadow-sm rounded-b-lg">
+          <div className="border border-gray-200">
+            <table className="w-full text-sm border-collapse">
+              <colgroup>
+                <col style={{ width: '12%' }} />
+                {products.map(() => (
+                  <col key={`col-${Math.random()}`} style={{ width: `${73 / products.length}%` }} />
                 ))}
-                <th scope="col" className="w-[20%] p-2 print:p-2 font-medium text-gray-900 text-right border border-gray-300 break-words print:border-gray-400">
-                  Total
-                </th>
-              </tr>
-            </thead>
-            <tbody className="text-[10px] print:text-[9pt]">
-              {cateringData.map((row, index) => (
-                <tr key={index} className="print:break-inside-avoid">
-                  <td className="p-2 print:p-2 text-gray-900 text-center border border-gray-300 break-words print:border-gray-400">
-                    {index + 1}
-                  </td>
-                  <td className="p-2 print:p-2 text-gray-900 border border-gray-300 break-words print:border-gray-400">
-                    {row.program}
+                <col style={{ width: '15%' }} />
+              </colgroup>
+              <thead>
+                <tr className="bg-gray-50">
+                  <th className="p-4 font-medium text-gray-900 text-center border-b border-r border-gray-200 print-text">
+                    Program Name
+                  </th>
+                  {products.map(product => (
+                    <th key={product.id} className="p-4 font-medium text-gray-900 text-center border-b border-r border-gray-200 print-text">
+                      {product.name}
+                    </th>
+                  ))}
+                  <th className="p-4 font-medium text-gray-900 text-right border-b border-gray-200 print-text">
+                    Total
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="bg-white">
+                {cateringData.map((row, index) => (
+                  <tr key={index} className="border-b border-gray-200 hover:bg-gray-50 transition-colors">
+                    <td className="p-4 text-gray-900 text-center border-r border-gray-200 bg-gray-50 font-medium print-text">
+                      {row.program}
+                    </td>
+                    {products.map(product => (
+                      <td key={product.id} className="p-4 text-gray-900 text-center border-r border-gray-200 print-text">
+                        {row.products[product.id] || 0}
+                      </td>
+                    ))}
+                    <td className="p-4 text-gray-900 text-right print-text">
+                      {row.total}
+                    </td>
+                  </tr>
+                ))}
+                <tr className="bg-gray-50 border-t-2 border-gray-200">
+                  <td className="p-4 text-gray-900 text-center border-r border-gray-200 font-semibold print-text">
+                    TOTAL
                   </td>
                   {products.map(product => (
-                    <td key={product.id} className="p-2 print:p-2 text-gray-900 text-right border border-gray-300 break-words print:border-gray-400">
-                      {row.products[product.id] || 0}
+                    <td key={product.id} className="p-4 text-gray-900 text-center border-r border-gray-200 font-medium print-text">
+                      {totals[product.id]}
                     </td>
                   ))}
-                  <td className="p-2 print:p-2 text-gray-900 text-right border border-gray-300 break-words print:border-gray-400">
-                    {row.total}
+                  <td className="p-4 text-gray-900 text-right font-semibold bg-gray-50 print-text">
+                    {Object.values(totals).reduce((a, b) => a + b, 0)}
                   </td>
                 </tr>
-              ))}
-              <tr className="font-medium print:break-inside-avoid print:border-t-2 print:border-gray-400">
-                <td colSpan={2} className="p-2 print:p-2 text-gray-900 text-right border border-gray-300 break-words print:border-gray-400">
-                  TOTAL
-                </td>
-                {products.map(product => (
-                  <td key={product.id} className="p-2 print:p-2 text-gray-900 text-right border border-gray-300 break-words print:border-gray-400">
-                    {totals[product.id]}
-                  </td>
-                ))}
-                <td className="p-2 print:p-2 text-gray-900 text-right border border-gray-300 break-words print:border-gray-400">
-                  {Object.values(totals).reduce((a, b) => a + b, 0)}
-                </td>
-              </tr>
-            </tbody>
-          </table>
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
     );
   };
 
+  const renderExtraPackageTable = () => {
+    if (!cateringData || !products.length) return null;
+
+    return (
+      <div className="w-full">
+        <div className="mb-2 p-3 bg-white border-b">
+          <div className="flex justify-center items-center bg-gray-50 p-4">
+            <h3 className="text-base font-semibold text-gray-900">
+              EXTRA PACKAGE DETAILS
+            </h3>
+          </div>
+        </div>
+        {/* Similar table structure as renderCateringTable */}
+      </div>
+    );
+  };
+
+  const renderColdDrinkPackageTable = () => {
+    if (!cateringData || !products.length) return null;
+
+    return (
+      <div className="w-full">
+        <div className="mb-2 p-3 bg-white border-b">
+          <div className="flex justify-center items-center bg-gray-50 p-4">
+            <h3 className="text-base font-semibold text-gray-900">
+              COLD DRINK PACKAGE DETAILS
+            </h3>
+          </div>
+        </div>
+        {/* Similar table structure as renderCateringTable */}
+      </div>
+    );
+  };
+
+  const hasData = type === 'all' ? data.length > 0 : cateringData && cateringData.length > 0;
+
+  const printStyles = `
+    @media print {
+      @page {
+        size: A4;
+        margin: 15mm;
+      }
+
+      body {
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+      }
+
+      .print-avoid-break {
+        break-inside: avoid !important;
+        page-break-inside: avoid !important;
+      }
+
+      .print-header {
+        font-size: 14pt !important;
+      }
+
+      .print-text {
+        font-size: 10pt !important;
+      }
+
+      table {
+        width: 100% !important;
+        border-collapse: collapse !important;
+      }
+
+      th, td {
+        padding: 8pt !important;
+        font-size: 9pt !important;
+      }
+
+      .package-header {
+        margin-top: 12pt !important;
+        margin-bottom: 8pt !important;
+        padding: 8pt !important;
+      }
+    }
+  `;
+
   return (
-    <div className="flex flex-col items-center">
-      <div className="w-full flex justify-end space-x-4 mb-4 print:hidden p-10">
-        <button className="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded inline-flex items-center" onClick={handlePrint}>
-          <RiPrinterLine className="w-5 h-5" />
+    <div className="bg-white w-full">
+      <style>{printStyles}</style>
+      {/* Action Buttons */}
+      <div className="flex justify-end gap-4 mb-6 print:hidden max-w-5xl mx-auto">
+        <button
+          onClick={handlePrint}
+          disabled={isGeneratingPDF || !hasData}
+          className="inline-flex items-center px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-800 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          <RiPrinterLine className="w-5 h-5 mr-2" />
           Print
         </button>
-
-        <button className="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded inline-flex items-center" onClick={handleDownloadPDF}>
-          <svg className="fill-current w-4 h-4 mr-2" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><path d="M13 8V2H7v6H2l8 8 8-8h-5zM0 18h20v2H0v-2z" /></svg>
-
-          <span>Download</span>
+        <button
+          onClick={handleDownloadPDF}
+          disabled={isGeneratingPDF || !hasData}
+          className="inline-flex items-center px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-800 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          <RiDownloadLine className="w-5 h-5 mr-2" />
+          Download PDF
         </button>
       </div>
-      <div id="report-content" className="container mx-auto p-4 print:p-8 bg-white print:w-full print:max-w-none">
-        {/* Report Header */}
-        <div className="mb-6 print:mb-8 w-full text-center">
-          <h2 className="text-lg font-bold mb-2 print:text-xl print:mb-4">
-            {format(new Date(month), 'MMMM yyyy')} {type === 'all' ? 'All Packages Report' : 'Catering Report'}
-          </h2>
-        </div>
 
-        {/* Report Content */}
-        <div className="print:mt-4 w-full">
-          {type === 'all' ? (
-            data && data.length > 0 ? (
-              renderAllPackagesTable()
-            ) : (
-              <p className="text-center text-gray-500">No data available for the selected month.</p>
-            )
-          ) : (
-            cateringData && cateringData.length > 0 ? (
-              renderCateringTable()
-            ) : (
-              <p className="text-center text-gray-500">No catering data available for the selected month.</p>
-            )
-          )}
-        </div>
+      {/* Report Content */}
+      <div className="bg-white max-w-5xl mx-auto px-4">
+        {hasData ? (
+          <>
+            {/* Report Header */}
+            <div className="text-center mb-6 p-4 bg-gray-50 border border-gray-200 rounded-lg print-header">
+              <h2 className="text-xl font-semibold text-gray-900">
+                {format(new Date(month), 'MMMM yyyy')} {type === 'all' ? 'All Packages Report' : 
+                  type === 'normal' ? 'Catering Report' :
+                  type === 'extra' ? 'Extra Package Report' : 'Cold Drink Report'}
+              </h2>
+            </div>
+            {type === 'all' && renderAllPackagesTable()}
+            {type === 'normal' && renderCateringTable()}
+            {type === 'extra' && renderExtraPackageTable()}
+            {type === 'cold drink' && renderColdDrinkPackageTable()}
+          </>
+        ) : (
+          <div className="text-center py-8 bg-gray-50 rounded-lg border border-gray-200">
+            <p className="text-gray-500">
+              No entries found for {format(new Date(month), 'MMMM yyyy')}
+              {type !== 'all' ? ` in ${type} package` : ''}.
+            </p>
+          </div>
+        )}
       </div>
     </div>
   );

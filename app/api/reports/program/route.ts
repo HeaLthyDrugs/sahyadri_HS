@@ -165,12 +165,12 @@ function generateProgramReportHTML({ programName, customerName, startDate, endDa
       body { 
         font-family: Arial, sans-serif; 
         margin: 0;
-        padding: 12px;
+        padding: 0;
         font-size: 11px;
       }
       .report-header {
         text-align: center;
-        margin-bottom: 20px;
+        margin: 0 0 12px 0;
         padding: 12px;
         background-color: #f8f9fa;
         border-bottom: 1px solid #dee2e6;
@@ -202,11 +202,7 @@ function generateProgramReportHTML({ programName, customerName, startDate, endDa
         color: #1a1a1a;
       }
       .package-section { 
-        page-break-before: always;
         margin-bottom: 24px;
-      }
-      .package-section:first-of-type { 
-        page-break-before: avoid;
       }
       .package-header { 
         background-color: #f8f9fa;
@@ -256,15 +252,20 @@ function generateProgramReportHTML({ programName, customerName, startDate, endDa
         .no-break {
           page-break-inside: avoid;
         }
+        .report-header {
+          position: relative;
+          top: 0;
+        }
       }
     </style>
   `;
 
   // Helper function to split products into chunks for table pagination
-  const chunkProducts = (products: any[], size: number) => {
+  const chunkProducts = (products: any[], packageType: string) => {
+    const chunkSize = packageType === 'Normal' ? 7 : 6;
     const chunks = [];
-    for (let i = 0; i < products.length; i += size) {
-      chunks.push(products.slice(i, i + size));
+    for (let i = 0; i < products.length; i += chunkSize) {
+      chunks.push(products.slice(i, i + chunkSize));
     }
     return chunks;
   };
@@ -337,45 +338,54 @@ function generateProgramReportHTML({ programName, customerName, startDate, endDa
           <p>Total Participants: ${totalParticipants}</p>
         </div>
 
-        ${Object.entries(packages)
-          .filter(([type]) => {
-            if (!selectedPackage || selectedPackage === 'all') return true;
-            const packageTypeMap: { [key: string]: string } = {
-              '3e46279d-c2ff-4bb6-ab0d-935e32ed7820': 'Normal',
-              '620e67e9-8d50-4505-930a-f571629147a2': 'Extra',
-              '752a6bcb-d6d6-43ba-ab5b-84a787182b41': 'Cold Drink'
-            };
-            const packageType = packageTypeMap[selectedPackage];
-            return type === packageType;
-          })
-          .sort(([typeA], [typeB]) => {
-            const indexA = PACKAGE_ORDER.indexOf(typeA);
-            const indexB = PACKAGE_ORDER.indexOf(typeB);
-            return indexA - indexB;
-          })
-          .map(([type, data], index) => {
-            const productChunks = chunkProducts(data.products, 7);
-            const needsPageBreak = type === 'Cold Drink' || (type === 'Extra' && data.products.length > 7);
-            return `
-              ${needsPageBreak ? '<div class="page-break-before"></div>' : ''}
-              <div class="package-section">
-                ${productChunks.map((chunk, chunkIndex) => 
-                  generateTableHTML(type, data, chunk, chunkIndex === 0)
-                ).join('')}
-              </div>
-            `;
-          })
-          .join('')}
+        <div class="report-content">
+          ${Object.entries(packages)
+            .filter(([type]) => {
+              if (!selectedPackage || selectedPackage === 'all') return true;
+              const packageTypeMap: { [key: string]: string } = {
+                '3e46279d-c2ff-4bb6-ab0d-935e32ed7820': 'Normal',
+                '620e67e9-8d50-4505-930a-f571629147a2': 'Extra',
+                '752a6bcb-d6d6-43ba-ab5b-84a787182b41': 'Cold Drink'
+              };
+              const packageType = packageTypeMap[selectedPackage];
+              return type === packageType;
+            })
+            .sort(([typeA], [typeB]) => {
+              const indexA = PACKAGE_ORDER.indexOf(typeA);
+              const indexB = PACKAGE_ORDER.indexOf(typeB);
+              return indexA - indexB;
+            })
+            .map(([type, data], index, array) => {
+              const productChunks = chunkProducts(data.products, type);
+              // Only add page break if:
+              // 1. Current package's products span multiple pages OR
+              // 2. It's the Cold Drink package
+              const needsPageBreak = (type === 'Cold Drink') || (productChunks.length > 1 && index > 0);
+              
+              // Add class to control spacing between packages
+              const packageSpacing = index > 0 ? 'margin-top: 24px;' : '';
+              
+              return `
+                ${needsPageBreak ? '<div class="page-break-before"></div>' : ''}
+                <div class="package-section" style="${packageSpacing}">
+                  ${productChunks.map((chunk, chunkIndex) => 
+                    generateTableHTML(type, data, chunk, chunkIndex === 0)
+                  ).join('')}
+                </div>
+              `;
+            })
+            .join('')}
 
-        ${(!selectedPackage || selectedPackage === 'all') ? `
-          <div class="grand-total">
-            <strong>Grand Total: ₹${(Object.values(packages as Record<string, { totalAmounts: Record<string, number> }>)
-              .reduce((total, pkg) => 
-                total + Object.values(pkg.totalAmounts).reduce((sum, amount) => sum + amount, 0), 
-                0
-              )).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong>
-          </div>
-        ` : ''}
+          ${(!selectedPackage || selectedPackage === 'all') ? `
+            <div class="grand-total">
+              <strong>Grand Total: ₹${(Object.values(packages as Record<string, { totalAmounts: Record<string, number> }>)
+                .reduce((total, pkg) => 
+                  total + Object.values(pkg.totalAmounts).reduce((sum, amount) => sum + amount, 0), 
+                  0
+                )).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong>
+            </div>
+          ` : ''}
+        </div>
       </body>
     </html>
   `;

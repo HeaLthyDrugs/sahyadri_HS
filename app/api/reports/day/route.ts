@@ -60,6 +60,14 @@ const normalizePackageType = (type: string): string => {
   return normalized;
 };
 
+const PACKAGE_NAMES = {
+  'Normal': 'Catering Package',
+  'Extra': 'Extra Catering Package',
+  'Cold Drink': 'Cold Drink Package'
+} as const;
+
+const PACKAGE_ORDER = ['Normal', 'Extra', 'Cold Drink'];
+
 const generatePDF = async (data: DayReportEntry[], date: string, packageType?: string) => {
   let browser;
   try {
@@ -80,21 +88,6 @@ const generatePDF = async (data: DayReportEntry[], date: string, packageType?: s
 
     const page = await browser.newPage();
 
-    // Group entries by package type
-    const packageGroups = data.reduce((groups: { [key: string]: DayReportEntry[] }, entry) => {
-      const type = normalizePackageType(entry.packageType);
-      if (!groups[type]) groups[type] = [];
-      groups[type].push(entry);
-      return groups;
-    }, {});
-
-    // Sort package types according to PACKAGE_TYPE_ORDER
-    const sortedPackageTypes = Object.keys(packageGroups).sort((a, b) => {
-      const orderA = PACKAGE_TYPE_ORDER[a] || 999;
-      const orderB = PACKAGE_TYPE_ORDER[b] || 999;
-      return orderA - orderB;
-    });
-
     const htmlContent = `
       <!DOCTYPE html>
       <html>
@@ -105,76 +98,90 @@ const generatePDF = async (data: DayReportEntry[], date: string, packageType?: s
             body { 
               font-family: Arial, sans-serif; 
               margin: 0;
-              padding: 10px;
+              padding: 12px;
               font-size: 11px;
             }
             .report-header {
               text-align: center;
-              margin-bottom: 15px;
-              padding: 8px;
+              margin-bottom: 20px;
+              padding: 12px;
               background-color: #f8f9fa;
-              border-radius: 4px;
+              border-bottom: 1px solid #dee2e6;
             }
             .report-header h2 {
               margin: 0;
               color: #1a1a1a;
-              font-size: 14px;
+              font-size: 16px;
+            }
+            .report-header p {
+              margin: 6px 0 0;
+              color: #4a5568;
+              font-size: 12px;
             }
             table { 
               width: 100%; 
               border-collapse: collapse; 
-              margin-bottom: 15px;
+              margin-bottom: 16px;
               border: 1px solid #dee2e6;
-              page-break-inside: auto;
             }
             th, td { 
               border: 1px solid #dee2e6; 
-              padding: 6px;
-              font-size: 10px;
+              padding: 6px 8px;
+              font-size: 11px;
             }
             th { 
               background-color: #f8f9fa;
               font-weight: 600;
               color: #1a1a1a;
             }
-            .package-section {
-              margin-bottom: 15px;
-              page-break-inside: auto;
+            .package-section { 
+              page-break-before: always;
+              margin-bottom: 24px;
             }
-            .package-header {
+            .package-section:first-of-type { 
+              page-break-before: avoid;
+            }
+            .package-header { 
               background-color: #f8f9fa;
               padding: 8px;
-              margin-bottom: 5px;
+              margin: 12px 0 8px;
               text-align: center;
               border: 1px solid #dee2e6;
-              border-radius: 4px;
-              page-break-inside: avoid;
-              page-break-after: avoid;
+              border-radius: 3px;
             }
-            .package-header h3 {
+            .package-header h4 {
               margin: 0;
               color: #1a1a1a;
-              font-size: 12px;
-              font-weight: bold;
+              font-size: 13px;
             }
-            .total-row {
+            .total-row { 
               background-color: #f8f9fa;
               font-weight: 600;
+            }
+            .grand-total {
+              margin-top: 20px;
+              padding: 10px;
+              text-align: right;
+              background-color: #f8f9fa;
+              border: 1px solid #dee2e6;
+              border-radius: 3px;
               page-break-inside: avoid;
             }
-            tr {
-              page-break-inside: avoid;
-              page-break-after: auto;
-            }
-            thead {
-              display: table-header-group;
-            }
-            tfoot {
-              display: table-footer-group;
+            .grand-total strong {
+              font-size: 13px;
+              color: #1a1a1a;
             }
             @page { 
               margin: 15mm;
               size: A4;
+            }
+            @media print {
+              .page-break-before {
+                page-break-before: always;
+              }
+              .no-break {
+                page-break-inside: avoid;
+              }
             }
           </style>
         </head>
@@ -183,25 +190,34 @@ const generatePDF = async (data: DayReportEntry[], date: string, packageType?: s
             <h2>Day Report - ${format(parseISO(date), 'dd/MM/yyyy')}</h2>
           </div>
 
-          ${sortedPackageTypes
-            .filter(pkgType => {
-              if (!packageType || packageType === 'all') return true;
-              return normalizePackageType(pkgType) === normalizePackageType(packageType);
-            })
-            .map(pkgType => {
-              const entries = packageGroups[pkgType];
-              const packageTotal = entries.reduce((sum, entry) => sum + entry.total, 0);
-
-              // Sort entries by product name
-              const sortedEntries = [...entries].sort((a, b) => 
-                a.productName.localeCompare(b.productName)
-              );
-
-              return `
-                <div class="package-section">
-                  <div class="package-header">
-                    <h3>${PACKAGE_TYPE_DISPLAY[pkgType as PackageTypeKey] || pkgType.toUpperCase()}</h3>
-                  </div>
+          ${Object.entries(
+            data.reduce((groups: { [key: string]: DayReportEntry[] }, entry) => {
+              const type = normalizePackageType(entry.packageType);
+              if (!groups[type]) groups[type] = [];
+              groups[type].push(entry);
+              return groups;
+            }, {})
+          )
+          .filter(([type]) => {
+            if (!packageType || packageType === 'all') return true;
+            return normalizePackageType(type) === normalizePackageType(packageType);
+          })
+          .sort(([typeA], [typeB]) => {
+            const indexA = PACKAGE_ORDER.indexOf(typeA);
+            const indexB = PACKAGE_ORDER.indexOf(typeB);
+            return indexA - indexB;
+          })
+          .map(([type, entries], index) => {
+            const needsPageBreak = type === 'Cold Drink' || (type === 'Extra' && entries.length > 10);
+            const packageTotal = entries.reduce((sum, entry) => sum + entry.total, 0);
+            
+            return `
+              ${needsPageBreak ? '<div class="page-break-before"></div>' : ''}
+              <div class="package-section">
+                <div class="package-header">
+                  <h4>${PACKAGE_NAMES[type as keyof typeof PACKAGE_NAMES] || type}</h4>
+                </div>
+                <div class="table-container no-break">
                   <table>
                     <thead>
                       <tr>
@@ -212,14 +228,16 @@ const generatePDF = async (data: DayReportEntry[], date: string, packageType?: s
                       </tr>
                     </thead>
                     <tbody>
-                      ${sortedEntries.map(entry => `
-                        <tr>
-                          <td>${entry.productName}</td>
-                          <td style="text-align: center">${entry.quantity}</td>
-                          <td style="text-align: right">₹${entry.rate.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-                          <td style="text-align: right">₹${entry.total.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-                        </tr>
-                      `).join('')}
+                      ${[...entries]
+                        .sort((a, b) => a.productName.localeCompare(b.productName))
+                        .map(entry => `
+                          <tr>
+                            <td>${entry.productName}</td>
+                            <td style="text-align: center">${entry.quantity}</td>
+                            <td style="text-align: right">₹${entry.rate.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                            <td style="text-align: right">₹${entry.total.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                          </tr>
+                        `).join('')}
                       <tr class="total-row">
                         <td colspan="3" style="text-align: right; padding-right: 12px">Package Total</td>
                         <td style="text-align: right">₹${packageTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
@@ -227,25 +245,51 @@ const generatePDF = async (data: DayReportEntry[], date: string, packageType?: s
                     </tbody>
                   </table>
                 </div>
-              `;
-            }).join('')}
+              </div>
+            `;
+          }).join('')}
 
-            <div style="margin-top: 10px; text-align: right; padding: 8px; background-color: #f8f9fa; border: 1px solid #dee2e6;">
+          ${(!packageType || packageType === 'all') ? `
+            <div class="grand-total">
               <strong>Grand Total: ₹${data.reduce((sum, entry) => sum + entry.total, 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong>
             </div>
+          ` : ''}
         </body>
       </html>
     `;
 
-    await page.setContent(htmlContent);
+    await page.setContent(htmlContent, {
+      waitUntil: 'networkidle0'
+    });
+
+    // Add page numbers
+    await page.evaluate(() => {
+      const style = document.createElement('style');
+      style.textContent = `
+        .pageNumber:before {
+          content: counter(page);
+        }
+        @media print {
+          .pageNumber {
+            position: fixed;
+            bottom: 10px;
+            right: 10px;
+            font-size: 12px;
+            color: #666;
+          }
+        }
+      `;
+      document.head.appendChild(style);
+    });
+
     const pdf = await page.pdf({
       format: 'A4',
       printBackground: true,
       margin: {
-        top: '15mm',
-        right: '15mm',
-        bottom: '15mm',
-        left: '15mm'
+        top: '20mm',
+        right: '20mm',
+        bottom: '20mm',
+        left: '20mm'
       }
     });
 
