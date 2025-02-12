@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, parseISO } from "date-fns";
 import { supabase } from "@/lib/supabase";
-import { toast } from "react-hot-toast";
+import { toast, Toast } from "react-hot-toast";
 import {
   RiDownloadLine,
   RiUploadLine,
@@ -99,6 +99,15 @@ interface TimeSlot {
 interface ProductChip {
   id: string;
   name: string;
+}
+
+// Add these interfaces after the existing interfaces
+interface ParticipantConsumption {
+  id: string;
+  attendee_name: string;
+  reception_checkin: string;
+  reception_checkout: string;
+  type: 'participant' | 'guest' | 'other' | 'driver';
 }
 
 const ProgramSelect = ({
@@ -457,7 +466,7 @@ export function BillingEntriesPage() {
           slot_end
         `)
         .eq('package_id', packageId)
-        .order('name');
+        .order('slot_start', { ascending: true });
 
       if (error) throw error;
       console.log('Fetched products:', data);
@@ -614,22 +623,94 @@ export function BillingEntriesPage() {
     }
   };
 
-  const handleQuantityChange = (date: string, productId: string, value: string) => {
-    // Remove the Normal package check to allow editing
-    const newValue = value === '' ? '0' : value;
-    const numericValue = parseInt(newValue, 10);
+  // Add this function to handle quantity changes
+  const handleQuantityChange = async (date: string, productId: string, value: string) => {
+    try {
+      const newValue = value === '' ? '0' : value;
+      const numericValue = parseInt(newValue, 10);
 
-    if (isNaN(numericValue)) {
-      return;
-    }
-
-    setEntryData(prev => ({
-      ...prev,
-      [date]: {
-        ...(prev[date] || {}),
-        [productId]: numericValue
+      if (isNaN(numericValue)) {
+        return;
       }
-    }));
+
+      // Update local state first for immediate feedback
+      setEntryData(prev => ({
+        ...prev,
+        [date]: {
+          ...(prev[date] || {}),
+          [productId]: numericValue
+        }
+      }));
+
+      // Get participants consuming this product on this date
+      const participants = await fetchParticipantConsumptions(
+        selectedProgram,
+        new Date(date)
+      );
+
+      // If the new quantity doesn't match participant count, show warning
+      if (participants.length !== numericValue) {
+        toast(
+          `Warning: Entry quantity (${numericValue}) doesn't match participant count (${participants.length})`,
+          {
+            icon: '⚠️',
+            duration: 4000,
+          }
+        );
+      }
+    } catch (error) {
+      console.error('Error updating quantity:', error);
+      toast.error('Failed to update quantity');
+    }
+  };
+
+  // Add this function to show participant details
+  const showParticipantDetails = async (date: string, productId: string) => {
+    try {
+      const participants = await fetchParticipantConsumptions(
+        selectedProgram,
+        new Date(date)
+      );
+
+      if (participants.length === 0) {
+        toast(
+          'No participants consuming this product at this time',
+          {
+            icon: 'ℹ️',
+            duration: 4000,
+          }
+        );
+        return;
+      }
+
+      // Format participant details
+      const details = participants.map(p => ({
+        name: p.attendee_name,
+        type: p.type,
+        checkin: format(new Date(p.reception_checkin), 'dd MMM yyyy HH:mm'),
+        checkout: format(new Date(p.reception_checkout), 'dd MMM yyyy HH:mm')
+      }));
+
+      // Show details in toast
+      toast.custom((t: Toast) => (
+        <div className="bg-white rounded-lg shadow-lg p-4 max-w-md">
+          <h3 className="font-medium mb-2">Participant Details</h3>
+          <div className="max-h-60 overflow-auto">
+            {details.map((detail, index) => (
+              <div key={index} className="mb-2 pb-2 border-b last:border-b-0">
+                <div className="font-medium">{detail.name}</div>
+                <div className="text-sm text-gray-500">
+                  {detail.type} • {detail.checkin} to {detail.checkout}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ), { duration: 5000 });
+    } catch (error) {
+      console.error('Error showing participant details:', error);
+      toast.error('Failed to load participant details');
+    }
   };
 
   // Modify the keyboard shortcuts effect
@@ -884,6 +965,30 @@ export function BillingEntriesPage() {
     return package_?.type === 'Normal';
   };
 
+  // Add this function inside the BillingEntriesPage component before the return statement
+  const fetchParticipantConsumptions = async (programId: string, date: Date) => {
+    try {
+      const { data: participants, error } = await supabase
+        .from('participants')
+        .select(`
+          id,
+          attendee_name,
+          reception_checkin,
+          reception_checkout,
+          type
+        `)
+        .eq('program_id', programId)
+        .lte('reception_checkin', date.toISOString())
+        .gte('reception_checkout', date.toISOString());
+
+      if (error) throw error;
+      return participants || [];
+    } catch (error) {
+      console.error('Error fetching participant consumptions:', error);
+      return [];
+    }
+  };
+
   return (
     <div className={`${isFullScreenMode ? 'fixed inset-0 bg-white z-50' : 'p-2 sm:p-4'}`}>
       {/* Toggle Full Screen and Save Button Container */}
@@ -1048,13 +1153,16 @@ export function BillingEntriesPage() {
                                     value={entryData[dateStr]?.[product.id] || 0}
                                     onChange={(e) => handleQuantityChange(dateStr, product.id, e.target.value)}
                                     onKeyDown={(e) => handleKeyDown(e, rowIndex, colIndex)}
+                                    onClick={() => showParticipantDetails(dateStr, product.id)}
                                     data-row={rowIndex}
                                     data-col={colIndex}
-                                    className={`w-16 text-center border rounded py-1.5 focus:ring-2 focus:ring-amber-500 focus:border-amber-500 text-sm sm:text-base [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${focusedCell?.row === rowIndex && focusedCell?.col === colIndex
-                                      ? 'ring-2 ring-amber-500'
-                                      : ''
-                                      }`}
+                                    className={`w-16 text-center border rounded py-1.5 focus:ring-2 focus:ring-amber-500 focus:border-amber-500 text-sm sm:text-base [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none cursor-pointer ${
+                                      focusedCell?.row === rowIndex && focusedCell?.col === colIndex
+                                        ? 'ring-2 ring-amber-500'
+                                        : ''
+                                    }`}
                                     min="0"
+                                    title="Click to view participant details"
                                   />
                                 </div>
                               </td>

@@ -12,7 +12,9 @@ create table public.programs (
   updated_at timestamp with time zone null default now(),
   customer_name character varying(255) not null,
   program_number serial not null,
+  package_id uuid null,
   constraint programs_pkey primary key (id),
+  constraint programs_package_id_fkey foreign KEY (package_id) references packages (id),
   constraint programs_status_check check (
     (
       (status)::text = any (
