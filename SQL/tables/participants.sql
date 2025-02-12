@@ -41,3 +41,13 @@ create table public.participants (
     )
   )
 ) TABLESPACE pg_default;
+
+-- Drop existing trigger if exists
+DROP TRIGGER IF EXISTS participant_billing_trigger ON participants;
+
+-- Create the trigger properly
+CREATE TRIGGER participant_billing_trigger
+  AFTER INSERT OR UPDATE OR DELETE
+  ON participants
+  FOR EACH ROW
+  EXECUTE FUNCTION participant_billing_trigger_func();
