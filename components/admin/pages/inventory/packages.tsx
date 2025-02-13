@@ -5,7 +5,8 @@ import {
   RiAddLine, 
   RiEditLine, 
   RiDeleteBinLine,
-  RiCloseLine
+  RiCloseLine,
+  RiSearchLine
 } from "react-icons/ri";
 import { supabase } from "@/lib/supabase";
 import { toast } from "react-hot-toast";
@@ -27,6 +28,9 @@ export function PackagesPage() {
     description: "",
     type: ""
   });
+  const [searchQuery, setSearchQuery] = useState("");
+  const [itemsPerPage, setItemsPerPage] = useState(10);
+  const [entriesOptions, setEntriesOptions] = useState([10, 20, 30, 40, 50]);
 
   // Fetch packages on component mount
   useEffect(() => {
@@ -126,11 +130,14 @@ export function PackagesPage() {
     }
   };
 
+  const handleEntriesChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    setItemsPerPage(Number(e.target.value));
+  };
+
   return (
     <div>
       {/* Header */}
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-sm font-light text-gray-500">Manage Packages</h1>
+      <div className="flex justify-end mb-6">
         <button
           onClick={() => setIsModalOpen(true)}
           className="flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors"
@@ -138,6 +145,36 @@ export function PackagesPage() {
           <RiAddLine className="w-5 h-5" />
           Add Package
         </button>
+      </div>
+
+      {/* Table Controls */}
+      <div className="flex justify-between items-center mb-4">
+        {/* Search Bar */}
+        <div className="relative w-[300px]">
+          <RiSearchLine className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+          <input
+            type="text"
+            placeholder="Search packages..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="pl-10 w-full rounded-lg border border-gray-300 focus:ring-amber-500 focus:border-amber-500"
+          />
+        </div>
+
+        {/* Entries Selector */}
+        <div className="flex items-center gap-2 text-sm text-gray-500">
+          <span>Show</span>
+          <select
+            value={itemsPerPage}
+            onChange={handleEntriesChange}
+            className="border border-gray-300 rounded-md px-2 py-1 focus:outline-none focus:ring-2 focus:ring-amber-500"
+          >
+            {entriesOptions.map(option => (
+              <option key={option} value={option}>{option}</option>
+            ))}
+          </select>
+          <span>entries</span>
+        </div>
       </div>
 
       {/* Table */}

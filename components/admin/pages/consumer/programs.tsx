@@ -11,10 +11,6 @@ import {
   RiGroupLine,
   RiFilterLine,
   RiSearchLine,
-  RiTableLine,
-  RiGridLine,
-  RiSortAsc,
-  RiSortDesc,
   RiArrowLeftSLine,
   RiArrowRightSLine,
   RiDownloadLine,
@@ -138,14 +134,12 @@ export function ProgramsPage() {
     end_time: "17:00",
     total_participants: ""
   });
-  const [viewMode, setViewMode] = useState<'table' | 'grid'>('table');
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<Program['status'] | 'all'>('all');
-  const [sortField, setSortField] = useState<'start_date' | 'name' | 'total_participants' | 'program_number'>('start_date');
-  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
   const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage] = useState(10);
+  const [itemsPerPage, setItemsPerPage] = useState(10);
   const [monthFilter, setMonthFilter] = useState<string>('all');
+  const entriesOptions = [10, 25, 50, 100];
 
   useEffect(() => {
     fetchPrograms();
@@ -320,26 +314,6 @@ export function ProgramsPage() {
         })();
 
         return matchesSearch && matchesStatus && matchesMonth;
-      })
-      .sort((a, b) => {
-        if (sortField === 'start_date') {
-          return sortDirection === 'asc' 
-            ? new Date(a.start_date).getTime() - new Date(b.start_date).getTime()
-            : new Date(b.start_date).getTime() - new Date(a.start_date).getTime();
-        }
-        if (sortField === 'total_participants') {
-          return sortDirection === 'asc'
-            ? a.total_participants - b.total_participants
-            : b.total_participants - a.total_participants;
-        }
-        if (sortField === 'program_number') {
-          return sortDirection === 'asc'
-            ? (a.program_number || 0) - (b.program_number || 0)
-            : (b.program_number || 0) - (a.program_number || 0);
-        }
-        return sortDirection === 'asc'
-          ? a.name.localeCompare(b.name)
-          : b.name.localeCompare(a.name);
       });
   };
 
@@ -353,7 +327,7 @@ export function ProgramsPage() {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchQuery, statusFilter, monthFilter, sortField, sortDirection]);
+  }, [searchQuery, statusFilter, monthFilter]);
 
   const handleExportCSV = () => {
     try {
@@ -458,12 +432,16 @@ export function ProgramsPage() {
     });
   };
 
+  const handleEntriesChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    setItemsPerPage(Number(e.target.value));
+    setCurrentPage(1); // Reset to first page when changing entries per page
+  };
+
   return (
     <div>
       {/* Header with Search and Filters */}
       <div className="flex flex-col gap-4 mb-6">
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-          <h1 className="text-sm font-light text-gray-500">Manage Programs</h1>
+        <div className="flex justify-end">
           <div className="flex flex-wrap items-center gap-2">
             {/* Export Button */}
             <button
@@ -503,45 +481,9 @@ export function ProgramsPage() {
           </div>
         </div>
 
-        {/* Filters Section - Make it more responsive */}
+        {/* Filters Section */}
         <div className="flex flex-wrap items-center gap-4">
-          {/* Search - Full width on mobile */}
-          <div className="flex items-center gap-2 bg-white rounded-lg shadow px-3 py-2 w-full sm:w-auto sm:flex-1 sm:max-w-md">
-            <RiSearchLine className="w-5 h-5 text-gray-400 flex-shrink-0" />
-            <input
-              type="text"
-              placeholder="Search programs..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full border-none focus:ring-0 text-sm"
-            />
-          </div>
-
-          {/* View Toggle - Stack on mobile */}
-          <div className="flex items-center bg-white rounded-lg shadow order-first sm:order-none">
-            <button
-              onClick={() => setViewMode('table')}
-              className={`p-2 ${
-                viewMode === 'table'
-                  ? 'text-amber-600 bg-amber-50'
-                  : 'text-gray-500 hover:text-amber-600'
-              }`}
-            >
-              <RiTableLine className="w-5 h-5" />
-            </button>
-            <button
-              onClick={() => setViewMode('grid')}
-              className={`p-2 ${
-                viewMode === 'grid'
-                  ? 'text-amber-600 bg-amber-50'
-                  : 'text-gray-500 hover:text-amber-600'
-              }`}
-            >
-              <RiGridLine className="w-5 h-5" />
-            </button>
-          </div>
-
-          {/* Status Filter - Full width on mobile */}
+          {/* Status Filter */}
           <div className="flex items-center gap-2 bg-white rounded-lg shadow px-3 py-2 w-full sm:w-auto">
             <RiFilterLine className="text-gray-500 flex-shrink-0" />
             <select
@@ -556,7 +498,7 @@ export function ProgramsPage() {
             </select>
           </div>
 
-          {/* Month Filter - Full width on mobile */}
+          {/* Month Filter */}
           <div className="flex items-center gap-2 bg-white rounded-lg shadow px-3 py-2 w-full sm:w-auto">
             <RiCalendarLine className="text-gray-500 flex-shrink-0" />
             <select
@@ -571,29 +513,6 @@ export function ProgramsPage() {
                 </option>
               ))}
             </select>
-          </div>
-
-          {/* Sort Options - Full width on mobile */}
-          <div className="flex items-center gap-2 bg-white rounded-lg shadow px-3 py-2 w-full sm:w-auto">
-            <select
-              value={sortField}
-              onChange={(e) => setSortField(e.target.value as typeof sortField)}
-              className="text-sm border-none focus:ring-0 w-full"
-            >
-              <option value="start_date">Sort by Date</option>
-              <option value="name">Sort by Name</option>
-              <option value="total_participants">Sort by Participants</option>
-            </select>
-            <button
-              onClick={() => setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc')}
-              className="text-gray-500 hover:text-amber-600 flex-shrink-0"
-            >
-              {sortDirection === 'asc' ? (
-                <RiSortAsc className="w-5 h-5" />
-              ) : (
-                <RiSortDesc className="w-5 h-5" />
-              )}
-            </button>
           </div>
 
           {/* Clear Filters */}
@@ -613,24 +532,103 @@ export function ProgramsPage() {
         </div>
       </div>
 
+      {/* Search and Entries Row */}
+      <div className="flex justify-between items-center mb-4">
+        {/* Search */}
+        <div className="relative w-[300px]">
+          <RiSearchLine className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+          <input
+            type="text"
+            placeholder="Search programs..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full pl-10 rounded-lg border border-gray-300 focus:ring-amber-500 focus:border-amber-500"
+          />
+        </div>
+
+        {/* Entries Selector */}
+        <div className="flex items-center gap-2 text-sm text-gray-500">
+          <span>Show</span>
+          <select
+            value={itemsPerPage}
+            onChange={handleEntriesChange}
+            className="border border-gray-300 rounded-md px-2 py-1 focus:outline-none focus:ring-2 focus:ring-amber-500"
+          >
+            {entriesOptions.map(option => (
+              <option key={option} value={option}>{option}</option>
+            ))}
+          </select>
+          <span>entries</span>
+        </div>
+      </div>
+
       {/* Content */}
-      {viewMode === 'grid' ? (
-        // Existing Grid View with pagination
-        <>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {paginatedPrograms().map((program) => (
-              <div key={program.id} className="bg-white rounded-lg shadow p-4">
-                <div className="flex justify-between items-start mb-3">
-                  <div>
-                    <div className="text-xs text-gray-500 mb-1">
-                      {program.program_number || 0}
+      <div className="bg-white rounded-lg shadow overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="table-auto min-w-full divide-gray-200">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="w-[100px] min-w-[60px] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  ID
+                </th>
+                <th className="w-1/4 min-w-[150px] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Customer Name
+                </th>
+                <th className="w-1/4 min-w-[200px] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Program Name
+                </th>
+                <th className="w-1/4 min-w-[200px] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Date
+                </th>
+                <th className="w-1/4 min-w-[200px] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Days
+                </th>
+                <th className="w-1/4 min-w-[200px] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Time
+                </th>
+                <th className="w-1/4 min-w-[150px] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Participants
+                </th>
+                <th className="w-1/4 min-w-[150px] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Status
+                </th>
+                <th className="w-1/4 min-w-[120px] px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Actions
+                </th>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {paginatedPrograms().map((program) => (
+                <tr key={program.id} className="hover:bg-gray-50">
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    {program.program_number || 0}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-wrap">
+                    {program.customer_name}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="text-sm font-medium text-gray-900 text-wrap">
+                      {program.name}
                     </div>
-                    <h3 className="font-medium text-gray-900">{program.name}</h3>
-                    <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full mt-1 ${getStatusColor(program.status)}`}>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-wrap">
+                    {format(new Date(program.start_date), 'MMM dd, yyyy')} - {format(new Date(program.end_date), 'MMM dd, yyyy')}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    {program.days} days
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    {formatTime(program.start_time)} - {formatTime(program.end_time)}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    {program.total_participants}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(program.status)}`}>
                       {program.status}
                     </span>
-                  </div>
-                  <div className="flex gap-2">
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                     <button
                       onClick={() => {
                         setEditingProgram(program);
@@ -645,7 +643,7 @@ export function ProgramsPage() {
                         });
                         setIsModalOpen(true);
                       }}
-                      className="text-amber-600 hover:text-amber-900"
+                      className="text-amber-600 hover:text-amber-900 mr-4"
                     >
                       <RiEditLine className="w-5 h-5" />
                     </button>
@@ -658,181 +656,20 @@ export function ProgramsPage() {
                     >
                       <RiDeleteBinLine className="w-5 h-5" />
                     </button>
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <div className="flex items-center text-sm">
-                    <RiUserLine className="w-4 h-4 text-gray-400 mr-2" />
-                    <span className="text-gray-500">Customer:</span>
-                    <span className="ml-auto font-medium">{program.customer_name}</span>
-                  </div>
-                  <div className="flex items-center text-sm">
-                    <RiCalendarLine className="w-4 h-4 text-gray-400 mr-2" />
-                    <span className="text-gray-500">Program:</span>
-                    <span className="ml-auto font-medium">{program.name}</span>
-                  </div>
-                  <div className="flex items-center text-sm">
-                    <RiTimeLine className="w-4 h-4 text-gray-400 mr-2" />
-                    <span className="text-gray-500">Time:</span>
-                    <span className="ml-auto font-medium">
-                      {formatTime(program.start_time)} - {formatTime(program.end_time)}
-                    </span>
-                  </div>
-                  <div className="flex items-center text-sm">
-                    <RiCalendarLine className="w-4 h-4 text-gray-400 mr-2" />
-                    <span className="text-gray-500">Duration:</span>
-                    <span className="ml-auto font-medium">{program.days} days</span>
-                  </div>
-                  <div className="flex items-center text-sm">
-                    <RiGroupLine className="w-4 h-4 text-gray-400 mr-2" />
-                    <span className="text-gray-500">Participants:</span>
-                    <span className="ml-auto font-medium">{program.total_participants}</span>
-                  </div>
-                  <div className="text-xs text-gray-500 pt-2 border-t">
-                    {new Date(program.start_date).toLocaleDateString()} - {new Date(program.end_date).toLocaleDateString()}
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-          <Pagination 
-            currentPage={currentPage}
-            totalPages={totalPages}
-            itemsPerPage={itemsPerPage}
-            totalItems={filteredAndSortedPrograms().length}
-            handlePageChange={setCurrentPage}
-          />
-        </>
-      ) : (
-        // New Table View
-        <>
-          <div className="bg-white rounded-lg shadow overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="table-auto min-w-full divide-gray-200">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="w-[100px] min-w-[60px] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={() => {
-                            setSortField('program_number');
-                            setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
-                          }}
-                          className="text-gray-500 hover:text-amber-600 flex items-center gap-1"
-                        >
-                          ID
-                          {sortField === 'program_number' && (
-                            sortDirection === 'asc' ? (
-                              <RiSortAsc className="w-4 h-4" />
-                            ) : (
-                              <RiSortDesc className="w-4 h-4" />
-                            )
-                          )}
-                        </button>
-                      </div>
-                    </th>
-                    <th className="w-1/4 min-w-[150px] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Customer Name
-                    </th>
-                    <th className="w-1/4 min-w-[200px] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Program Name
-                    </th>
-                    <th className="w-1/4 min-w-[200px] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Date
-                    </th>
-                    <th className="w-1/4 min-w-[200px] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Days
-                    </th>
-                    <th className="w-1/4 min-w-[200px] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Time
-                    </th>
-                    <th className="w-1/4 min-w-[150px] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Participants
-                    </th>
-                    <th className="w-1/4 min-w-[150px] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Status
-                    </th>
-                    <th className="w-1/4 min-w-[120px] px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Actions
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {paginatedPrograms().map((program) => (
-                    <tr key={program.id} className="hover:bg-gray-50">
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {program.program_number || 0}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-wrap">
-                        {program.customer_name}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm font-medium text-gray-900 text-wrap">
-                          {program.name}
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-wrap">
-                        {format(new Date(program.start_date), 'MMM dd, yyyy')} - {format(new Date(program.end_date), 'MMM dd, yyyy')}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {program.days} days
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {formatTime(program.start_time)} - {formatTime(program.end_time)}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {program.total_participants}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(program.status)}`}>
-                          {program.status}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                        <button
-                          onClick={() => {
-                            setEditingProgram(program);
-                            setFormData({
-                              name: program.name,
-                              customer_name: program.customer_name,
-                              start_date: program.start_date,
-                              start_time: program.start_time,
-                              end_date: program.end_date,
-                              end_time: program.end_time,
-                              total_participants: program.total_participants.toString()
-                            });
-                            setIsModalOpen(true);
-                          }}
-                          className="text-amber-600 hover:text-amber-900 mr-4"
-                        >
-                          <RiEditLine className="w-5 h-5" />
-                        </button>
-                        <button
-                          onClick={() => {
-                            setProgramToDelete(program);
-                            setIsDeleteModalOpen(true);
-                          }}
-                          className="text-red-600 hover:text-red-900"
-                        >
-                          <RiDeleteBinLine className="w-5 h-5" />
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-          <Pagination 
-            currentPage={currentPage}
-            totalPages={totalPages}
-            itemsPerPage={itemsPerPage}
-            totalItems={filteredAndSortedPrograms().length}
-            handlePageChange={setCurrentPage}
-          />
-        </>
-      )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <Pagination 
+        currentPage={currentPage}
+        totalPages={totalPages}
+        itemsPerPage={itemsPerPage}
+        totalItems={filteredAndSortedPrograms().length}
+        handlePageChange={setCurrentPage}
+      />
 
       {/* Modal */}
       {isModalOpen && (

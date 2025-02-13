@@ -101,9 +101,9 @@ export function ProductsPage() {
     slot_start: "00:00",
     slot_end: "12:00"
   });
-  const [viewMode, setViewMode] = useState<'grid' | 'table'>('table');
   const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage] = useState(100);
+  const [itemsPerPage, setItemsPerPage] = useState(10);
+  const entriesOptions = [10, 25, 50, 100];
   const [selectedProducts, setSelectedProducts] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [isSelectMode, setIsSelectMode] = useState(false);
@@ -399,6 +399,11 @@ export function ProductsPage() {
     setCurrentPage(pageNumber);
   };
 
+  const handleEntriesChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    setItemsPerPage(Number(e.target.value));
+    setCurrentPage(1); // Reset to first page when changing entries per page
+  };
+
   const Pagination = () => {
     if (totalPages <= 1) return null;
 
@@ -573,43 +578,57 @@ export function ProductsPage() {
   return (
     <div>
       {/* Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
-        <h1 className="text-sm font-light text-gray-500">Manage Products</h1>
-        <div className="flex flex-wrap items-center gap-4">
-          {/* Search Input */}
-          <div className="relative">
+      <div className="flex justify-end items-center gap-4 mb-6">
+        <button
+          onClick={handleExportCSV}
+          className="flex items-center gap-2 px-3 py-2 text-amber-600 bg-amber-50 rounded-lg hover:bg-amber-100 transition-colors text-sm"
+        >
+          <RiUploadLine className="w-4 h-4" />
+          Export
+        </button>
+
+        <div className="relative">
+          <input
+            type="file"
+            accept=".csv"
+            onChange={handleImportCSV}
+            className="hidden"
+            id="csv-upload"
+          />
+          <label
+            htmlFor="csv-upload"
+            className="flex items-center gap-2 px-3 py-2 text-amber-600 bg-amber-50 rounded-lg hover:bg-amber-100 transition-colors cursor-pointer text-sm"
+          >
+            <RiDownloadLine className="w-4 h-4" />
+            Import
+          </label>
+        </div>
+
+        <button
+          onClick={() => setIsModalOpen(true)}
+          className="flex items-center gap-2 px-3 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors ml-2 text-sm"
+        >
+          <RiAddLine className="w-4 h-4" />
+          Add Product
+        </button>
+
+        {/* Settings Dropdown */}
+        <SettingsDropdown />
+      </div>
+
+      {/* Table Controls */}
+      <div className="flex justify-between items-center mb-4">
+        <div className="flex items-center gap-4">
+          {/* Search Bar */}
+          <div className="relative w-[300px]">
             <RiSearchLine className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
             <Input
               type="text"
               placeholder="Search products..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10 w-[300px]"
+              className="pl-10"
             />
-          </div>
-
-          {/* View Toggle */}
-          <div className="flex items-center bg-white rounded-lg shadow">
-            <button
-              onClick={() => setViewMode('table')}
-              className={`p-2 ${
-                viewMode === 'table'
-                  ? 'text-amber-600 bg-amber-50'
-                  : 'text-gray-500 hover:text-amber-600'
-              }`}
-            >
-              <RiTableLine className="w-5 h-5" />
-            </button>
-            <button
-              onClick={() => setViewMode('grid')}
-              className={`p-2 ${
-                viewMode === 'grid'
-                  ? 'text-amber-600 bg-amber-50'
-                  : 'text-gray-500 hover:text-amber-600'
-              }`}
-            >
-              <RiGridLine className="w-5 h-5" />
-            </button>
           </div>
 
           {/* Package Filter */}
@@ -628,288 +647,148 @@ export function ProductsPage() {
               ))}
             </select>
           </div>
+        </div>
 
-          {/* Filter Summary */}
-          {activePackage !== "all" && (
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => {
-                  setActivePackage("all");
-                }}
-                className="text-xs text-amber-600 hover:text-amber-700"
-              >
-                Clear Filters
-              </button>
-              <span className="text-xs text-gray-400">
-                ({filteredProducts.length} items)
-              </span>
-            </div>
-          )}
-
-          <div className="flex items-center gap-2">
-            {/* Export Button */}
-            <button
-              onClick={handleExportCSV}
-              className="flex items-center gap-2 px-4 py-2 text-amber-600 bg-amber-50 rounded-lg hover:bg-amber-100 transition-colors"
-            >
-              <RiDownloadLine className="w-5 h-5" />
-              Export
-            </button>
-
-            {/* Import Button */}
-            <div className="relative">
-              <input
-                type="file"
-                accept=".csv"
-                onChange={handleImportCSV}
-                className="hidden"
-                id="csv-upload"
-              />
-              <label
-                htmlFor="csv-upload"
-                className="flex items-center gap-2 px-4 py-2 text-amber-600 bg-amber-50 rounded-lg hover:bg-amber-100 transition-colors cursor-pointer"
-              >
-                <RiUploadLine className="w-5 h-5" />
-                Import
-              </label>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            {selectedProducts.length > 0 && (
-              <button
-                onClick={handleBulkDelete}
-                className="flex items-center gap-2 px-4 py-2 text-red-600 bg-red-50 rounded-lg hover:bg-red-100 transition-colors"
-              >
-                <RiDeleteBin2Line className="w-5 h-5" />
-                Delete Selected ({selectedProducts.length})
-              </button>
-            )}
-          </div>
-
-          <button
-            onClick={() => setIsModalOpen(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors"
+        {/* Entries Selector */}
+        <div className="flex items-center gap-2 text-sm text-gray-500">
+          <span>Show</span>
+          <select
+            value={itemsPerPage}
+            onChange={handleEntriesChange}
+            className="border border-gray-300 rounded-md px-2 py-1 focus:outline-none focus:ring-2 focus:ring-amber-500"
           >
-            <RiAddLine className="w-5 h-5" />
-            Add Product
-          </button>
-
-          {/* Settings Dropdown */}
-          <SettingsDropdown />
+            {entriesOptions.map(option => (
+              <option key={option} value={option}>{option}</option>
+            ))}
+          </select>
+          <span>entries</span>
         </div>
       </div>
 
-      {/* Content */}
-      {viewMode === 'grid' ? (
-        <>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {paginatedProducts().length > 0 ? (
-              paginatedProducts().map((product) => (
-                <div key={product.id} className="bg-white rounded-lg shadow p-4 hover:shadow-md transition-shadow relative">
-                  {isSelectMode && (
-                    <div className="absolute top-2 left-2">
-                      <input
-                        type="checkbox"
-                        checked={selectedProducts.includes(product.id)}
-                        onChange={() => handleSelectProduct(product.id)}
-                        className="rounded border-gray-300 text-amber-600 focus:ring-amber-500"
-                      />
-                    </div>
-                  )}
-                  <div className="flex justify-between items-start mb-3">
-                    <div>
-                      <div className="text-xs text-gray-500 mb-1">{product.index}</div>
-                      <h3 className="font-medium text-gray-900">{product.name}</h3>
-                      <p className="text-sm text-gray-500">{product.description}</p>
-                    </div>
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => {
-                          setEditingProduct(product);
-                          setFormData({
-                            name: product.name,
-                            description: product.description,
-                            package_id: product.package_id,
-                            rate: product.rate.toString(),
-                            slot_start: product.slot_start,
-                            slot_end: product.slot_end
-                          });
-                          setIsModalOpen(true);
-                        }}
-                        className="text-amber-600 hover:text-amber-900"
-                      >
-                        <RiEditLine className="w-5 h-5" />
-                      </button>
-                      <button
-                        onClick={() => handleDelete(product.id)}
-                        className="text-red-600 hover:text-red-900"
-                      >
-                        <RiDeleteBinLine className="w-5 h-5" />
-                      </button>
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <div className="flex justify-between text-sm">
-                      <span className="text-gray-500">Package:</span>
-                      <span className="font-medium text-amber-600">
+      {/* Table View */}
+      <div className="bg-white rounded-lg shadow overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="table-auto min-w-full divide-gray-200">
+            <thead className="bg-gray-50">
+              <tr>
+                {isSelectMode && (
+                  <th className="w-[50px] px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <input
+                      type="checkbox"
+                      checked={paginatedProducts().length > 0 && selectedProducts.length === paginatedProducts().length}
+                      onChange={handleSelectAllInPage}
+                      className="rounded border-gray-300 text-amber-600 focus:ring-amber-500"
+                    />
+                  </th>
+                )}
+                <th className="w-[80px] px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  ID
+                </th>
+                <th className="w-1/4 min-w-[200px] px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Name
+                </th>
+                <th className="w-1/6 min-w-[150px] px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Package
+                </th>
+                <th className="w-[100px] px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Rate
+                </th>
+                <th className="w-1/5 min-w-[180px] px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Slot Time
+                </th>
+                <th className="w-[100px] px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Actions
+                </th>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {paginatedProducts().length > 0 ? (
+                paginatedProducts().map((product) => (
+                  <tr key={product.id} className="hover:bg-gray-50">
+                    {isSelectMode && (
+                      <td className="w-[50px] px-4 py-4 whitespace-nowrap">
+                        <input
+                          type="checkbox"
+                          checked={selectedProducts.includes(product.id)}
+                          onChange={() => handleSelectProduct(product.id)}
+                          className="rounded border-gray-300 text-amber-600 focus:ring-amber-500"
+                        />
+                      </td>
+                    )}
+                    <td className="w-[80px] px-4 py-4 text-sm text-gray-900">
+                      {product.index}
+                    </td>
+                    <td className="w-1/4 min-w-[200px] px-4 py-4">
+                      <div className="max-w-full">
+                        <div className="text-sm font-medium text-gray-900 truncate">
+                          {product.name}
+                        </div>
+                        {product.description && (
+                          <div className="text-sm text-gray-500 truncate">
+                            {product.description}
+                          </div>
+                        )}
+                      </div>
+                    </td>
+                    <td className="w-1/6 min-w-[150px] px-4 py-4">
+                      <span className="text-sm font-medium text-amber-600 truncate block">
                         {(product as any).packages?.name}
                       </span>
-                    </div>
-                    <div className="flex justify-between text-sm">
-                      <span className="text-gray-500">Rate:</span>
-                      <span className="font-medium">₹{product.rate}</span>
-                    </div>
-                    <div className="flex justify-between text-sm">
-                      <span className="text-gray-500">Slot Time:</span>
-                      <div className="text-right">
-                        <span className="font-medium">
+                    </td>
+                    <td className="w-[100px] px-4 py-4 text-sm text-gray-900">
+                      ₹{product.rate}
+                    </td>
+                    <td className="w-1/5 min-w-[180px] px-4 py-4">
+                      <div>
+                        <div className="text-sm text-gray-900">
                           {formatTime(product.slot_start)} - {formatTime(product.slot_end)}
-                        </span>
+                        </div>
                         <div className="text-xs text-gray-500">
                           ({calculateHours(product.slot_start, product.slot_end)})
                         </div>
                       </div>
-                    </div>
-                  </div>
-                </div>
-              ))
-            ) : (
-              <div className="col-span-full text-center py-8 text-gray-500">
-                No products found matching the selected filters
-              </div>
-            )}
-          </div>
-          <Pagination />
-        </>
-      ) : (
-        <>
-          <div className="bg-white rounded-lg shadow overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="table-auto min-w-full divide-gray-200">
-                <thead className="bg-gray-50">
-                  <tr>
-                    {isSelectMode && (
-                      <th className="w-[50px] px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        <input
-                          type="checkbox"
-                          checked={paginatedProducts().length > 0 && selectedProducts.length === paginatedProducts().length}
-                          onChange={handleSelectAllInPage}
-                          className="rounded border-gray-300 text-amber-600 focus:ring-amber-500"
-                        />
-                      </th>
-                    )}
-                    <th className="w-[80px] px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      ID
-                    </th>
-                    <th className="w-1/4 min-w-[200px] px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Name
-                    </th>
-                    <th className="w-1/6 min-w-[150px] px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Package
-                    </th>
-                    <th className="w-[100px] px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Rate
-                    </th>
-                    <th className="w-1/5 min-w-[180px] px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Slot Time
-                    </th>
-                    <th className="w-[100px] px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Actions
-                    </th>
+                    </td>
+                    <td className="w-[100px] px-4 py-4 text-right text-sm font-medium">
+                      <div className="flex justify-end gap-2">
+                        <button
+                          onClick={() => {
+                            setEditingProduct(product);
+                            setFormData({
+                              name: product.name,
+                              description: product.description,
+                              package_id: product.package_id,
+                              rate: product.rate.toString(),
+                              slot_start: product.slot_start,
+                              slot_end: product.slot_end
+                            });
+                            setIsModalOpen(true);
+                          }}
+                          className="text-amber-600 hover:text-amber-900 p-1"
+                        >
+                          <RiEditLine className="w-5 h-5" />
+                        </button>
+                        <button
+                          onClick={() => handleDelete(product.id)}
+                          className="text-red-600 hover:text-red-900 p-1"
+                        >
+                          <RiDeleteBinLine className="w-5 h-5" />
+                        </button>
+                      </div>
+                    </td>
                   </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {paginatedProducts().length > 0 ? (
-                    paginatedProducts().map((product) => (
-                      <tr key={product.id} className="hover:bg-gray-50">
-                        {isSelectMode && (
-                          <td className="w-[50px] px-4 py-4 whitespace-nowrap">
-                            <input
-                              type="checkbox"
-                              checked={selectedProducts.includes(product.id)}
-                              onChange={() => handleSelectProduct(product.id)}
-                              className="rounded border-gray-300 text-amber-600 focus:ring-amber-500"
-                            />
-                          </td>
-                        )}
-                        <td className="w-[80px] px-4 py-4 text-sm text-gray-900">
-                          {product.index}
-                        </td>
-                        <td className="w-1/4 min-w-[200px] px-4 py-4">
-                          <div className="max-w-full">
-                            <div className="text-sm font-medium text-gray-900 truncate">
-                              {product.name}
-                            </div>
-                            {product.description && (
-                              <div className="text-sm text-gray-500 truncate">
-                                {product.description}
-                              </div>
-                            )}
-                          </div>
-                        </td>
-                        <td className="w-1/6 min-w-[150px] px-4 py-4">
-                          <span className="text-sm font-medium text-amber-600 truncate block">
-                            {(product as any).packages?.name}
-                          </span>
-                        </td>
-                        <td className="w-[100px] px-4 py-4 text-sm text-gray-900">
-                          ₹{product.rate}
-                        </td>
-                        <td className="w-1/5 min-w-[180px] px-4 py-4">
-                          <div>
-                            <div className="text-sm text-gray-900">
-                              {formatTime(product.slot_start)} - {formatTime(product.slot_end)}
-                            </div>
-                            <div className="text-xs text-gray-500">
-                              ({calculateHours(product.slot_start, product.slot_end)})
-                            </div>
-                          </div>
-                        </td>
-                        <td className="w-[100px] px-4 py-4 text-right text-sm font-medium">
-                          <div className="flex justify-end gap-2">
-                            <button
-                              onClick={() => {
-                                setEditingProduct(product);
-                                setFormData({
-                                  name: product.name,
-                                  description: product.description,
-                                  package_id: product.package_id,
-                                  rate: product.rate.toString(),
-                                  slot_start: product.slot_start,
-                                  slot_end: product.slot_end
-                                });
-                                setIsModalOpen(true);
-                              }}
-                              className="text-amber-600 hover:text-amber-900 p-1"
-                            >
-                              <RiEditLine className="w-5 h-5" />
-                            </button>
-                            <button
-                              onClick={() => handleDelete(product.id)}
-                              className="text-red-600 hover:text-red-900 p-1"
-                            >
-                              <RiDeleteBinLine className="w-5 h-5" />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))
-                  ) : (
-                    <tr>
-                      <td colSpan={isSelectMode ? 7 : 6} className="px-4 py-4 text-center text-gray-500">
-                        No products found matching the selected filters
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-          <Pagination />
-        </>
-      )}
+                ))
+              ) : (
+                <tr>
+                  <td colSpan={isSelectMode ? 7 : 6} className="px-4 py-4 text-center text-gray-500">
+                    No products found matching the selected filters
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <Pagination />
 
       {/* Modal */}
       {isModalOpen && (

@@ -9,7 +9,10 @@ import {
   RiUploadLine,
   RiAlertLine,
   RiEditLine,
-  RiFileTextLine
+  RiFileTextLine,
+  RiFilterLine,
+  RiCalendarLine,
+  RiSearchLine
 } from "react-icons/ri";
 import { toast } from "react-hot-toast";
 import { format, startOfMonth, endOfMonth } from 'date-fns';
@@ -75,7 +78,7 @@ export function ParticipantsPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [searchSuggestions, setSearchSuggestions] = useState<string[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage] = useState(100);
+  const [itemsPerPage, setItemsPerPage] = useState(10);
   const [selectedType, setSelectedType] = useState<'all' | Participant['type']>('all');
   const [formData, setFormData] = useState<FormData>({
     attendee_name: "",
@@ -89,6 +92,7 @@ export function ParticipantsPage() {
   const [editingParticipant, setEditingParticipant] = useState<Participant | null>(null);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [participantToDelete, setParticipantToDelete] = useState<Participant | null>(null);
+  const entriesOptions = [10, 25, 50, 100];
 
   const calculateDuration = (checkin: string, checkout: string): string => {
     try {
@@ -815,12 +819,16 @@ export function ParticipantsPage() {
     return tags;
   };
 
+  const handleEntriesChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    setItemsPerPage(Number(e.target.value));
+    setCurrentPage(1); // Reset to first page when changing entries per page
+  };
+
   return (
     <div className="space-y-6">
       {/* Header with Actions */}
       <div className="flex flex-col gap-4">
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-          <h1 className="text-xl font-semibold text-gray-900">Manage Participants</h1>
+        <div className="flex flex-col sm:flex-row justify-end items-start sm:items-center gap-4">
           <div className="flex flex-wrap items-center gap-2">
             <button
               onClick={handleExportCSV}
@@ -833,13 +841,13 @@ export function ParticipantsPage() {
             <div className="relative">
               <input
                 type="file"
-                accept=".csv,.xls,.xlsx"
+                accept=".csv"
                 onChange={handleImportCSV}
                 className="hidden"
-                id="file-upload"
+                id="csv-upload"
               />
               <label
-                htmlFor="file-upload"
+                htmlFor="csv-upload"
                 className="flex items-center gap-2 px-3 py-2 text-amber-600 bg-amber-50 rounded-lg hover:bg-amber-100 transition-colors cursor-pointer text-sm"
               >
                 <RiUploadLine className="w-4 h-4" />
@@ -848,19 +856,8 @@ export function ParticipantsPage() {
             </div>
 
             <button
-              onClick={() => setIsDeleteAllModalOpen(true)}
-              className="flex items-center gap-2 px-3 py-2 text-red-600 bg-red-50 rounded-lg hover:bg-red-100 transition-colors text-sm"
-            >
-              <RiDeleteBinLine className="w-4 h-4" />
-              {selectedProgramId === 'all' 
-                ? `Delete All (${format(new Date(selectedMonth), 'MMMM yyyy')})`
-                : `Delete All (${programs.find(p => p.id === selectedProgramId)?.name})`
-              }
-            </button>
-
-            <button
               onClick={() => setIsModalOpen(true)}
-              className="flex items-center gap-2 px-3 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors text-sm"
+              className="flex items-center gap-2 px-3 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors ml-2 text-sm"
             >
               <RiAddLine className="w-4 h-4" />
               Add Participant
@@ -868,53 +865,37 @@ export function ParticipantsPage() {
           </div>
         </div>
 
-        {/* Search and Filter Controls */}
-        <div className="flex flex-col sm:flex-row gap-4">
-          {/* Search Input */}
-          <div className="flex items-center gap-2 bg-white rounded-lg shadow px-3 py-2 w-full sm:w-96">
-            <input
-              type="text"
-              placeholder="Search participants..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full border-none focus:ring-0 text-sm"
-            />
-          </div>
-
-          {/* Month Filter */}
-          <div className="flex items-center gap-2 bg-white rounded-lg shadow px-3 py-2 w-full sm:w-48">
-            <input
-              type="month"
-              value={selectedMonth}
-              onChange={(e) => {
-                const newValue = e.target.value || format(new Date(), 'yyyy-MM');
-                setSelectedMonth(newValue);
-                setCurrentPage(1);
-              }}
-              className="w-full border-none focus:ring-0 text-sm"
-            />
-          </div>
-
+        {/* Filters Section */}
+        <div className="flex flex-wrap items-center gap-4">
           {/* Program Filter */}
-          <div className="flex items-center gap-2 bg-white rounded-lg shadow px-3 py-2 w-full sm:w-96">
+          <div className="flex items-center gap-2 bg-white rounded-lg shadow px-3 py-2 w-full sm:w-auto">
+            <RiFilterLine className="text-gray-500" />
             <select
               value={selectedProgramId}
-              onChange={(e) => {
-                setSelectedProgramId(e.target.value);
-                setCurrentPage(1);
-              }}
+              onChange={(e) => setSelectedProgramId(e.target.value)}
               className="w-full border-none focus:ring-0 text-sm"
             >
               <option value="all">All Programs</option>
               {programs.map((program) => (
                 <option key={program.id} value={program.id}>
-                  {program.name} - {program.customer_name}
+                  {program.name} ({program.customer_name})
                 </option>
               ))}
             </select>
           </div>
 
-          {/* Type Filter Dropdown */}
+          {/* Month Filter */}
+          <div className="flex items-center gap-2 bg-white rounded-lg shadow px-3 w-full sm:w-auto">
+            <RiCalendarLine className="text-gray-500" />
+            <input
+              type="month"
+              value={selectedMonth}
+              onChange={(e) => setSelectedMonth(e.target.value)}
+              className="border-none focus:ring-0 text-sm"
+            />
+          </div>
+
+          {/* Type Filter */}
           <div className="flex items-center gap-2 bg-white rounded-lg shadow px-3 py-2 w-full sm:w-48">
             <select
               value={selectedType}
@@ -932,569 +913,599 @@ export function ParticipantsPage() {
             </select>
           </div>
         </div>
+      </div>
 
-        {/* No Data Message */}
-        {programs.length === 0 && (
-          <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mt-4">
-            <div className="flex items-center gap-2 text-amber-700">
-              <RiAlertLine className="w-5 h-5" />
-              <p>No programs found for {format(new Date(selectedMonth), 'MMMM yyyy')}. Please select a different month or add programs for this period.</p>
-            </div>
+      {/* Search and Entries Row */}
+      <div className="flex justify-between items-center mb-4">
+        {/* Search */}
+        <div className="relative w-[300px]">
+          <RiSearchLine className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+          <input
+            type="text"
+            placeholder="Search participants..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full pl-10 rounded-lg border border-gray-300 focus:ring-amber-500 focus:border-amber-500"
+          />
+        </div>
+
+        {/* Entries Selector */}
+        <div className="flex items-center gap-2 text-sm text-gray-500">
+          <span>Show</span>
+          <select
+            value={itemsPerPage}
+            onChange={handleEntriesChange}
+            className="border border-gray-300 rounded-md px-2 py-1 focus:outline-none focus:ring-2 focus:ring-amber-500"
+          >
+            {entriesOptions.map(option => (
+              <option key={option} value={option}>{option}</option>
+            ))}
+          </select>
+          <span>entries</span>
+        </div>
+      </div>
+
+      {/* No Data Message */}
+      {programs.length === 0 && (
+        <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mt-4">
+          <div className="flex items-center gap-2 text-amber-700">
+            <RiAlertLine className="w-5 h-5" />
+            <p>No programs found for {format(new Date(selectedMonth), 'MMMM yyyy')}. Please select a different month or add programs for this period.</p>
           </div>
-        )}
+        </div>
+      )}
 
-        {/* Error Messages */}
-        <div className="mt-4">
-          {selectedProgramId === 'all' ? (
-            // Show summary for all programs
-            (() => {
-              const { errorSummary, totalErrors } = getAllProgramsErrorSummary();
-              return totalErrors > 0 ? (
-                <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-                  <div className="flex flex-col gap-2 text-red-700">
-                    <div className="flex items-center gap-2">
-                      <RiAlertLine className="w-5 h-5" />
-                      <p>
-                        Found {totalErrors} participant{totalErrors === 1 ? '' : 's'} with date validation errors:
-                      </p>
-                    </div>
-                    <ul className="ml-5 list-disc">
-                      {Object.entries(errorSummary).map(([program, count]) => (
-                        <li key={program}>
-                          {program}: {count} participant{count === 1 ? '' : 's'}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                </div>
-              ) : null;
-            })()
-          ) : (
-            // Show message for specific program
-            getProgramErrors(selectedProgramId) > 0 && (
+      {/* Error Messages */}
+      <div className="mt-4">
+        {selectedProgramId === 'all' ? (
+          // Show summary for all programs
+          (() => {
+            const { errorSummary, totalErrors } = getAllProgramsErrorSummary();
+            return totalErrors > 0 ? (
               <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-                <div className="flex items-center gap-2 text-red-700">
-                  <RiAlertLine className="w-5 h-5" />
-                  <p>
-                    This program has {getProgramErrors(selectedProgramId)} participant{getProgramErrors(selectedProgramId) === 1 ? '' : 's'} with date validation errors that need attention.
-                  </p>
-                </div>
-              </div>
-            )
-          )}
-        </div>
-
-        {/* Participants Table */}
-        <div className="bg-white rounded-lg shadow overflow-hidden">
-          {isImporting ? (
-            <div className="flex flex-col items-center justify-center py-12">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-amber-600"></div>
-              <p className="mt-4 text-gray-600">Importing participants...</p>
-            </div>
-          ) : filteredParticipants.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-12 text-gray-500">
-              <RiFileTextLine className="w-12 h-12 text-gray-400 mb-4" />
-              <p className="text-lg font-medium">No participants found</p>
-              <p className="text-sm mt-2">
-                {selectedProgramId === 'all' 
-                  ? `No participants found for ${format(new Date(selectedMonth), 'MMMM yyyy')}`
-                  : `No participants found in ${programs.find(p => p.id === selectedProgramId)?.name || 'this program'} for ${format(new Date(selectedMonth), 'MMMM yyyy')}`
-                }
-              </p>
-              <p className="text-sm text-gray-400 mt-1">Try selecting a different month or program</p>
-            </div>
-          ) : (
-            <>
-              {/* Desktop Table View - Hidden on Mobile */}
-              <div className="hidden md:block overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        No.
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Attendee Name
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Type
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Program
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Reception Check-In
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Reception Check-Out
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Duration
-                      </th>
-                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Actions
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
-                    {paginatedParticipants.map((participant, index) => (
-                      <tr key={participant.id} className={`hover:bg-gray-50 ${participant.has_date_error ? 'bg-red-50' : ''}`}>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                          {(currentPage - 1) * itemsPerPage + index + 1}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="text-sm font-medium text-gray-900 text-wrap">
-                            {participant.attendee_name}
-                            <div className="flex flex-wrap gap-1 mt-1">
-                              {/* Show error only for actual validation errors (wrong dates) */}
-                              {participant.has_date_error && (
-                                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800 text-wrap">
-                                  {participant.date_error_message}
-                                </span>
-                              )}
-                              {/* Show missing check-in/out warnings */}
-                              {!participant.reception_checkin && (
-                                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800">
-                                  Missing Check-In
-                                </span>
-                              )}
-                              {!participant.reception_checkout && (
-                                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800">
-                                  Missing Check-Out
-                                </span>
-                              )}
-                              {/* Show early/late warning message if exists and no validation error */}
-                              {!participant.has_date_error && participant.date_error_message && (
-                                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800">
-                                  {participant.date_error_message}
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-wrap">
-                          <span className={`inline-flex px-2 py-0.5 rounded-md text-xs font-medium
-                            ${participant.type === 'participant' ? 'bg-blue-100 text-blue-800' :
-                              participant.type === 'guest' ? 'bg-green-100 text-green-800' :
-                              participant.type === 'driver' ? 'bg-purple-100 text-purple-800' :
-                              'bg-gray-100 text-gray-800'}`}>
-                            {participant.type.charAt(0).toUpperCase() + participant.type.slice(1)}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-wrap">
-                          <div className="text-sm text-gray-500">
-                            {participant.program?.name || '-'}
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-wrap">
-                          {participant.reception_checkin ? (
-                            <div className="text-sm text-gray-500">
-                              <div>{format(new Date(participant.reception_checkin), 'dd MMM yyyy')}</div>
-                              <div className="text-xs text-gray-400">
-                                {format(new Date(participant.reception_checkin), 'h:mm a')}
-                              </div>
-                            </div>
-                          ) : (
-                            <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-50 text-red-700">
-                              Not Checked In
-                            </span>
-                          )}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-wrap">
-                          {participant.reception_checkout ? (
-                            <div className="text-sm text-gray-500">
-                              <div>{format(new Date(participant.reception_checkout), 'dd MMM yyyy')}</div>
-                              <div className="text-xs text-gray-400">
-                                {format(new Date(participant.reception_checkout), 'h:mm a')}
-                              </div>
-                            </div>
-                          ) : (
-                            <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-50 text-red-700">
-                              Not Checked Out
-                            </span>
-                          )}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-wrap">
-                          {participant.reception_checkin && participant.reception_checkout ? (
-                            <div className="text-sm text-gray-500">
-                              {calculateDuration(participant.reception_checkin, participant.reception_checkout)}
-                            </div>
-                          ) : (
-                            <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-700">
-                              Not Available
-                            </span>
-                          )}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-2">
-                          <button
-                            onClick={() => handleEdit(participant)}
-                            className="text-amber-600 hover:text-amber-900"
-                            title="Edit participant"
-                          >
-                            <RiEditLine className="w-5 h-5" />
-                          </button>
-                          <button
-                            onClick={() => openDeleteModal(participant)}
-                            className="text-red-600 hover:text-red-900"
-                            title="Delete participant"
-                          >
-                            <RiDeleteBinLine className="w-5 h-5" />
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-
-              {/* Mobile Card View - Shown only on Mobile */}
-              <div className="md:hidden">
-                {paginatedParticipants.map((participant, index) => (
-                  <div 
-                    key={participant.id}
-                    className={`bg-white rounded-lg shadow-sm mb-4 p-4 ${participant.has_date_error ? 'bg-red-50' : ''}`}
-                  >
-                    <div className="flex justify-between items-start mb-2">
-                      <div className="flex-1">
-                        <h3 className="text-sm font-medium text-gray-900">
-                          {participant.attendee_name}
-                        </h3>
-                        <span className={`inline-flex px-2 py-0.5 rounded-md text-xs font-medium mt-1
-                          ${participant.type === 'participant' ? 'bg-blue-100 text-blue-800' :
-                            participant.type === 'guest' ? 'bg-green-100 text-green-800' :
-                            participant.type === 'driver' ? 'bg-purple-100 text-purple-800' :
-                            'bg-gray-100 text-gray-800'}`}>
-                          {participant.type.charAt(0).toUpperCase() + participant.type.slice(1)}
-                        </span>
-                      </div>
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => handleEdit(participant)}
-                          className="text-amber-600 hover:text-amber-900"
-                          title="Edit participant"
-                        >
-                          <RiEditLine className="w-5 h-5" />
-                        </button>
-                        <button
-                          onClick={() => openDeleteModal(participant)}
-                          className="text-red-600 hover:text-red-900"
-                          title="Delete participant"
-                        >
-                          <RiDeleteBinLine className="w-5 h-5" />
-                        </button>
-                      </div>
-                    </div>
-
-                    {participant.program?.name && (
-                      <div className="text-xs text-gray-500 mb-2">
-                        Program: {participant.program.name}
-                      </div>
-                    )}
-
-                    <div className="grid grid-cols-2 gap-2 mt-2">
-                      <div>
-                        <div className="text-xs font-medium text-gray-500 mb-1">Check In</div>
-                        {participant.reception_checkin ? (
-                          <div className="text-sm text-gray-700">
-                            {format(new Date(participant.reception_checkin), 'dd MMM yyyy')}
-                            <div className="text-xs text-gray-500">
-                              {format(new Date(participant.reception_checkin), 'h:mm a')}
-                            </div>
-                          </div>
-                        ) : (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-50 text-red-700">
-                            Not Checked In
-                          </span>
-                        )}
-                      </div>
-
-                      <div>
-                        <div className="text-xs font-medium text-gray-500 mb-1">Check Out</div>
-                        {participant.reception_checkout ? (
-                          <div className="text-sm text-gray-700">
-                            {format(new Date(participant.reception_checkout), 'dd MMM yyyy')}
-                            <div className="text-xs text-gray-500">
-                              {format(new Date(participant.reception_checkout), 'h:mm a')}
-                            </div>
-                          </div>
-                        ) : (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-50 text-red-700">
-                            Not Checked Out
-                          </span>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Duration */}
-                    {participant.reception_checkin && participant.reception_checkout && (
-                      <div className="mt-2 text-xs text-gray-500">
-                        Duration: {calculateDuration(participant.reception_checkin, participant.reception_checkout)}
-                      </div>
-                    )}
-
-                    {/* Status Tags */}
-                    <div className="flex flex-wrap gap-1 mt-2">
-                      {/* Show error only for actual validation errors (wrong dates) */}
-                      {participant.has_date_error && (
-                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800 text-wrap">
-                          {participant.date_error_message}
-                        </span>
-                      )}
-                      {/* Show early/late warning message if exists and no validation error */}
-                      {!participant.has_date_error && participant.date_error_message && (
-                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800">
-                          {participant.date_error_message}
-                        </span>
-                      )}
-                    </div>
+                <div className="flex flex-col gap-2 text-red-700">
+                  <div className="flex items-center gap-2">
+                    <RiAlertLine className="w-5 h-5" />
+                    <p>
+                      Found {totalErrors} participant{totalErrors === 1 ? '' : 's'} with date validation errors:
+                    </p>
                   </div>
-                ))}
-              </div>
-            </>
-          )}
-        </div>
-
-        {/* Pagination */}
-        {totalPages > 1 && (
-          <div className="flex justify-between items-center mt-4 bg-white rounded-lg shadow px-4 py-3">
-            <div className="text-sm text-gray-500">
-              Showing {((currentPage - 1) * itemsPerPage) + 1} to {Math.min(currentPage * itemsPerPage, filteredParticipants.length)} of {filteredParticipants.length} participants
-            </div>
-            <div className="flex gap-2">
-              <button
-                onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
-                disabled={currentPage === 1}
-                className="px-3 py-1 text-sm text-gray-500 bg-gray-100 rounded-md hover:bg-gray-200 disabled:opacity-50"
-              >
-                Previous
-              </button>
-              <button
-                onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
-                disabled={currentPage === totalPages}
-                className="px-3 py-1 text-sm text-gray-500 bg-gray-100 rounded-md hover:bg-gray-200 disabled:opacity-50"
-              >
-                Next
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* Add/Edit Modal */}
-        {isModalOpen && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white rounded-lg p-6 w-full max-w-md">
-              <div className="flex justify-between items-center mb-4">
-                <h2 className="text-xl font-semibold">
-                  {editingParticipant ? 'Edit Participant' : 'Add New Participant'}
-                </h2>
-                <button
-                  onClick={() => {
-                    setIsModalOpen(false);
-                    setEditingParticipant(null);
-                    setFormData({
-                      attendee_name: "",
-                      program_id: "all",
-                      reception_checkin: "",
-                      reception_checkout: "",
-                      type: "participant",
-                    });
-                  }}
-                  className="text-gray-500 hover:text-gray-700"
-                >
-                  <RiCloseLine className="w-6 h-6" />
-                </button>
-              </div>
-
-              <form onSubmit={handleSubmit} className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">
-                    Attendee Name
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.attendee_name}
-                    onChange={(e) => setFormData({ ...formData, attendee_name: e.target.value })}
-                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-amber-500 focus:outline-none focus:ring-amber-500"
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">
-                    Program
-                  </label>
-                  <select
-                    value={formData.program_id}
-                    onChange={(e) => setFormData({ ...formData, program_id: e.target.value })}
-                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-amber-500 focus:outline-none focus:ring-amber-500"
-                  >
-                    <option value="all">No Program</option>
-                    {programs.map((program) => (
-                      <option key={program.id} value={program.id}>
-                        {program.name} - {program.customer_name}
-                      </option>
+                  <ul className="ml-5 list-disc">
+                    {Object.entries(errorSummary).map(([program, count]) => (
+                      <li key={program}>
+                        {program}: {count} participant{count === 1 ? '' : 's'}
+                      </li>
                     ))}
-                  </select>
+                  </ul>
                 </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">
-                    Reception Check-In
-                  </label>
-                  <input
-                    type="datetime-local"
-                    value={formData.reception_checkin}
-                    onChange={(e) => setFormData({ ...formData, reception_checkin: e.target.value })}
-                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-amber-500 focus:outline-none focus:ring-amber-500"
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">
-                    Reception Check-Out
-                  </label>
-                  <input
-                    type="datetime-local"
-                    value={formData.reception_checkout}
-                    onChange={(e) => setFormData({ ...formData, reception_checkout: e.target.value })}
-                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-amber-500 focus:outline-none focus:ring-amber-500"
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">
-                    Type
-                  </label>
-                  <select
-                    value={formData.type}
-                    onChange={(e) => setFormData({ ...formData, type: e.target.value as Participant['type'] })}
-                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-amber-500 focus:outline-none focus:ring-amber-500"
-                  >
-                    <option value="participant">Participant</option>
-                    <option value="guest">Guest</option>
-                    <option value="other">Other</option>
-                    <option value="driver">Driver</option>
-                  </select>
-                </div>
-
-                <div className="flex justify-end gap-3 mt-6">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsModalOpen(false);
-                      setEditingParticipant(null);
-                      setFormData({
-                        attendee_name: "",
-                        program_id: "all",
-                        reception_checkin: "",
-                        reception_checkout: "",
-                        type: "participant",
-                      });
-                    }}
-                    className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={isLoading}
-                    className="px-4 py-2 text-sm font-medium text-white bg-amber-600 rounded-md hover:bg-amber-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-amber-500 disabled:opacity-50"
-                  >
-                    {isLoading ? 'Saving...' : editingParticipant ? 'Update' : 'Add'}
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
-        )}
-
-        {/* Delete All Confirmation Modal */}
-        {isDeleteAllModalOpen && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white rounded-lg p-6 w-full max-w-md">
-              <div className="flex items-center mb-4">
-                <RiAlertLine className="w-6 h-6 text-red-600 mr-2" />
-                <h2 className="text-xl font-semibold text-gray-900">
-                  {selectedProgramId === 'all' 
-                    ? `Delete All Participants - ${format(new Date(selectedMonth), 'MMMM yyyy')}`
-                    : `Delete All Participants - ${programs.find(p => p.id === selectedProgramId)?.name}`
-                  }
-                </h2>
               </div>
-              
-              <p className="text-gray-500 mb-2">
-                {selectedProgramId === 'all'
-                  ? `Are you sure you want to delete all participants for ${format(new Date(selectedMonth), 'MMMM yyyy')}?`
-                  : `Are you sure you want to delete all participants from ${programs.find(p => p.id === selectedProgramId)?.name}`
-                }
-              </p>
-              
-              <p className="text-red-600 text-sm mb-6">
-                This will also delete all billing entries associated with these participants. This action cannot be undone.
-              </p>
-
-              <div className="flex justify-end gap-3">
-                <button
-                  onClick={() => setIsDeleteAllModalOpen(false)}
-                  className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleDeleteAll}
-                  disabled={isLoading}
-                  className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 disabled:opacity-50"
-                >
-                  {isLoading ? 'Deleting...' : 'Delete All'}
-                </button>
+            ) : null;
+          })()
+        ) : (
+          // Show message for specific program
+          getProgramErrors(selectedProgramId) > 0 && (
+            <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+              <div className="flex items-center gap-2 text-red-700">
+                <RiAlertLine className="w-5 h-5" />
+                <p>
+                  This program has {getProgramErrors(selectedProgramId)} participant{getProgramErrors(selectedProgramId) === 1 ? '' : 's'} with date validation errors that need attention.
+                </p>
               </div>
             </div>
-          </div>
-        )}
-
-        {/* Single Delete Confirmation Modal */}
-        {isDeleteModalOpen && participantToDelete && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white rounded-lg p-6 w-full max-w-md">
-              <div className="flex items-center mb-4">
-                <RiAlertLine className="w-6 h-6 text-red-600 mr-2" />
-                <h2 className="text-xl font-semibold text-gray-900">
-                  Delete Participant
-                </h2>
-              </div>
-              
-              <p className="text-gray-500 mb-2">
-                Are you sure you want to delete <span className="font-medium">{participantToDelete.attendee_name}</span>?
-              </p>
-              
-              <p className="text-red-600 text-sm mb-6">
-                This will also delete all billing entries associated with this participant. This action cannot be undone.
-              </p>
-
-              <div className="flex justify-end gap-3">
-                <button
-                  onClick={() => {
-                    setIsDeleteModalOpen(false);
-                    setParticipantToDelete(null);
-                  }}
-                  className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleDelete}
-                  disabled={isLoading}
-                  className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 disabled:opacity-50"
-                >
-                  {isLoading ? 'Deleting...' : 'Delete'}
-                </button>
-              </div>
-            </div>
-          </div>
+          )
         )}
       </div>
+
+      {/* Participants Table */}
+      <div className="bg-white rounded-lg shadow overflow-hidden">
+        {isImporting ? (
+          <div className="flex flex-col items-center justify-center py-12">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-amber-600"></div>
+            <p className="mt-4 text-gray-600">Importing participants...</p>
+          </div>
+        ) : filteredParticipants.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-12 text-gray-500">
+            <RiFileTextLine className="w-12 h-12 text-gray-400 mb-4" />
+            <p className="text-lg font-medium">No participants found</p>
+            <p className="text-sm mt-2">
+              {selectedProgramId === 'all' 
+                ? `No participants found for ${format(new Date(selectedMonth), 'MMMM yyyy')}`
+                : `No participants found in ${programs.find(p => p.id === selectedProgramId)?.name || 'this program'} for ${format(new Date(selectedMonth), 'MMMM yyyy')}`
+              }
+            </p>
+            <p className="text-sm text-gray-400 mt-1">Try selecting a different month or program</p>
+          </div>
+        ) : (
+          <>
+            {/* Desktop Table View - Hidden on Mobile */}
+            <div className="hidden md:block overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    No.
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Attendee Name
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Type
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Program
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Reception Check-In
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Reception Check-Out
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Duration
+                  </th>
+                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Actions
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {paginatedParticipants.map((participant, index) => (
+                  <tr key={participant.id} className={`hover:bg-gray-50 ${participant.has_date_error ? 'bg-red-50' : ''}`}>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      {(currentPage - 1) * itemsPerPage + index + 1}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="text-sm font-medium text-gray-900 text-wrap">
+                        {participant.attendee_name}
+                        <div className="flex flex-wrap gap-1 mt-1">
+                          {/* Show error only for actual validation errors (wrong dates) */}
+                          {participant.has_date_error && (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800 text-wrap">
+                              {participant.date_error_message}
+                            </span>
+                          )}
+                          {/* Show missing check-in/out warnings */}
+                          {!participant.reception_checkin && (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800">
+                              Missing Check-In
+                            </span>
+                          )}
+                          {!participant.reception_checkout && (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800">
+                              Missing Check-Out
+                            </span>
+                          )}
+                          {/* Show early/late warning message if exists and no validation error */}
+                          {!participant.has_date_error && participant.date_error_message && (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800">
+                              {participant.date_error_message}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-wrap">
+                      <span className={`inline-flex px-2 py-0.5 rounded-md text-xs font-medium
+                        ${participant.type === 'participant' ? 'bg-blue-100 text-blue-800' :
+                          participant.type === 'guest' ? 'bg-green-100 text-green-800' :
+                          participant.type === 'driver' ? 'bg-purple-100 text-purple-800' :
+                          'bg-gray-100 text-gray-800'}`}>
+                        {participant.type.charAt(0).toUpperCase() + participant.type.slice(1)}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-wrap">
+                      <div className="text-sm text-gray-500">
+                        {participant.program?.name || '-'}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-wrap">
+                      {participant.reception_checkin ? (
+                        <div className="text-sm text-gray-500">
+                          <div>{format(new Date(participant.reception_checkin), 'dd MMM yyyy')}</div>
+                          <div className="text-xs text-gray-400">
+                            {format(new Date(participant.reception_checkin), 'h:mm a')}
+                          </div>
+                        </div>
+                      ) : (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-50 text-red-700">
+                          Not Checked In
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-wrap">
+                      {participant.reception_checkout ? (
+                        <div className="text-sm text-gray-500">
+                          <div>{format(new Date(participant.reception_checkout), 'dd MMM yyyy')}</div>
+                          <div className="text-xs text-gray-400">
+                            {format(new Date(participant.reception_checkout), 'h:mm a')}
+                          </div>
+                        </div>
+                      ) : (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-50 text-red-700">
+                          Not Checked Out
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-wrap">
+                      {participant.reception_checkin && participant.reception_checkout ? (
+                        <div className="text-sm text-gray-500">
+                          {calculateDuration(participant.reception_checkin, participant.reception_checkout)}
+                        </div>
+                      ) : (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-700">
+                          Not Available
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-2">
+                      <button
+                        onClick={() => handleEdit(participant)}
+                        className="text-amber-600 hover:text-amber-900"
+                        title="Edit participant"
+                      >
+                        <RiEditLine className="w-5 h-5" />
+                      </button>
+                      <button
+                        onClick={() => openDeleteModal(participant)}
+                        className="text-red-600 hover:text-red-900"
+                        title="Delete participant"
+                      >
+                        <RiDeleteBinLine className="w-5 h-5" />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Mobile Card View - Shown only on Mobile */}
+          <div className="md:hidden">
+            {paginatedParticipants.map((participant, index) => (
+              <div 
+                key={participant.id}
+                className={`bg-white rounded-lg shadow-sm mb-4 p-4 ${participant.has_date_error ? 'bg-red-50' : ''}`}
+              >
+                <div className="flex justify-between items-start mb-2">
+                  <div className="flex-1">
+                    <h3 className="text-sm font-medium text-gray-900">
+                      {participant.attendee_name}
+                    </h3>
+                    <span className={`inline-flex px-2 py-0.5 rounded-md text-xs font-medium mt-1
+                      ${participant.type === 'participant' ? 'bg-blue-100 text-blue-800' :
+                        participant.type === 'guest' ? 'bg-green-100 text-green-800' :
+                        participant.type === 'driver' ? 'bg-purple-100 text-purple-800' :
+                        'bg-gray-100 text-gray-800'}`}>
+                      {participant.type.charAt(0).toUpperCase() + participant.type.slice(1)}
+                    </span>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => handleEdit(participant)}
+                      className="text-amber-600 hover:text-amber-900"
+                      title="Edit participant"
+                    >
+                      <RiEditLine className="w-5 h-5" />
+                    </button>
+                    <button
+                      onClick={() => openDeleteModal(participant)}
+                      className="text-red-600 hover:text-red-900"
+                      title="Delete participant"
+                    >
+                      <RiDeleteBinLine className="w-5 h-5" />
+                    </button>
+                  </div>
+                </div>
+
+                {participant.program?.name && (
+                  <div className="text-xs text-gray-500 mb-2">
+                    Program: {participant.program.name}
+                  </div>
+                )}
+
+                <div className="grid grid-cols-2 gap-2 mt-2">
+                  <div>
+                    <div className="text-xs font-medium text-gray-500 mb-1">Check In</div>
+                    {participant.reception_checkin ? (
+                      <div className="text-sm text-gray-700">
+                        {format(new Date(participant.reception_checkin), 'dd MMM yyyy')}
+                        <div className="text-xs text-gray-500">
+                          {format(new Date(participant.reception_checkin), 'h:mm a')}
+                        </div>
+                      </div>
+                    ) : (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-50 text-red-700">
+                        Not Checked In
+                      </span>
+                    )}
+                  </div>
+
+                  <div>
+                    <div className="text-xs font-medium text-gray-500 mb-1">Check Out</div>
+                    {participant.reception_checkout ? (
+                      <div className="text-sm text-gray-700">
+                        {format(new Date(participant.reception_checkout), 'dd MMM yyyy')}
+                        <div className="text-xs text-gray-500">
+                          {format(new Date(participant.reception_checkout), 'h:mm a')}
+                        </div>
+                      </div>
+                    ) : (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-50 text-red-700">
+                        Not Checked Out
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Duration */}
+                {participant.reception_checkin && participant.reception_checkout && (
+                  <div className="mt-2 text-xs text-gray-500">
+                    Duration: {calculateDuration(participant.reception_checkin, participant.reception_checkout)}
+                  </div>
+                )}
+
+                {/* Status Tags */}
+                <div className="flex flex-wrap gap-1 mt-2">
+                  {/* Show error only for actual validation errors (wrong dates) */}
+                  {participant.has_date_error && (
+                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800 text-wrap">
+                      {participant.date_error_message}
+                    </span>
+                  )}
+                  {/* Show early/late warning message if exists and no validation error */}
+                  {!participant.has_date_error && participant.date_error_message && (
+                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800">
+                      {participant.date_error_message}
+                    </span>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
     </div>
-  );
+
+    {/* Pagination */}
+    {totalPages > 1 && (
+      <div className="flex justify-between items-center mt-4 bg-white rounded-lg shadow px-4 py-3">
+        <div className="text-sm text-gray-500">
+          Showing {((currentPage - 1) * itemsPerPage) + 1} to {Math.min(currentPage * itemsPerPage, filteredParticipants.length)} of {filteredParticipants.length} participants
+        </div>
+        <div className="flex gap-2">
+          <button
+            onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+            disabled={currentPage === 1}
+            className="px-3 py-1 text-sm text-gray-500 bg-gray-100 rounded-md hover:bg-gray-200 disabled:opacity-50"
+          >
+            Previous
+          </button>
+          <button
+            onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+            disabled={currentPage === totalPages}
+            className="px-3 py-1 text-sm text-gray-500 bg-gray-100 rounded-md hover:bg-gray-200 disabled:opacity-50"
+          >
+            Next
+          </button>
+        </div>
+      </div>
+    )}
+
+    {/* Add/Edit Modal */}
+    {isModalOpen && (
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="bg-white rounded-lg p-6 w-full max-w-md">
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-xl font-semibold">
+              {editingParticipant ? 'Edit Participant' : 'Add New Participant'}
+            </h2>
+            <button
+              onClick={() => {
+                setIsModalOpen(false);
+                setEditingParticipant(null);
+                setFormData({
+                  attendee_name: "",
+                  program_id: "all",
+                  reception_checkin: "",
+                  reception_checkout: "",
+                  type: "participant",
+                });
+              }}
+              className="text-gray-500 hover:text-gray-700"
+            >
+              <RiCloseLine className="w-6 h-6" />
+            </button>
+          </div>
+
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700">
+                Attendee Name
+              </label>
+              <input
+                type="text"
+                value={formData.attendee_name}
+                onChange={(e) => setFormData({ ...formData, attendee_name: e.target.value })}
+                className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-amber-500 focus:outline-none focus:ring-amber-500"
+                required
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700">
+                Program
+              </label>
+              <select
+                value={formData.program_id}
+                onChange={(e) => setFormData({ ...formData, program_id: e.target.value })}
+                className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-amber-500 focus:outline-none focus:ring-amber-500"
+              >
+                <option value="all">No Program</option>
+                {programs.map((program) => (
+                  <option key={program.id} value={program.id}>
+                    {program.name} - {program.customer_name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700">
+                Reception Check-In
+              </label>
+              <input
+                type="datetime-local"
+                value={formData.reception_checkin}
+                onChange={(e) => setFormData({ ...formData, reception_checkin: e.target.value })}
+                className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-amber-500 focus:outline-none focus:ring-amber-500"
+                required
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700">
+                Reception Check-Out
+              </label>
+              <input
+                type="datetime-local"
+                value={formData.reception_checkout}
+                onChange={(e) => setFormData({ ...formData, reception_checkout: e.target.value })}
+                className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-amber-500 focus:outline-none focus:ring-amber-500"
+                required
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700">
+                Type
+              </label>
+              <select
+                value={formData.type}
+                onChange={(e) => setFormData({ ...formData, type: e.target.value as Participant['type'] })}
+                className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-amber-500 focus:outline-none focus:ring-amber-500"
+              >
+                <option value="participant">Participant</option>
+                <option value="guest">Guest</option>
+                <option value="other">Other</option>
+                <option value="driver">Driver</option>
+              </select>
+            </div>
+
+            <div className="flex justify-end gap-3 mt-6">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsModalOpen(false);
+                  setEditingParticipant(null);
+                  setFormData({
+                    attendee_name: "",
+                    program_id: "all",
+                    reception_checkin: "",
+                    reception_checkout: "",
+                    type: "participant",
+                  });
+                }}
+                className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={isLoading}
+                className="px-4 py-2 text-sm font-medium text-white bg-amber-600 rounded-md hover:bg-amber-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-amber-500 disabled:opacity-50"
+              >
+                {isLoading ? 'Saving...' : editingParticipant ? 'Update' : 'Add'}
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    )}
+
+    {/* Delete All Confirmation Modal */}
+    {isDeleteAllModalOpen && (
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="bg-white rounded-lg p-6 w-full max-w-md">
+          <div className="flex items-center mb-4">
+            <RiAlertLine className="w-6 h-6 text-red-600 mr-2" />
+            <h2 className="text-xl font-semibold text-gray-900">
+              {selectedProgramId === 'all' 
+                ? `Delete All Participants - ${format(new Date(selectedMonth), 'MMMM yyyy')}`
+                : `Delete All Participants - ${programs.find(p => p.id === selectedProgramId)?.name}`
+              }
+            </h2>
+          </div>
+          
+          <p className="text-gray-500 mb-2">
+            {selectedProgramId === 'all'
+              ? `Are you sure you want to delete all participants for ${format(new Date(selectedMonth), 'MMMM yyyy')}?`
+              : `Are you sure you want to delete all participants from ${programs.find(p => p.id === selectedProgramId)?.name}`
+            }
+          </p>
+          
+          <p className="text-red-600 text-sm mb-6">
+            This will also delete all billing entries associated with these participants. This action cannot be undone.
+          </p>
+
+          <div className="flex justify-end gap-3">
+            <button
+              onClick={() => setIsDeleteAllModalOpen(false)}
+              className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleDeleteAll}
+              disabled={isLoading}
+              className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 disabled:opacity-50"
+            >
+              {isLoading ? 'Deleting...' : 'Delete All'}
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+
+    {/* Single Delete Confirmation Modal */}
+    {isDeleteModalOpen && participantToDelete && (
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="bg-white rounded-lg p-6 w-full max-w-md">
+          <div className="flex items-center mb-4">
+            <RiAlertLine className="w-6 h-6 text-red-600 mr-2" />
+            <h2 className="text-xl font-semibold text-gray-900">
+              Delete Participant
+            </h2>
+          </div>
+          
+          <p className="text-gray-500 mb-2">
+            Are you sure you want to delete <span className="font-medium">{participantToDelete.attendee_name}</span>?
+          </p>
+          
+          <p className="text-red-600 text-sm mb-6">
+            This will also delete all billing entries associated with this participant. This action cannot be undone.
+          </p>
+
+          <div className="flex justify-end gap-3">
+            <button
+              onClick={() => {
+                setIsDeleteModalOpen(false);
+                setParticipantToDelete(null);
+              }}
+              className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleDelete}
+              disabled={isLoading}
+              className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 disabled:opacity-50"
+            >
+              {isLoading ? 'Deleting...' : 'Delete'}
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+  </div>
+);
 }

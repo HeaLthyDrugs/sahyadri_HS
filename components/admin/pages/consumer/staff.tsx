@@ -8,7 +8,8 @@ import {
   RiEditLine,
   RiFileTextLine,
   RiMessageLine,
-  RiAlertLine
+  RiAlertLine,
+  RiSearchLine
 } from "react-icons/ri";
 import { Button } from "@/components/ui/button";
 import {
@@ -65,7 +66,8 @@ export default function StaffPage() {
   const [staffToDelete, setStaffToDelete] = useState<Staff | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage] = useState(10);
+  const [itemsPerPage, setItemsPerPage] = useState(10);
+  const entriesOptions = [10, 25, 50, 100];
   const [selectedType, setSelectedType] = useState<'all' | Staff['type']>('all');
   const [newStaff, setNewStaff] = useState({
     name: "",
@@ -108,30 +110,75 @@ export default function StaffPage() {
     }
   };
 
-  // Add new staff member
+  // Add new staff member or update existing one
   const handleAddStaff = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const { data, error } = await supabase
-        .from("staff")
-        .insert([newStaff])
-        .select()
-        .single();
+      if (selectedStaff) {
+        // Update existing staff
+        const { data, error } = await supabase
+          .from("staff")
+          .update(newStaff)
+          .eq('id', selectedStaff.id)
+          .select(`
+            id,
+            name,
+            type,
+            organisation,
+            created_at,
+            updated_at,
+            comments:staff_comments(*)
+          `)
+          .single();
 
-      if (error) throw error;
+        if (error) throw error;
 
-      setStaff((prev) => [...prev, { ...data, comments: [] }]);
+        setStaff((prev) => prev.map(s => 
+          s.id === selectedStaff.id 
+            ? { ...data, comments: s.comments } 
+            : s
+        ));
+        toast({
+          title: "Success",
+          description: "Staff member updated successfully",
+        });
+      } else {
+        // Add new staff
+        const { data, error } = await supabase
+          .from("staff")
+          .insert([newStaff])
+          .select(`
+            id,
+            name,
+            type,
+            organisation,
+            created_at,
+            updated_at,
+            comments:staff_comments(*)
+          `)
+          .single();
+
+        if (error) throw error;
+
+        setStaff((prev) => [...prev, { ...data, comments: [] }]);
+        toast({
+          title: "Success",
+          description: "Staff member added successfully",
+        });
+      }
+
       setIsAddingStaff(false);
-      setNewStaff({ name: "", type: "full_time", organisation: "" });
-      toast({
-        title: "Success",
-        description: "Staff member added successfully",
+      setSelectedStaff(null);
+      setNewStaff({ 
+        name: "", 
+        type: "full_time", 
+        organisation: "" 
       });
     } catch (error) {
-      console.error("Error adding staff:", error);
+      console.error("Error saving staff:", error);
       toast({
         title: "Error",
-        description: "Failed to add staff member",
+        description: "Failed to save staff member",
         variant: "destructive",
       });
     }
@@ -213,6 +260,62 @@ export default function StaffPage() {
     }
   };
 
+  // Add function to delete comment
+  const handleDeleteComment = async (commentId: number) => {
+    if (!selectedStaff) return;
+
+    // Optimistically update both staff and selectedStaff states
+    const updatedComments = selectedStaff.comments?.filter((c) => c.id !== commentId) || [];
+    
+    setSelectedStaff(prev => prev ? { ...prev, comments: updatedComments } : null);
+    setStaff((prev) =>
+      prev.map((s) =>
+        s.id === selectedStaff.id
+          ? {
+              ...s,
+              comments: updatedComments,
+            }
+          : s
+      )
+    );
+
+    try {
+      const { error } = await supabase
+        .from("staff_comments")
+        .delete()
+        .eq('id', commentId);
+
+      if (error) {
+        // Revert changes if deletion fails
+        throw error;
+      }
+
+      toast({
+        title: "Success",
+        description: "Comment deleted successfully",
+      });
+    } catch (error) {
+      console.error("Error deleting comment:", error);
+      // Revert the optimistic update for both states
+      const originalStaff = staff.find(s => s.id === selectedStaff.id);
+      if (originalStaff) {
+        setSelectedStaff(originalStaff);
+        setStaff((prev) =>
+          prev.map(s =>
+            s.id === selectedStaff.id
+              ? originalStaff
+              : s
+          )
+        );
+      }
+      toast({
+        title: "Error",
+        description: "Failed to delete comment",
+        variant: "destructive",
+      });
+    }
+  };
+
   // Initialize data on component mount
   useEffect(() => {
     fetchStaff();
@@ -237,6 +340,11 @@ export default function StaffPage() {
     return staff.filter(s => s.type === type).length;
   };
 
+  const handleEntriesChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    setItemsPerPage(Number(e.target.value));
+    setCurrentPage(1); // Reset to first page when changing entries per page
+  };
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -249,8 +357,7 @@ export default function StaffPage() {
     <div className="space-y-6">
       {/* Header with Actions */}
       <div className="flex flex-col gap-4">
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-          <h1 className="text-xl font-semibold text-gray-900">Manage Staff</h1>
+        <div className="flex justify-end">
           <Button
             onClick={() => setIsAddingStaff(true)}
             className="flex items-center gap-2 bg-amber-600 text-white hover:bg-amber-700"
@@ -261,23 +368,15 @@ export default function StaffPage() {
         </div>
 
         {/* Search and Filter Controls */}
-        <div className="flex flex-col sm:flex-row gap-4">
-          {/* Search Input */}
-          <div className="flex items-center gap-2 bg-white rounded-lg shadow px-3 py-2 w-full sm:w-96">
-            <input
-              type="text"
-              placeholder="Search staff..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full border-none focus:ring-0 text-sm"
-            />
-          </div>
-
+        <div className="flex flex-wrap items-center gap-4">
           {/* Type Filter */}
           <div className="flex items-center gap-2 bg-white rounded-lg shadow px-3 py-2 w-full sm:w-64">
             <select
               value={selectedType}
-              onChange={(e) => setSelectedType(e.target.value as 'all' | Staff['type'])}
+              onChange={(e) => {
+                setSelectedType(e.target.value as 'all' | Staff['type']);
+                setCurrentPage(1); // Reset to first page when filtering
+              }}
               className="w-full border-none focus:ring-0 text-sm"
             >
               <option value="all">All Types ({staff.length})</option>
@@ -287,6 +386,39 @@ export default function StaffPage() {
               <option value="volunteer">Volunteer ({getTypeCount('volunteer')})</option>
             </select>
           </div>
+        </div>
+      </div>
+
+      {/* Search and Entries Row */}
+      <div className="flex justify-between items-center mb-4">
+        {/* Search */}
+        <div className="relative w-[300px]">
+          <RiSearchLine className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+          <input
+            type="text"
+            placeholder="Search staff..."
+            value={searchQuery}
+            onChange={(e) => {
+              setSearchQuery(e.target.value);
+              setCurrentPage(1); // Reset to first page when searching
+            }}
+            className="w-full pl-10 rounded-lg border border-gray-300 focus:ring-amber-500 focus:border-amber-500"
+          />
+        </div>
+
+        {/* Entries Selector */}
+        <div className="flex items-center gap-2 text-sm text-gray-500">
+          <span>Show</span>
+          <select
+            value={itemsPerPage}
+            onChange={handleEntriesChange}
+            className="border border-gray-300 rounded-md px-2 py-1 focus:outline-none focus:ring-2 focus:ring-amber-500"
+          >
+            {entriesOptions.map(option => (
+              <option key={option} value={option}>{option}</option>
+            ))}
+          </select>
+          <span>entries</span>
         </div>
       </div>
 
@@ -469,13 +601,21 @@ export default function StaffPage() {
         )}
       </div>
 
-      {/* Pagination */}
+      {/* Update the pagination section */}
       {totalPages > 1 && (
-        <div className="flex justify-between items-center bg-white rounded-lg shadow px-4 py-3">
+        <div className="flex flex-col sm:flex-row justify-between items-center bg-white rounded-lg shadow px-4 py-3 gap-4">
           <div className="text-sm text-gray-500">
-            Showing {((currentPage - 1) * itemsPerPage) + 1} to {Math.min(currentPage * itemsPerPage, filteredStaff.length)} of {filteredStaff.length} staff members
+            Showing {((currentPage - 1) * itemsPerPage) + 1} to {Math.min(currentPage * itemsPerPage, filteredStaff.length)} of {filteredStaff.length} entries
           </div>
           <div className="flex gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setCurrentPage(1)}
+              disabled={currentPage === 1}
+            >
+              First
+            </Button>
             <Button
               variant="outline"
               size="sm"
@@ -484,6 +624,9 @@ export default function StaffPage() {
             >
               Previous
             </Button>
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-gray-500">Page {currentPage} of {totalPages}</span>
+            </div>
             <Button
               variant="outline"
               size="sm"
@@ -492,13 +635,31 @@ export default function StaffPage() {
             >
               Next
             </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setCurrentPage(totalPages)}
+              disabled={currentPage === totalPages}
+            >
+              Last
+            </Button>
           </div>
         </div>
       )}
 
       {/* Add/Edit Modal */}
       {isAddingStaff && (
-        <Dialog open={isAddingStaff} onOpenChange={setIsAddingStaff}>
+        <Dialog open={isAddingStaff} onOpenChange={(open) => {
+          if (!open) {
+            setIsAddingStaff(false);
+            setSelectedStaff(null);
+            setNewStaff({
+              name: "",
+              type: "full_time",
+              organisation: "",
+            });
+          }
+        }}>
           <DialogContent className="sm:max-w-md">
             <DialogHeader>
               <DialogTitle>
@@ -566,7 +727,7 @@ export default function StaffPage() {
                   Cancel
                 </Button>
                 <Button type="submit" className="bg-amber-600 hover:bg-amber-700">
-                  {selectedStaff ? 'Update' : 'Add'} Staff
+                  {selectedStaff ? 'Update Staff' : 'Add Staff'}
                 </Button>
               </div>
             </form>
@@ -586,12 +747,24 @@ export default function StaffPage() {
                 {selectedStaff.comments?.map((comment) => (
                   <div
                     key={comment.id}
-                    className="p-3 bg-gray-50 rounded-lg"
+                    className="p-3 bg-gray-50 rounded-lg relative group"
                   >
-                    <p className="text-sm">{comment.comment}</p>
-                    <p className="text-xs text-gray-500 mt-1">
-                      {format(new Date(comment.created_at), 'dd MMM yyyy, h:mm a')}
-                    </p>
+                    <div className="flex justify-between items-start">
+                      <div className="flex-1">
+                        <p className="text-sm">{comment.comment}</p>
+                        <p className="text-xs text-gray-500 mt-1">
+                          {format(new Date(comment.created_at), 'dd MMM yyyy, h:mm a')}
+                        </p>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-opacity"
+                        onClick={() => handleDeleteComment(comment.id)}
+                      >
+                        <RiDeleteBinLine className="w-4 h-4" />
+                      </Button>
+                    </div>
                   </div>
                 ))}
                 {(!selectedStaff.comments || selectedStaff.comments.length === 0) && (
