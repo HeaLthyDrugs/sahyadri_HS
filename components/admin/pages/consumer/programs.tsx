@@ -568,10 +568,10 @@ export function ProgramsPage() {
           <table className="table-auto min-w-full divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
-                <th className="w-[100px] min-w-[60px] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="w-[100px] min-w-[80px] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   ID
                 </th>
-                <th className="w-1/4 min-w-[150px] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="w-1/4 min-w-[200px] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Customer Name
                 </th>
                 <th className="w-1/4 min-w-[200px] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -592,7 +592,7 @@ export function ProgramsPage() {
                 <th className="w-1/4 min-w-[150px] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Status
                 </th>
-                <th className="w-1/4 min-w-[120px] px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="w-1/4 min-w-[120px] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Actions
                 </th>
               </tr>

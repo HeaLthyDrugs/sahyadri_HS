@@ -83,30 +83,25 @@ BEGIN
                 AND (
                     -- For check-in day
                     (DATE(p.reception_checkin) = d.date AND 
-                     (d.date + pr.slot_end::time) > p.reception_checkin AND
                      (
-                         -- For slots that span across midnight
-                         (pr.slot_end::time < pr.slot_start::time AND
-                          ((d.date + pr.slot_start::time) <= p.reception_checkin OR
-                           ((d.date + INTERVAL '1 day')::timestamp + pr.slot_end::time) > p.reception_checkin))
-                         OR
-                         -- For normal slots
-                         (pr.slot_end::time >= pr.slot_start::time AND
-                          (d.date + pr.slot_start::time) <= p.reception_checkin)
+                         -- For slots that contain or start after check-in time
+                         (d.date + pr.slot_start::time >= p.reception_checkin)
+                         OR 
+                         -- For slots that span over check-in time
+                         (d.date + pr.slot_start::time < p.reception_checkin AND 
+                          d.date + pr.slot_end::time > p.reception_checkin)
                      ))
                     OR
                     -- For check-out day
                     (DATE(p.reception_checkout) = d.date AND 
-                     (d.date + pr.slot_start::time) < p.reception_checkout AND
                      (
-                         -- For slots that span across midnight
-                         (pr.slot_end::time < pr.slot_start::time AND
-                          ((d.date + pr.slot_start::time) < p.reception_checkout OR
-                           ((d.date + INTERVAL '1 day')::timestamp + pr.slot_end::time) >= p.reception_checkout))
+                         -- For slots that end before or at check-out time
+                         (d.date + pr.slot_end::time <= p.reception_checkout AND
+                          d.date + pr.slot_start::time < p.reception_checkout)
                          OR
-                         -- For normal slots
-                         (pr.slot_end::time >= pr.slot_start::time AND
-                          (d.date + pr.slot_end::time) >= p.reception_checkout)
+                         -- For slots that span over check-out time
+                         (d.date + pr.slot_start::time < p.reception_checkout AND 
+                          d.date + pr.slot_end::time > p.reception_checkout)
                      ))
                     OR
                     -- For days in between
@@ -156,31 +151,21 @@ BEGIN
 
                     -- Determine if this slot should be counted
                     IF check_date = participant_start_date THEN
-                        -- For check-in day, only count if:
-                        -- 1. Slot ends after check-in time AND
-                        -- 2. For overnight slots, either starts before check-in or ends after check-in
-                        -- 3. For normal slots, starts before check-in
-                        should_count := slot_end > checkin_time AND
-                            (
-                                (product_record.slot_end::time < product_record.slot_start::time AND
-                                 (slot_start <= checkin_time OR slot_end > checkin_time))
-                                OR
-                                (product_record.slot_end::time >= product_record.slot_start::time AND
-                                 slot_start <= checkin_time)
-                            );
+                        -- For check-in day
+                        should_count := 
+                            -- For slots that start at or after check-in time
+                            (slot_start >= checkin_time)
+                            OR 
+                            -- For slots that span over check-in time
+                            (slot_start < checkin_time AND slot_end > checkin_time);
                     ELSIF check_date = participant_end_date THEN
-                        -- For check-out day, only count if:
-                        -- 1. Slot starts before check-out time AND
-                        -- 2. For overnight slots, either starts before check-out or ends after check-out
-                        -- 3. For normal slots, ends after check-out
-                        should_count := slot_start < checkout_time AND
-                            (
-                                (product_record.slot_end::time < product_record.slot_start::time AND
-                                 (slot_start < checkout_time OR slot_end >= checkout_time))
-                                OR
-                                (product_record.slot_end::time >= product_record.slot_start::time AND
-                                 slot_end >= checkout_time)
-                            );
+                        -- For check-out day
+                        should_count := 
+                            -- For slots that end at or before check-out time
+                            (slot_end <= checkout_time AND slot_start < checkout_time)
+                            OR
+                            -- For slots that span over check-out time
+                            (slot_start < checkout_time AND slot_end > checkout_time);
                     ELSE
                         -- For full days in between
                         should_count := true;
