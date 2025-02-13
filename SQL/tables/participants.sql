@@ -7,7 +7,6 @@ create table public.participants (
   reception_checkout timestamp with time zone null,
   security_checkout timestamp with time zone null,
   created_at timestamp with time zone not null default now(),
-  updated_at timestamp with time zone not null default now(),
   actual_arrival_date date null,
   actual_departure_date date null,
   type text not null default 'participant'::text,
@@ -15,19 +14,6 @@ create table public.participants (
   date_error_message text null,
   constraint participants_pkey primary key (id),
   constraint participants_program_id_fkey foreign KEY (program_id) references programs (id) on delete CASCADE,
-  constraint participants_dates_check check (
-    (
-      (
-        (reception_checkin is null)
-        and (reception_checkout is null)
-      )
-      or (
-        (reception_checkin is not null)
-        and (reception_checkout is not null)
-        and (reception_checkin <= reception_checkout)
-      )
-    )
-  ),
   constraint participants_type_check check (
     (
       type = any (
@@ -42,12 +28,19 @@ create table public.participants (
   )
 ) TABLESPACE pg_default;
 
--- Drop existing trigger if exists
-DROP TRIGGER IF EXISTS participant_billing_trigger ON participants;
+create index IF not exists participants_created_at_idx on public.participants using btree (created_at desc) TABLESPACE pg_default;
 
--- Create the trigger properly
-CREATE TRIGGER participant_billing_trigger
-  AFTER INSERT OR UPDATE OR DELETE
-  ON participants
-  FOR EACH ROW
-  EXECUTE FUNCTION participant_billing_trigger_func();
+create index IF not exists participants_attendee_name_idx on public.participants using btree (attendee_name) TABLESPACE pg_default;
+
+create index IF not exists participants_type_idx on public.participants using btree (type) TABLESPACE pg_default;
+
+create index IF not exists participants_actual_arrival_date_idx on public.participants using btree (actual_arrival_date) TABLESPACE pg_default;
+
+create index IF not exists participants_actual_departure_date_idx on public.participants using btree (actual_departure_date) TABLESPACE pg_default;
+
+create trigger participant_entry_calculator
+after INSERT
+or DELETE
+or
+update on participants for EACH row
+execute FUNCTION calculate_entries_for_participant ();

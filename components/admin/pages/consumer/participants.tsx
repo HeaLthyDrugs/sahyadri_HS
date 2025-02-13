@@ -94,17 +94,24 @@ export function ParticipantsPage() {
   const [participantToDelete, setParticipantToDelete] = useState<Participant | null>(null);
   const entriesOptions = [10, 25, 50, 100];
 
+  const formatDateTime = (dateStr: string | null | undefined) => {
+    if (!dateStr) return null;
+    const date = new Date(dateStr);
+    return {
+      date: format(date, 'dd MMM yyyy'),
+      time: format(date, 'h:mm a')
+    };
+  };
+
   const calculateDuration = (checkin: string, checkout: string): string => {
     try {
       const start = new Date(checkin);
       const end = new Date(checkout);
       const diff = end.getTime() - start.getTime();
       
-      // Calculate days and remaining hours
       const days = Math.floor(diff / (1000 * 60 * 60 * 24));
       const remainingHours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
       
-      // Format the duration string
       if (days > 0) {
         return `${days}d ${remainingHours}h`;
       }
@@ -131,7 +138,6 @@ export function ParticipantsPage() {
 
       if (error) throw error;
       
-      // Filter programs that overlap with the selected month
       const filteredPrograms = data?.filter(program => {
         const programStart = new Date(program.start_date);
         const programEnd = new Date(program.end_date);
@@ -140,7 +146,6 @@ export function ParticipantsPage() {
 
       setPrograms(filteredPrograms || []);
       
-      // Reset program selection when month changes
       setSelectedProgramId('all');
     } catch (error) {
       console.error('Error fetching programs:', error);
@@ -156,7 +161,6 @@ export function ParticipantsPage() {
       const monthStart = startOfMonth(monthDate);
       const monthEnd = endOfMonth(monthDate);
 
-      // First fetch programs for the selected month
       const { data: monthPrograms, error: programError } = await supabase
         .from('programs')
         .select('id')
@@ -165,7 +169,6 @@ export function ParticipantsPage() {
 
       if (programError) throw programError;
 
-      // Get program IDs for the selected month
       const programIds = monthPrograms?.map(p => p.id) || [];
 
       let query = supabase
@@ -182,7 +185,6 @@ export function ParticipantsPage() {
         `)
         .order('created_at', { ascending: false });
 
-      // Add program filter
       if (selectedProgramId !== 'all') {
         query = query.eq('program_id', selectedProgramId);
       } else if (programIds.length > 0) {
@@ -193,14 +195,12 @@ export function ParticipantsPage() {
 
       if (error) throw error;
       
-      // Transform and filter the data
       const transformedData = (data || []).map(participant => {
         const transformed = {
           ...participant,
           program: participant.program
         };
 
-        // Check for missing check-in/out
         if (!transformed.reception_checkin || !transformed.reception_checkout) {
           transformed.has_date_error = true;
           transformed.date_error_message = !transformed.reception_checkin && !transformed.reception_checkout 
@@ -211,7 +211,6 @@ export function ParticipantsPage() {
           return transformed;
         }
 
-        // Check for invalid dates (checkout before checkin)
         const checkinDate = new Date(transformed.reception_checkin);
         const checkoutDate = new Date(transformed.reception_checkout);
         
@@ -221,7 +220,6 @@ export function ParticipantsPage() {
           return transformed;
         }
 
-        // If participant has a program, check for early arrival/late departure
         if (transformed.program) {
           const attendanceStatus = getAttendanceStatus(transformed, transformed.program);
           if (attendanceStatus && attendanceStatus.length > 0) {
@@ -233,17 +231,14 @@ export function ParticipantsPage() {
         return transformed;
       });
 
-      // Filter participants to only show those relevant to the selected month
       const filteredData = transformedData.filter(participant => {
         if (!participant.reception_checkin || !participant.reception_checkout) {
-          // For participants with missing dates, only show if they belong to a program in this month
           return programIds.includes(participant.program_id || '');
         }
 
         const checkinDate = new Date(participant.reception_checkin);
         const checkoutDate = new Date(participant.reception_checkout);
 
-        // For participants with dates, check if their stay overlaps with the month
         const stayOverlapsMonth = (
           (checkinDate >= monthStart && checkinDate <= monthEnd) ||
           (checkoutDate >= monthStart && checkoutDate <= monthEnd) ||
@@ -260,19 +255,16 @@ export function ParticipantsPage() {
     }
   };
 
-  // Update useEffect to fetch programs when month changes
   useEffect(() => {
     if (selectedMonth) {
       fetchPrograms();
     }
   }, [selectedMonth]);
 
-  // Update useEffect to fetch participants when month or program changes
   useEffect(() => {
     fetchParticipants();
   }, [selectedMonth, selectedProgramId]);
 
-  // Update search suggestions when search query changes
   useEffect(() => {
     if (searchQuery.length > 0) {
       const suggestions = participants
@@ -280,14 +272,13 @@ export function ParticipantsPage() {
         .filter(name => 
           name.toLowerCase().includes(searchQuery.toLowerCase())
         )
-        .slice(0, 5); // Limit to 5 suggestions
+        .slice(0, 5);
       setSearchSuggestions(suggestions);
     } else {
       setSearchSuggestions([]);
     }
   }, [searchQuery, participants]);
 
-  // Add new function to validate dates
   const validateDates = (checkin: string, checkout: string): TimeValidationResult => {
     try {
       const checkinDate = new Date(checkin);
@@ -319,7 +310,6 @@ export function ParticipantsPage() {
     }
   };
 
-  // Add function to count errors in a program
   const getProgramErrors = (programId: string): number => {
     return participants.filter(p => 
       p.program_id === programId && 
@@ -327,7 +317,16 @@ export function ParticipantsPage() {
     ).length;
   };
 
-  // Modify handleSubmit to include type and date validation
+  const formatDate = (dateStr: string | null | undefined) => {
+    if (!dateStr) return null;
+    const date = new Date(dateStr);
+    const istDate = new Date(date.getTime() + (5.5 * 60 * 60 * 1000));
+    return {
+      date: format(istDate, 'dd MMM yyyy'),
+      time: format(istDate, 'h:mm a')
+    };
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
@@ -335,27 +334,20 @@ export function ParticipantsPage() {
     try {
       const dateValidation = validateDates(formData.reception_checkin, formData.reception_checkout);
       
+      // Format time to store in Supabase with IST timezone
+      const formatToTimestamp = (dateTimeStr: string) => {
+        return dateTimeStr.replace('T', ' ') + ':00+05:30';
+      };
+
       const participantData: Partial<Participant> = {
         attendee_name: formData.attendee_name,
         program_id: formData.program_id === 'all' ? undefined : formData.program_id,
         type: formData.type,
         has_date_error: !dateValidation.isValid,
-        date_error_message: dateValidation.isValid ? undefined : dateValidation.message
+        date_error_message: dateValidation.isValid ? undefined : dateValidation.message,
+        reception_checkin: formatToTimestamp(formData.reception_checkin),
+        reception_checkout: formatToTimestamp(formData.reception_checkout),
       };
-
-      // Add dates if provided
-      if (formData.security_checkin) {
-        participantData.security_checkin = new Date(formData.security_checkin).toISOString();
-      }
-      if (formData.reception_checkin) {
-        participantData.reception_checkin = new Date(formData.reception_checkin).toISOString();
-      }
-      if (formData.reception_checkout) {
-        participantData.reception_checkout = new Date(formData.reception_checkout).toISOString();
-      }
-      if (formData.security_checkout) {
-        participantData.security_checkout = new Date(formData.security_checkout).toISOString();
-      }
 
       if (editingParticipant) {
         const { error } = await supabase
@@ -394,30 +386,25 @@ export function ParticipantsPage() {
     }
   };
 
-  // Modify formatExcelDate to include date validation
   const formatExcelDate = (dateString: string) => {
     try {
       if (!dateString || dateString === '&nbsp;') return null;
 
-      // Remove any HTML entities and trim
       dateString = dateString.replace(/&nbsp;/g, '').trim();
       if (!dateString) return null;
 
-      // Parse the date string (format: DD/MM/YYYY HH:mmAM/PM)
-      const [datePart, timePart] = dateString.split(/\s+/); // Split by any number of spaces
+      const [datePart, timePart] = dateString.split(/\s+/);
       if (!datePart || !timePart) {
         console.warn('Invalid date format:', dateString);
         return null;
       }
 
-      // Parse date part (DD/MM/YYYY)
       const [day, month, year] = datePart.split('/');
       if (!day || !month || !year) {
         console.warn('Invalid date parts:', datePart);
         return null;
       }
 
-      // Parse time part (HH:mmAM/PM)
       const timeMatch = timePart.match(/(\d{1,2}):(\d{2})(AM|PM)/i);
       if (!timeMatch) {
         console.warn('Invalid time format:', timePart);
@@ -426,7 +413,6 @@ export function ParticipantsPage() {
 
       let [_, hours, minutes, period] = timeMatch;
       
-      // Convert 12-hour format to 24-hour format
       let hourNum = parseInt(hours);
       if (isNaN(hourNum)) {
         console.warn('Invalid hour:', hours);
@@ -439,29 +425,25 @@ export function ParticipantsPage() {
         hourNum = 0;
       }
 
-      // Create ISO date string
-      const isoDate = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}T${String(hourNum).padStart(2, '0')}:${minutes}:00`;
+      const localDate = new Date(`${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}T${String(hourNum).padStart(2, '0')}:${minutes}:00`);
+      const istDate = new Date(localDate.getTime() + (5.5 * 60 * 60 * 1000));
       
-      // Validate the date
-      const date = new Date(isoDate);
-      if (isNaN(date.getTime())) {
-        console.warn('Invalid date created:', isoDate);
+      if (isNaN(istDate.getTime())) {
+        console.warn('Invalid date created:', istDate);
         return null;
       }
       
-      return date.toISOString();
+      return istDate.toISOString();
     } catch (error) {
       console.error('Error formatting date:', dateString, error);
       return null;
     }
   };
 
-  // Modify handleImportCSV to include type and date validation
   const handleImportCSV = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
-    // Check if a specific program is selected
     if (selectedProgramId === 'all') {
       toast.error('Please select a specific program before importing participants');
       event.target.value = '';
@@ -471,17 +453,15 @@ export function ParticipantsPage() {
     event.target.value = '';
     setIsImporting(true);
 
-    // Function to extract table data from HTML content
     const extractTableData = (htmlContent: string): ImportRow[] => {
       const parser = new DOMParser();
       const doc = parser.parseFromString(htmlContent, 'text/html');
       const rows = doc.querySelectorAll('tr');
       const data: ImportRow[] = [];
 
-      // Skip the header row (index 0)
       for (let i = 1; i < rows.length; i++) {
         const cells = rows[i].querySelectorAll('td');
-        if (cells.length >= 6) { // Ensure we have all required columns
+        if (cells.length >= 6) {
           const rowData: ImportRow = {
             'No.': cells[0].textContent?.trim() || null,
             'Attendee Name': cells[1].textContent?.trim() || null,
@@ -510,7 +490,6 @@ export function ParticipantsPage() {
               const securityCheckin = formatExcelDate(row['Security Check-In'] || '');
               const securityCheckout = formatExcelDate(row['Security Check-Out'] || '');
       
-              // Validate dates if both exist
               let hasDateError = false;
               let dateErrorMessage = '';
               
@@ -523,12 +502,11 @@ export function ParticipantsPage() {
               const participantData: Partial<Participant> = {
                 attendee_name: attendeeName || 'Unknown Participant',
                 program_id: selectedProgramId,
-                type: 'participant', // Default type for imported participants
+                type: 'participant',
                 has_date_error: hasDateError,
                 date_error_message: dateErrorMessage
               };
 
-              // Only add timing fields if they exist
               if (receptionCheckin) {
                 participantData.reception_checkin = receptionCheckin;
               }
@@ -554,7 +532,6 @@ export function ParticipantsPage() {
           throw new Error('No valid data found in file');
         }
 
-        // Split the data into smaller chunks of 20 records
         const chunkSize = 20;
         const chunks = [];
         for (let i = 0; i < importData.length; i += chunkSize) {
@@ -563,7 +540,6 @@ export function ParticipantsPage() {
 
         let insertedCount = 0;
         
-        // Process each chunk in sequence with a delay between chunks
         for (const chunk of chunks) {
           try {
             const { error } = await supabase
@@ -576,12 +552,10 @@ export function ParticipantsPage() {
             }
             
             insertedCount += chunk.length;
-            // Show progress
             toast.success(`Imported ${insertedCount} of ${importData.length} participants...`, {
               duration: 1000,
             });
 
-            // Add a small delay between chunks to prevent overload
             await new Promise(resolve => setTimeout(resolve, 500));
           } catch (error: any) {
             console.error('Error processing chunk:', error);
@@ -606,7 +580,6 @@ export function ParticipantsPage() {
     reader.readAsText(file);
   };
 
-  // Add new function to sort participants by type
   const sortParticipantsByType = (a: Participant, b: Participant) => {
     const typeOrder = {
       participant: 1,
@@ -617,7 +590,6 @@ export function ParticipantsPage() {
     return typeOrder[a.type] - typeOrder[b.type];
   };
 
-  // Modify the filteredParticipants to include type filtering and sorting
   const filteredParticipants = participants
     .filter(participant => {
       const matchesSearch = participant.attendee_name.toLowerCase().includes(searchQuery.toLowerCase());
@@ -627,12 +599,10 @@ export function ParticipantsPage() {
     })
     .sort(sortParticipantsByType);
 
-  // Add new function to get count by type
   const getTypeCount = (type: Participant['type']) => {
     return participants.filter(p => p.type === type).length;
   };
 
-  // Pagination
   const totalPages = Math.ceil(filteredParticipants.length / itemsPerPage);
   const paginatedParticipants = filteredParticipants.slice(
     (currentPage - 1) * itemsPerPage,
@@ -641,21 +611,21 @@ export function ParticipantsPage() {
 
   const handleEdit = (participant: Participant) => {
     setEditingParticipant(participant);
+    
+    // Convert stored timestamp to datetime-local format
+    const formatToDateTimeLocal = (timestamp: string | null) => {
+      if (!timestamp) return "";
+      const date = new Date(timestamp);
+      return format(date, "yyyy-MM-dd'T'HH:mm");
+    };
+    
     setFormData({
       attendee_name: participant.attendee_name,
       program_id: participant.program_id || 'all',
-      security_checkin: participant.security_checkin 
-        ? format(new Date(participant.security_checkin), "yyyy-MM-dd'T'HH:mm") 
-        : "",
-      reception_checkin: participant.reception_checkin 
-        ? format(new Date(participant.reception_checkin), "yyyy-MM-dd'T'HH:mm")
-        : "",
-      reception_checkout: participant.reception_checkout 
-        ? format(new Date(participant.reception_checkout), "yyyy-MM-dd'T'HH:mm")
-        : "",
-      security_checkout: participant.security_checkout 
-        ? format(new Date(participant.security_checkout), "yyyy-MM-dd'T'HH:mm")
-        : "",
+      security_checkin: participant.security_checkin || "",
+      reception_checkin: formatToDateTimeLocal(participant.reception_checkin),
+      reception_checkout: formatToDateTimeLocal(participant.reception_checkout),
+      security_checkout: participant.security_checkout || "",
       type: participant.type,
     });
     setIsModalOpen(true);
@@ -666,12 +636,20 @@ export function ParticipantsPage() {
     
     try {
       setIsLoading(true);
-      const { error } = await supabase
+
+      const { error: billingError } = await supabase
+        .from('billing_entries')
+        .delete()
+        .eq('program_id', participantToDelete.program_id);
+
+      if (billingError) throw billingError;
+
+      const { error: participantError } = await supabase
         .from('participants')
         .delete()
         .eq('id', participantToDelete.id);
 
-      if (error) throw error;
+      if (participantError) throw participantError;
 
       toast.success('Participant and their billing entries deleted successfully');
       setParticipants(prev => prev.filter(p => p.id !== participantToDelete.id));
@@ -702,11 +680,9 @@ export function ParticipantsPage() {
         .from('participants')
         .delete();
 
-      // Add program filter if specific program selected
       if (selectedProgramId !== 'all') {
         query = query.eq('program_id', selectedProgramId);
       } else {
-        // If no specific program selected, delete based on month
         query = query.or(
           `and(reception_checkin.gte.${monthStart.toISOString()},reception_checkin.lte.${monthEnd.toISOString()}),` +
           `and(reception_checkout.gte.${monthStart.toISOString()},reception_checkout.lte.${monthEnd.toISOString()}),` +
@@ -718,7 +694,6 @@ export function ParticipantsPage() {
 
       if (error) throw error;
 
-      // Refresh participants list
       fetchParticipants();
       toast.success(selectedProgramId === 'all' 
         ? `Successfully deleted all participants and their billing entries for ${format(new Date(selectedMonth), 'MMMM yyyy')}`
@@ -761,13 +736,11 @@ export function ParticipantsPage() {
     }
   };
 
-  // Add function to get error summary for all programs
   const getAllProgramsErrorSummary = () => {
     const errorSummary: { [key: string]: number } = {};
     let totalErrors = 0;
 
     participants.forEach(participant => {
-      // Only count actual validation errors (wrong dates)
       if (participant.has_date_error && participant.program) {
         const programName = participant.program.name;
         errorSummary[programName] = (errorSummary[programName] || 0) + 1;
@@ -778,11 +751,9 @@ export function ParticipantsPage() {
     return { errorSummary, totalErrors };
   };
 
-  // Modify the getAttendanceStatus function to not override existing error messages
   const getAttendanceStatus = (participant: Participant, program?: Program) => {
     if (!program || !participant.reception_checkin || !participant.reception_checkout) return null;
 
-    // If there's already a date validation error, don't check for early/late status
     if (participant.has_date_error && participant.date_error_message?.includes('before check-in')) {
       return null;
     }
@@ -792,7 +763,6 @@ export function ParticipantsPage() {
     const checkinDate = new Date(participant.reception_checkin);
     const checkoutDate = new Date(participant.reception_checkout);
 
-    // Reset time part for date comparison
     programStart.setHours(0, 0, 0, 0);
     programEnd.setHours(23, 59, 59, 999);
     checkinDate.setHours(0, 0, 0, 0);
@@ -821,12 +791,11 @@ export function ParticipantsPage() {
 
   const handleEntriesChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     setItemsPerPage(Number(e.target.value));
-    setCurrentPage(1); // Reset to first page when changing entries per page
+    setCurrentPage(1);
   };
 
   return (
     <div className="space-y-6">
-      {/* Header with Actions */}
       <div className="flex flex-col gap-4">
         <div className="flex flex-col sm:flex-row justify-end items-start sm:items-center gap-4">
           <div className="flex flex-wrap items-center gap-2">
@@ -865,9 +834,7 @@ export function ParticipantsPage() {
           </div>
         </div>
 
-        {/* Filters Section */}
         <div className="flex flex-wrap items-center gap-4">
-          {/* Program Filter */}
           <div className="flex items-center gap-2 bg-white rounded-lg shadow px-3 py-2 w-full sm:w-auto">
             <RiFilterLine className="text-gray-500" />
             <select
@@ -884,7 +851,6 @@ export function ParticipantsPage() {
             </select>
           </div>
 
-          {/* Month Filter */}
           <div className="flex items-center gap-2 bg-white rounded-lg shadow px-3 w-full sm:w-auto">
             <RiCalendarLine className="text-gray-500" />
             <input
@@ -895,7 +861,6 @@ export function ParticipantsPage() {
             />
           </div>
 
-          {/* Type Filter */}
           <div className="flex items-center gap-2 bg-white rounded-lg shadow px-3 py-2 w-full sm:w-48">
             <select
               value={selectedType}
@@ -915,9 +880,7 @@ export function ParticipantsPage() {
         </div>
       </div>
 
-      {/* Search and Entries Row */}
       <div className="flex justify-between items-center mb-4">
-        {/* Search */}
         <div className="relative w-[300px]">
           <RiSearchLine className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
           <input
@@ -929,7 +892,6 @@ export function ParticipantsPage() {
           />
         </div>
 
-        {/* Entries Selector */}
         <div className="flex items-center gap-2 text-sm text-gray-500">
           <span>Show</span>
           <select
@@ -945,7 +907,6 @@ export function ParticipantsPage() {
         </div>
       </div>
 
-      {/* No Data Message */}
       {programs.length === 0 && (
         <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mt-4">
           <div className="flex items-center gap-2 text-amber-700">
@@ -955,10 +916,8 @@ export function ParticipantsPage() {
         </div>
       )}
 
-      {/* Error Messages */}
       <div className="mt-4">
         {selectedProgramId === 'all' ? (
-          // Show summary for all programs
           (() => {
             const { errorSummary, totalErrors } = getAllProgramsErrorSummary();
             return totalErrors > 0 ? (
@@ -982,7 +941,6 @@ export function ParticipantsPage() {
             ) : null;
           })()
         ) : (
-          // Show message for specific program
           getProgramErrors(selectedProgramId) > 0 && (
             <div className="bg-red-50 border border-red-200 rounded-lg p-4">
               <div className="flex items-center gap-2 text-red-700">
@@ -996,7 +954,6 @@ export function ParticipantsPage() {
         )}
       </div>
 
-      {/* Participants Table */}
       <div className="bg-white rounded-lg shadow overflow-hidden">
         {isImporting ? (
           <div className="flex flex-col items-center justify-center py-12">
@@ -1017,7 +974,6 @@ export function ParticipantsPage() {
           </div>
         ) : (
           <>
-            {/* Desktop Table View - Hidden on Mobile */}
             <div className="hidden md:block overflow-x-auto">
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
@@ -1058,13 +1014,11 @@ export function ParticipantsPage() {
                       <div className="text-sm font-medium text-gray-900 text-wrap">
                         {participant.attendee_name}
                         <div className="flex flex-wrap gap-1 mt-1">
-                          {/* Show error only for actual validation errors (wrong dates) */}
                           {participant.has_date_error && (
                             <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800 text-wrap">
                               {participant.date_error_message}
                             </span>
                           )}
-                          {/* Show missing check-in/out warnings */}
                           {!participant.reception_checkin && (
                             <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800">
                               Missing Check-In
@@ -1075,7 +1029,6 @@ export function ParticipantsPage() {
                               Missing Check-Out
                             </span>
                           )}
-                          {/* Show early/late warning message if exists and no validation error */}
                           {!participant.has_date_error && participant.date_error_message && (
                             <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800">
                               {participant.date_error_message}
@@ -1101,9 +1054,9 @@ export function ParticipantsPage() {
                     <td className="px-6 py-4 whitespace-nowrap text-wrap">
                       {participant.reception_checkin ? (
                         <div className="text-sm text-gray-500">
-                          <div>{format(new Date(participant.reception_checkin), 'dd MMM yyyy')}</div>
+                          <div>{formatDateTime(participant.reception_checkin)?.date}</div>
                           <div className="text-xs text-gray-400">
-                            {format(new Date(participant.reception_checkin), 'h:mm a')}
+                            {formatDateTime(participant.reception_checkin)?.time}
                           </div>
                         </div>
                       ) : (
@@ -1115,9 +1068,9 @@ export function ParticipantsPage() {
                     <td className="px-6 py-4 whitespace-nowrap text-wrap">
                       {participant.reception_checkout ? (
                         <div className="text-sm text-gray-500">
-                          <div>{format(new Date(participant.reception_checkout), 'dd MMM yyyy')}</div>
+                          <div>{formatDateTime(participant.reception_checkout)?.date}</div>
                           <div className="text-xs text-gray-400">
-                            {format(new Date(participant.reception_checkout), 'h:mm a')}
+                            {formatDateTime(participant.reception_checkout)?.time}
                           </div>
                         </div>
                       ) : (
@@ -1159,7 +1112,6 @@ export function ParticipantsPage() {
             </table>
           </div>
 
-          {/* Mobile Card View - Shown only on Mobile */}
           <div className="md:hidden">
             {paginatedParticipants.map((participant, index) => (
               <div 
@@ -1208,9 +1160,9 @@ export function ParticipantsPage() {
                     <div className="text-xs font-medium text-gray-500 mb-1">Check In</div>
                     {participant.reception_checkin ? (
                       <div className="text-sm text-gray-700">
-                        {format(new Date(participant.reception_checkin), 'dd MMM yyyy')}
+                        {formatDateTime(participant.reception_checkin)?.date}
                         <div className="text-xs text-gray-500">
-                          {format(new Date(participant.reception_checkin), 'h:mm a')}
+                          {formatDateTime(participant.reception_checkin)?.time}
                         </div>
                       </div>
                     ) : (
@@ -1224,9 +1176,9 @@ export function ParticipantsPage() {
                     <div className="text-xs font-medium text-gray-500 mb-1">Check Out</div>
                     {participant.reception_checkout ? (
                       <div className="text-sm text-gray-700">
-                        {format(new Date(participant.reception_checkout), 'dd MMM yyyy')}
+                        {formatDateTime(participant.reception_checkout)?.date}
                         <div className="text-xs text-gray-500">
-                          {format(new Date(participant.reception_checkout), 'h:mm a')}
+                          {formatDateTime(participant.reception_checkout)?.time}
                         </div>
                       </div>
                     ) : (
@@ -1237,22 +1189,18 @@ export function ParticipantsPage() {
                   </div>
                 </div>
 
-                {/* Duration */}
                 {participant.reception_checkin && participant.reception_checkout && (
                   <div className="mt-2 text-xs text-gray-500">
                     Duration: {calculateDuration(participant.reception_checkin, participant.reception_checkout)}
                   </div>
                 )}
 
-                {/* Status Tags */}
                 <div className="flex flex-wrap gap-1 mt-2">
-                  {/* Show error only for actual validation errors (wrong dates) */}
                   {participant.has_date_error && (
                     <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800 text-wrap">
                       {participant.date_error_message}
                     </span>
                   )}
-                  {/* Show early/late warning message if exists and no validation error */}
                   {!participant.has_date_error && participant.date_error_message && (
                     <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800">
                       {participant.date_error_message}
@@ -1266,7 +1214,6 @@ export function ParticipantsPage() {
       )}
     </div>
 
-    {/* Pagination */}
     {totalPages > 1 && (
       <div className="flex justify-between items-center mt-4 bg-white rounded-lg shadow px-4 py-3">
         <div className="text-sm text-gray-500">
@@ -1291,7 +1238,6 @@ export function ParticipantsPage() {
       </div>
     )}
 
-    {/* Add/Edit Modal */}
     {isModalOpen && (
       <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
         <div className="bg-white rounded-lg p-6 w-full max-w-md">
@@ -1359,6 +1305,7 @@ export function ParticipantsPage() {
                 onChange={(e) => setFormData({ ...formData, reception_checkin: e.target.value })}
                 className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-amber-500 focus:outline-none focus:ring-amber-500"
                 required
+                step="any"
               />
             </div>
 
@@ -1372,6 +1319,7 @@ export function ParticipantsPage() {
                 onChange={(e) => setFormData({ ...formData, reception_checkout: e.target.value })}
                 className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-amber-500 focus:outline-none focus:ring-amber-500"
                 required
+                step="any"
               />
             </div>
 
@@ -1422,7 +1370,6 @@ export function ParticipantsPage() {
       </div>
     )}
 
-    {/* Delete All Confirmation Modal */}
     {isDeleteAllModalOpen && (
       <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
         <div className="bg-white rounded-lg p-6 w-full max-w-md">
@@ -1466,7 +1413,6 @@ export function ParticipantsPage() {
       </div>
     )}
 
-    {/* Single Delete Confirmation Modal */}
     {isDeleteModalOpen && participantToDelete && (
       <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
         <div className="bg-white rounded-lg p-6 w-full max-w-md">
