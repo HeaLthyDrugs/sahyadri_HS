@@ -633,8 +633,8 @@ export function ParticipantsPage() {
       attendee_name: participant.attendee_name,
       program_id: participant.program_id || 'all',
       security_checkin: participant.security_checkin || "",
-      reception_checkin: formatToDateTimeLocal(participant.reception_checkin),
-      reception_checkout: formatToDateTimeLocal(participant.reception_checkout),
+      reception_checkin: participant.reception_checkin ? formatToDateTimeLocal(new Date(new Date(participant.reception_checkin).getTime() - (5.5 * 60 * 60 * 1000)).toISOString()) : "",
+      reception_checkout: participant.reception_checkout ? formatToDateTimeLocal(new Date(new Date(participant.reception_checkout).getTime() - (5.5 * 60 * 60 * 1000)).toISOString()) : "",
       security_checkout: participant.security_checkout || "",
       type: participant.type,
     });
