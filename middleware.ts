@@ -2,55 +2,68 @@ import { createMiddlewareClient } from '@supabase/auth-helpers-nextjs';
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
-export async function middleware(request: NextRequest) {
+export async function middleware(req: NextRequest) {
   const res = NextResponse.next();
-  const supabase = createMiddlewareClient({ req: request, res });
-  const path = request.nextUrl.pathname;
-
-  console.log("Middleware processing path:", path);
-
-  // Check both Supabase session and local auth
+  const supabase = createMiddlewareClient({ req, res });
   const { data: { session } } = await supabase.auth.getSession();
-  const isAuthenticated = request.cookies.get('isAuthenticated')?.value === 'true';
 
-  console.log("Auth state - Supabase session:", !!session);
-  console.log("Auth state - Cookie:", isAuthenticated);
-
-  // Protected routes check
-  if (path.startsWith('/dashboard')) {
-    console.log("Checking dashboard access...");
-    if (!session && !isAuthenticated) {
-      console.log("Access denied, redirecting to login");
-      return NextResponse.redirect(new URL('/auth/login', request.url));
-    }
-    console.log("Dashboard access granted");
-    return res;
+  // If user is not logged in and trying to access protected route
+  if (!session && req.nextUrl.pathname.startsWith('/dashboard')) {
+    const redirectUrl = req.nextUrl.clone();
+    redirectUrl.pathname = '/auth/login';
+    return NextResponse.redirect(redirectUrl);
   }
 
-  // Auth routes check
-  if (path.startsWith('/auth')) {
-    console.log("Processing auth route...");
-    // Allow direct access to login/signin pages when not authenticated
-    if (path === '/auth/login' || path === '/auth/signin') {
-      if (session || isAuthenticated) {
-        console.log("User already authenticated, redirecting to dashboard");
-        return NextResponse.redirect(new URL('/dashboard', request.url));
-      }
-      console.log("Allowing access to login page");
-      return res;
+  // If user is logged in
+  if (session) {
+    // Get user's profile with role and modules
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select(`
+        *,
+        roles (
+          name,
+          role_modules (
+            modules (
+              path
+            )
+          )
+        )
+      `)
+      .eq('id', session.user.id)
+      .single();
+
+    // If no profile or role found, redirect to login
+    if (!profile?.roles) {
+      const redirectUrl = req.nextUrl.clone();
+      redirectUrl.pathname = '/auth/login';
+      return NextResponse.redirect(redirectUrl);
     }
 
-    // Redirect base /auth to login
-    if (path === '/auth') {
-      console.log("Redirecting /auth to /auth/login");
-      return NextResponse.redirect(new URL('/auth/login', request.url));
+    // Check if user has access to the current path
+    const currentPath = req.nextUrl.pathname;
+    const allowedPaths = profile.roles.role_modules
+      .map((rm: any) => rm.modules.path)
+      .filter(Boolean);
+
+    // Always allow access to dashboard home
+    allowedPaths.push('/dashboard');
+
+    // If trying to access unauthorized path
+    if (!allowedPaths.some((path: string) => currentPath.startsWith(path))) {
+      // Redirect to dashboard if unauthorized
+      const redirectUrl = req.nextUrl.clone();
+      redirectUrl.pathname = '/dashboard';
+      return NextResponse.redirect(redirectUrl);
     }
   }
 
-  console.log("Middleware complete, proceeding with request");
   return res;
 }
 
 export const config = {
-  matcher: ['/auth/:path*', '/dashboard/:path*'],
+  matcher: [
+    '/dashboard/:path*',
+    '/auth/:path*',
+  ],
 }; 

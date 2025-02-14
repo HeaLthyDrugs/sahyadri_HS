@@ -1,9 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import Image from "next/image";
-import { FiChevronDown, FiChevronRight, FiMenu, FiX } from "react-icons/fi";
+import { FiChevronDown, FiChevronRight, FiMenu, FiX, FiChevronUp } from "react-icons/fi";
 import { 
   RiDashboardLine, 
   RiArchiveLine,
@@ -22,9 +22,12 @@ import {
   RiShieldUserLine,
   RiUserSettingsLine,
   RiMailLine,
-  RiAppsLine
+  RiAppsLine,
+  RiUser3Line
 } from "react-icons/ri";
 import { auth } from "@/lib/auth";
+import { supabase } from "@/lib/supabase";
+import Link from "next/link";
 
 interface MenuItem {
   title: string;
@@ -32,6 +35,19 @@ interface MenuItem {
   items?: { name: string; path: string; icon: React.ReactNode }[];
   path?: string;
 }
+
+interface UserProfile {
+  full_name: string;
+  role_name: string;
+}
+
+interface ProfileResponse {
+  full_name: string;
+  roles: {
+    name: string;
+  }[];
+}
+
 
 export default function DashboardLayout({
   children,
@@ -42,6 +58,39 @@ export default function DashboardLayout({
   const pathname = usePathname();
   const [openMenus, setOpenMenus] = useState<string[]>([]);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
+  const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
+
+  useEffect(() => {
+    const fetchUserProfile = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user) {
+          const { data } = await supabase
+            .from('profiles')
+            .select(`
+              full_name,
+              roles!inner (
+                name
+              )
+            `)
+            .eq('id', session.user.id)
+            .single();
+
+          if (data && Array.isArray(data.roles) && data.roles.length > 0) {
+            setUserProfile({
+              full_name: data.full_name,
+              role_name: data.roles[0].name
+            });
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching user profile:', error);
+      }
+    };
+
+    fetchUserProfile();
+  }, []);
 
   const menuItems: MenuItem[] = [
     {
@@ -252,15 +301,48 @@ export default function DashboardLayout({
             </ul>
           </nav>
 
-          {/* Logout */}
-          <div className="p-4 border-t">
-            <button
-              onClick={handleLogout}
-              className="w-full px-4 py-2 text-sm text-red-600 hover:bg-red-50 rounded-lg flex items-center gap-2"
-            >
-              <RiLogoutBoxLine className="w-4 h-4" />
-              Logout
-            </button>
+          {/* Profile Menu */}
+          <div className="absolute bottom-0 left-0 right-0 p-4 border-t bg-white">
+            <div className="relative">
+              <button
+                onClick={() => setIsProfileMenuOpen(!isProfileMenuOpen)}
+                className="flex items-center justify-between w-full p-3 text-gray-900 rounded-lg hover:bg-gray-100 group transition-colors duration-200"
+              >
+                <span className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-full bg-amber-100 flex items-center justify-center">
+                    <RiUser3Line className="w-4 h-4 text-amber-600" />
+                  </div>
+                  <div className="flex flex-col items-start">
+                    <span className="text-sm font-medium">{userProfile?.full_name || 'Profile'}</span>
+                    <span className="text-xs text-gray-500">{userProfile?.role_name}</span>
+                  </div>
+                </span>
+                {isProfileMenuOpen ? (
+                  <FiChevronUp className="w-4 h-4 text-gray-500" />
+                ) : (
+                  <FiChevronDown className="w-4 h-4 text-gray-500" />
+                )}
+              </button>
+
+              {isProfileMenuOpen && (
+                <div className="absolute bottom-full left-0 w-full mb-2 bg-white rounded-lg shadow-lg border border-gray-100 py-1">
+                  <Link
+                    href="/dashboard/profile"
+                    className="flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors duration-200"
+                  >
+                    <RiUserSettingsLine className="w-4 h-4" />
+                    View Profile
+                  </Link>
+                  <button
+                    onClick={handleLogout}
+                    className="w-full flex items-center gap-2 text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors duration-200"
+                  >
+                    <RiLogoutBoxLine className="w-4 h-4" />
+                    Logout
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>

@@ -345,8 +345,8 @@ export function ParticipantsPage() {
         type: formData.type,
         has_date_error: !dateValidation.isValid,
         date_error_message: dateValidation.isValid ? undefined : dateValidation.message,
-        reception_checkin: formatToTimestamp(formData.reception_checkin),
-        reception_checkout: formatToTimestamp(formData.reception_checkout),
+        reception_checkin: (formData.reception_checkin),
+        reception_checkout: (formData.reception_checkout),
       };
 
       if (editingParticipant) {
@@ -892,18 +892,29 @@ export function ParticipantsPage() {
           />
         </div>
 
-        <div className="flex items-center gap-2 text-sm text-gray-500">
-          <span>Show</span>
-          <select
-            value={itemsPerPage}
-            onChange={handleEntriesChange}
-            className="border border-gray-300 rounded-md px-2 py-1 focus:outline-none focus:ring-2 focus:ring-amber-500"
+        <div className="flex items-center gap-4">
+          <button
+            onClick={() => setIsDeleteAllModalOpen(true)}
+            className="flex items-center gap-2 px-3 py-2 text-red-600 bg-red-50 rounded-lg hover:bg-red-100 transition-colors text-sm"
+            disabled={participants.length === 0}
           >
-            {entriesOptions.map(option => (
-              <option key={option} value={option}>{option}</option>
-            ))}
-          </select>
-          <span>entries</span>
+            <RiDeleteBinLine className="w-4 h-4" />
+            Delete All
+          </button>
+
+          <div className="flex items-center gap-2 text-sm text-gray-500">
+            <span>Show</span>
+            <select
+              value={itemsPerPage}
+              onChange={handleEntriesChange}
+              className="border border-gray-300 rounded-md px-2 py-1 focus:outline-none focus:ring-2 focus:ring-amber-500"
+            >
+              {entriesOptions.map(option => (
+                <option key={option} value={option}>{option}</option>
+              ))}
+            </select>
+            <span>entries</span>
+          </div>
         </div>
       </div>
 

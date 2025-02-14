@@ -85,23 +85,23 @@ BEGIN
                     (DATE(p.reception_checkin) = d.date AND 
                      (
                          -- For slots that contain or start after check-in time
-                         (d.date + pr.slot_start::time >= p.reception_checkin)
+                         (d.date + pr.slot_start::time >= p.reception_checkin::timestamp)
                          OR 
                          -- For slots that span over check-in time
-                         (d.date + pr.slot_start::time < p.reception_checkin AND 
-                          d.date + pr.slot_end::time > p.reception_checkin)
+                         (d.date + pr.slot_start::time < p.reception_checkin::timestamp AND 
+                          d.date + pr.slot_end::time > p.reception_checkin::timestamp)
                      ))
                     OR
                     -- For check-out day
                     (DATE(p.reception_checkout) = d.date AND 
                      (
                          -- For slots that end before or at check-out time
-                         (d.date + pr.slot_end::time <= p.reception_checkout AND
-                          d.date + pr.slot_start::time < p.reception_checkout)
+                         (d.date + pr.slot_end::time <= p.reception_checkout::timestamp AND
+                          d.date + pr.slot_start::time < p.reception_checkout::timestamp)
                          OR
                          -- For slots that span over check-out time
-                         (d.date + pr.slot_start::time < p.reception_checkout AND 
-                          d.date + pr.slot_end::time > p.reception_checkout)
+                         (d.date + pr.slot_start::time < p.reception_checkout::timestamp AND 
+                          d.date + pr.slot_end::time > p.reception_checkout::timestamp)
                      ))
                     OR
                     -- For days in between
@@ -146,8 +146,8 @@ BEGIN
                     END IF;
 
                     -- Set check-in/out times for comparison
-                    checkin_time := NEW.reception_checkin;
-                    checkout_time := NEW.reception_checkout;
+                    checkin_time := NEW.reception_checkin::timestamp;
+                    checkout_time := NEW.reception_checkout::timestamp;
 
                     -- Determine if this slot should be counted
                     IF check_date = participant_start_date THEN

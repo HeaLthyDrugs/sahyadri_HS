@@ -1,66 +1,53 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
-import Cookies from 'js-cookie';
+import { createClientComponentClient } from "@supabase/auth-helpers-nextjs";
+import { toast } from "react-hot-toast";
 
 export function LoginForm() {
   const [credentials, setCredentials] = useState({
     email: "",
     password: "",
   });
-  const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const router = useRouter();
-
-  // Check initial auth state
-  useEffect(() => {
-    console.log("Checking initial auth state...");
-    const isAuthenticated = localStorage.getItem("isAuthenticated");
-    console.log("Initial auth state:", isAuthenticated);
-  }, []);
+  const supabase = createClientComponentClient();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    console.log("Login attempt started...");
-    console.log("Email:", credentials.email);
     setLoading(true);
-    setError("");
 
     try {
-      console.log("Validating credentials...");
-      if (credentials.email === "admin@example.com" && credentials.password === "admin123") {
-        console.log("Credentials valid, setting authentication...");
-        
-        // Set authentication in both localStorage and cookie
-        localStorage.setItem("isAuthenticated", "true");
-        Cookies.set('isAuthenticated', 'true', { expires: 7 });
-        
-        console.log("Authentication state set in localStorage and cookies");
-        console.log("localStorage auth:", localStorage.getItem("isAuthenticated"));
-        console.log("Cookie auth:", Cookies.get('isAuthenticated'));
-        
-        // Add a small delay to ensure state is set
-        console.log("Waiting for state to settle...");
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        
-        console.log("Attempting redirect to dashboard...");
-        // Try router.push first, fallback to window.location
-        try {
-          await router.push('/dashboard');
-          console.log("Router push completed");
-        } catch (routerError) {
-          console.log("Router push failed, using window.location", routerError);
-          window.location.href = "/dashboard";
-        }
-      } else {
-        console.log("Invalid credentials provided");
-        setError("Invalid credentials");
+      // Sign in with Supabase Auth
+      const { data: { user }, error: signInError } = await supabase.auth.signInWithPassword({
+        email: credentials.email,
+        password: credentials.password,
+      });
+
+      if (signInError) throw signInError;
+
+      // Get user's profile with role
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('*, roles(name)')
+        .eq('id', user?.id)
+        .single();
+
+      if (profileError) throw profileError;
+
+      if (!profile.role_id) {
+        // If this is the first user (no role assigned), run init_admin function
+        const { error: initError } = await supabase.rpc('init_admin');
+        if (initError) throw initError;
       }
-    } catch (err) {
-      console.error("Login process error:", err);
-      setError("An error occurred. Please try again.");
+
+      // Redirect to dashboard
+      router.push('/dashboard');
+      router.refresh();
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to sign in');
     } finally {
       setLoading(false);
     }
@@ -78,12 +65,6 @@ export function LoginForm() {
         />
         <h1 className="text-2xl font-bold text-gray-900">Admin Login</h1>
       </div>
-
-      {error && (
-        <div className="bg-red-50 text-red-500 p-3 rounded-md mb-4">
-          {error}
-        </div>
-      )}
 
       <form onSubmit={handleSubmit} className="space-y-6">
         <div>
