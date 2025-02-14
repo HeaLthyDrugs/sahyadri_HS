@@ -94,15 +94,6 @@ export function ParticipantsPage() {
   const [participantToDelete, setParticipantToDelete] = useState<Participant | null>(null);
   const entriesOptions = [10, 25, 50, 100];
 
-  const formatDateTime = (dateStr: string | null | undefined) => {
-    if (!dateStr) return null;
-    const date = new Date(dateStr);
-    return {
-      date: format(date, 'dd MMM yyyy'),
-      time: format(date, 'h:mm a')
-    };
-  };
-
   const calculateDuration = (checkin: string, checkout: string): string => {
     try {
       const start = new Date(checkin);
@@ -317,14 +308,27 @@ export function ParticipantsPage() {
     ).length;
   };
 
-  const formatDate = (dateStr: string | null | undefined) => {
-    if (!dateStr) return null;
-    const date = new Date(dateStr);
-    const istDate = new Date(date.getTime() + (5.5 * 60 * 60 * 1000));
-    return {
-      date: format(istDate, 'dd MMM yyyy'),
-      time: format(istDate, 'h:mm a')
-    };
+  const formatDisplayDateTime = (dateString: string | null): string => {
+    if (!dateString) return '';
+    try {
+      // Parse the UTC date string and adjust for IST
+      const utcDate = new Date(dateString);
+      // Subtract 5.5 hours to compensate for IST offset that was added when saving
+      const localDate = new Date(utcDate.getTime() - (5.5 * 60 * 60 * 1000));
+      
+      const day = localDate.getDate().toString().padStart(2, '0');
+      const month = (localDate.getMonth() + 1).toString().padStart(2, '0');
+      const year = localDate.getFullYear();
+      const hours = localDate.getHours();
+      const minutes = localDate.getMinutes().toString().padStart(2, '0');
+      const ampm = hours >= 12 ? 'PM' : 'AM';
+      const displayHours = hours % 12 || 12;
+      
+      return `${day}/${month}/${year} ${displayHours}:${minutes}${ampm}`;
+    } catch (error) {
+      console.error('Error formatting date:', error);
+      return dateString;
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -334,19 +338,25 @@ export function ParticipantsPage() {
     try {
       const dateValidation = validateDates(formData.reception_checkin, formData.reception_checkout);
       
-      // Format time to store in Supabase with IST timezone
-      const formatToTimestamp = (dateTimeStr: string) => {
-        return dateTimeStr.replace('T', ' ') + ':00+05:30';
+      // Convert local datetime-local input to correct timezone for Supabase
+      const formatForSupabase = (dateTimeLocal: string): string => {
+        const date = new Date(dateTimeLocal);
+        // Add IST offset (5 hours and 30 minutes) to compensate for UTC conversion
+        const istDate = new Date(date.getTime() + (5.5 * 60 * 60 * 1000));
+        return istDate.toISOString();
       };
 
+      console.log('Raw Check-in:', formData.reception_checkin);
+      console.log('Raw Check-out:', formData.reception_checkout);
+      
       const participantData: Partial<Participant> = {
         attendee_name: formData.attendee_name,
         program_id: formData.program_id === 'all' ? undefined : formData.program_id,
         type: formData.type,
         has_date_error: !dateValidation.isValid,
         date_error_message: dateValidation.isValid ? undefined : dateValidation.message,
-        reception_checkin: (formData.reception_checkin),
-        reception_checkout: (formData.reception_checkout),
+        reception_checkin: formatForSupabase(formData.reception_checkin),
+        reception_checkout: formatForSupabase(formData.reception_checkout),
       };
 
       if (editingParticipant) {
@@ -1065,10 +1075,7 @@ export function ParticipantsPage() {
                     <td className="px-6 py-4 whitespace-nowrap text-wrap">
                       {participant.reception_checkin ? (
                         <div className="text-sm text-gray-500">
-                          <div>{formatDateTime(participant.reception_checkin)?.date}</div>
-                          <div className="text-xs text-gray-400">
-                            {formatDateTime(participant.reception_checkin)?.time}
-                          </div>
+                          {formatDisplayDateTime(participant.reception_checkin)}
                         </div>
                       ) : (
                         <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-50 text-red-700">
@@ -1079,10 +1086,7 @@ export function ParticipantsPage() {
                     <td className="px-6 py-4 whitespace-nowrap text-wrap">
                       {participant.reception_checkout ? (
                         <div className="text-sm text-gray-500">
-                          <div>{formatDateTime(participant.reception_checkout)?.date}</div>
-                          <div className="text-xs text-gray-400">
-                            {formatDateTime(participant.reception_checkout)?.time}
-                          </div>
+                          {formatDisplayDateTime(participant.reception_checkout)}
                         </div>
                       ) : (
                         <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-50 text-red-700">
@@ -1171,10 +1175,7 @@ export function ParticipantsPage() {
                     <div className="text-xs font-medium text-gray-500 mb-1">Check In</div>
                     {participant.reception_checkin ? (
                       <div className="text-sm text-gray-700">
-                        {formatDateTime(participant.reception_checkin)?.date}
-                        <div className="text-xs text-gray-500">
-                          {formatDateTime(participant.reception_checkin)?.time}
-                        </div>
+                        {formatDisplayDateTime(participant.reception_checkin)}
                       </div>
                     ) : (
                       <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-50 text-red-700">
@@ -1187,10 +1188,7 @@ export function ParticipantsPage() {
                     <div className="text-xs font-medium text-gray-500 mb-1">Check Out</div>
                     {participant.reception_checkout ? (
                       <div className="text-sm text-gray-700">
-                        {formatDateTime(participant.reception_checkout)?.date}
-                        <div className="text-xs text-gray-500">
-                          {formatDateTime(participant.reception_checkout)?.time}
-                        </div>
+                        {formatDisplayDateTime(participant.reception_checkout)}
                       </div>
                     ) : (
                       <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-50 text-red-700">
