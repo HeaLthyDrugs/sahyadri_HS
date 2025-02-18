@@ -5,6 +5,8 @@ import { RiPrinterLine, RiDownloadLine, RiCalendarLine, RiFileTextLine } from 'r
 import Image from 'next/image';
 import InvoiceForm from './invoice-form';
 
+export const dynamic = 'force-dynamic';
+
 interface Package {
   id: string;
   name: string;
@@ -140,8 +142,17 @@ async function generateInvoiceData(packageId: string, month: string) {
         id: entry.id,
         entry_date: entry.entry_date,
         quantity: entry.quantity || 0,
-        programs: entry.programs,
-        products: entry.products
+        programs: {
+          id: entry.programs.id,
+          name: entry.programs.name,
+          customer_name: entry.programs.customer_name
+        },
+        products: {
+          id: entry.products.id,
+          name: entry.products.name,
+          rate: entry.products.rate,
+          index: entry.products.index
+        }
       });
     }
     return acc;

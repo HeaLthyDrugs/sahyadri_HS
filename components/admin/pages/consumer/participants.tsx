@@ -32,6 +32,10 @@ interface Participant {
   type: 'participant' | 'guest' | 'other' | 'driver';
   has_date_error?: boolean;
   date_error_message?: string;
+  attendance_status?: Array<{
+    type: 'early-arrival' | 'late-departure';
+    message: string;
+  }>;
 }
 
 interface FormData {
@@ -148,20 +152,6 @@ export function ParticipantsPage() {
 
   const fetchParticipants = async () => {
     try {
-      const monthDate = new Date(selectedMonth);
-      const monthStart = startOfMonth(monthDate);
-      const monthEnd = endOfMonth(monthDate);
-
-      const { data: monthPrograms, error: programError } = await supabase
-        .from('programs')
-        .select('id')
-        .lte('start_date', monthEnd.toISOString())
-        .gte('end_date', monthStart.toISOString());
-
-      if (programError) throw programError;
-
-      const programIds = monthPrograms?.map(p => p.id) || [];
-
       let query = supabase
         .from('participants')
         .select(`
@@ -176,16 +166,35 @@ export function ParticipantsPage() {
         `)
         .order('created_at', { ascending: false });
 
+      // If a program is selected, filter by program regardless of month
       if (selectedProgramId !== 'all') {
         query = query.eq('program_id', selectedProgramId);
-      } else if (programIds.length > 0) {
-        query = query.in('program_id', programIds);
+      }
+      // Only apply additional month filtering if a month is selected
+      else if (selectedMonth && selectedMonth.trim() !== '') {
+        const monthDate = new Date(selectedMonth);
+        if (!isNaN(monthDate.getTime())) {
+          const monthStart = startOfMonth(monthDate);
+          const monthEnd = endOfMonth(monthDate);
+
+          const { data: monthPrograms, error: programError } = await supabase
+            .from('programs')
+            .select('id')
+            .lte('start_date', monthEnd.toISOString())
+            .gte('end_date', monthStart.toISOString());
+
+          if (programError) throw programError;
+
+          const programIds = monthPrograms?.map(p => p.id) || [];
+          if (programIds.length > 0) {
+            query = query.in('program_id', programIds);
+          }
+        }
       }
 
       const { data, error } = await query;
-
       if (error) throw error;
-      
+
       const transformedData = (data || []).map(participant => {
         const transformed = {
           ...participant,
@@ -202,44 +211,79 @@ export function ParticipantsPage() {
           return transformed;
         }
 
-        const checkinDate = new Date(transformed.reception_checkin);
-        const checkoutDate = new Date(transformed.reception_checkout);
-        
-        if (checkoutDate < checkinDate) {
-          transformed.has_date_error = true;
-          transformed.date_error_message = `Check-out date (${format(checkoutDate, 'dd MMM yyyy')}) is before check-in date (${format(checkinDate, 'dd MMM yyyy')})`;
-          return transformed;
-        }
-
-        if (transformed.program) {
-          const attendanceStatus = getAttendanceStatus(transformed, transformed.program);
-          if (attendanceStatus && attendanceStatus.length > 0) {
+        try {
+          const checkinDate = new Date(transformed.reception_checkin);
+          const checkoutDate = new Date(transformed.reception_checkout);
+          
+          if (isNaN(checkinDate.getTime()) || isNaN(checkoutDate.getTime())) {
             transformed.has_date_error = true;
-            transformed.date_error_message = attendanceStatus.map(status => status.message).join(', ');
+            transformed.date_error_message = "Invalid date format";
+            return transformed;
           }
+          
+          if (checkoutDate < checkinDate) {
+            transformed.has_date_error = true;
+            transformed.date_error_message = `Check-out date (${format(checkoutDate, 'dd MMM yyyy')}) is before check-in date (${format(checkinDate, 'dd MMM yyyy')})`;
+            return transformed;
+          }
+
+          transformed.has_date_error = false;
+          transformed.date_error_message = undefined;
+
+          if (transformed.program) {
+            const attendanceStatus = getAttendanceStatus(transformed, transformed.program);
+            if (attendanceStatus && attendanceStatus.length > 0) {
+              transformed.date_error_message = attendanceStatus.map(status => status.message).join(', ');
+            }
+          }
+        } catch (error) {
+          console.error('Error processing dates:', error);
+          transformed.has_date_error = true;
+          transformed.date_error_message = "Error processing dates";
         }
 
         return transformed;
       });
 
-      const filteredData = transformedData.filter(participant => {
-        if (!participant.reception_checkin || !participant.reception_checkout) {
-          return programIds.includes(participant.program_id || '');
+      // Only filter by month if a month is selected
+      if (selectedMonth && selectedMonth.trim() !== '') {
+        const monthDate = new Date(selectedMonth);
+        if (!isNaN(monthDate.getTime())) {
+          const monthStart = startOfMonth(monthDate);
+          const monthEnd = endOfMonth(monthDate);
+
+          const filteredData = transformedData.filter(participant => {
+            if (!participant.reception_checkin || !participant.reception_checkout) {
+              return true; // Keep participants with missing dates
+            }
+
+            try {
+              const checkinDate = new Date(participant.reception_checkin);
+              const checkoutDate = new Date(participant.reception_checkout);
+
+              if (isNaN(checkinDate.getTime()) || isNaN(checkoutDate.getTime())) {
+                return true; // Keep participants with invalid dates
+              }
+
+              return (
+                (checkinDate >= monthStart && checkinDate <= monthEnd) ||
+                (checkoutDate >= monthStart && checkoutDate <= monthEnd) ||
+                (checkinDate <= monthEnd && checkoutDate >= monthStart)
+              );
+            } catch (error) {
+              console.error('Error filtering by date:', error);
+              return true; // Keep participants with date processing errors
+            }
+          });
+
+          setParticipants(filteredData);
+        } else {
+          setParticipants(transformedData);
         }
-
-        const checkinDate = new Date(participant.reception_checkin);
-        const checkoutDate = new Date(participant.reception_checkout);
-
-        const stayOverlapsMonth = (
-          (checkinDate >= monthStart && checkinDate <= monthEnd) ||
-          (checkoutDate >= monthStart && checkoutDate <= monthEnd) ||
-          (checkinDate <= monthEnd && checkoutDate >= monthStart)
-        );
-
-        return stayOverlapsMonth;
-      });
-
-      setParticipants(filteredData);
+      } else {
+        // If no month is selected, use all transformed data
+        setParticipants(transformedData);
+      }
     } catch (error) {
       console.error('Error fetching participants:', error);
       toast.error('Failed to fetch participants');
@@ -313,6 +357,9 @@ export function ParticipantsPage() {
     try {
       // Parse the UTC date string and adjust for IST
       const utcDate = new Date(dateString);
+      if (isNaN(utcDate.getTime())) {
+        return 'Invalid Date';
+      }
       // Subtract 5.5 hours to compensate for IST offset that was added when saving
       const localDate = new Date(utcDate.getTime() - (5.5 * 60 * 60 * 1000));
       
@@ -327,7 +374,7 @@ export function ParticipantsPage() {
       return `${day}/${month}/${year} ${displayHours}:${minutes}${ampm}`;
     } catch (error) {
       console.error('Error formatting date:', error);
-      return dateString;
+      return 'Invalid Date';
     }
   };
 
@@ -768,32 +815,42 @@ export function ParticipantsPage() {
       return null;
     }
 
+    // Create dates and adjust for IST offset
     const programStart = new Date(program.start_date);
     const programEnd = new Date(program.end_date);
     const checkinDate = new Date(participant.reception_checkin);
     const checkoutDate = new Date(participant.reception_checkout);
 
-    programStart.setHours(0, 0, 0, 0);
-    programEnd.setHours(23, 59, 59, 999);
-    checkinDate.setHours(0, 0, 0, 0);
-    checkoutDate.setHours(23, 59, 59, 999);
+    // Subtract 5.5 hours to compensate for IST offset that was added when saving
+    const localCheckoutDate = new Date(checkoutDate.getTime() - (5.5 * 60 * 60 * 1000));
+    const localProgramEnd = new Date(programEnd.getTime());
+    localProgramEnd.setHours(23, 59, 59, 999);
 
     const tags = [];
 
-    if (checkinDate < programStart) {
-      const daysEarly = Math.round((programStart.getTime() - checkinDate.getTime()) / (1000 * 60 * 60 * 24));
+    // For early arrival, compare dates at start of day
+    const programStartDay = new Date(programStart.getTime() - (5.5 * 60 * 60 * 1000));
+    const checkinDay = new Date(checkinDate.getTime() - (5.5 * 60 * 60 * 1000));
+    programStartDay.setHours(0, 0, 0, 0);
+    checkinDay.setHours(0, 0, 0, 0);
+
+    if (checkinDay < programStartDay) {
+      const daysEarly = Math.round((programStartDay.getTime() - checkinDay.getTime()) / (1000 * 60 * 60 * 24));
       tags.push({
         type: 'early-arrival',
         message: `Arrived ${daysEarly} day${daysEarly > 1 ? 's' : ''} early`
       });
     }
 
-    if (checkoutDate > programEnd) {
-      const daysLate = Math.round((checkoutDate.getTime() - programEnd.getTime()) / (1000 * 60 * 60 * 24));
-      tags.push({
-        type: 'late-departure',
-        message: `Left ${daysLate} day${daysLate > 1 ? 's' : ''} after program end`
-      });
+    // For late departure, compare with program end at 11:59:59 PM
+    if (localCheckoutDate > localProgramEnd) {
+      const daysLate = Math.ceil((localCheckoutDate.getTime() - localProgramEnd.getTime()) / (1000 * 60 * 60 * 24));
+      if (daysLate > 0) {
+        tags.push({
+          type: 'late-departure',
+          message: `Left ${daysLate} day${daysLate > 1 ? 's' : ''} after program end`
+        });
+      }
     }
 
     return tags;
@@ -868,7 +925,16 @@ export function ParticipantsPage() {
               value={selectedMonth}
               onChange={(e) => setSelectedMonth(e.target.value)}
               className="border-none focus:ring-0 text-sm"
+              placeholder="All months"
             />
+            {selectedMonth && (
+              <button
+                onClick={() => setSelectedMonth('')}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <RiCloseLine className="w-4 h-4" />
+              </button>
+            )}
           </div>
 
           <div className="flex items-center gap-2 bg-white rounded-lg shadow px-3 py-2 w-full sm:w-48">
@@ -1035,20 +1101,28 @@ export function ParticipantsPage() {
                       <div className="text-sm font-medium text-gray-900 text-wrap">
                         {participant.attendee_name}
                         <div className="flex flex-wrap gap-1 mt-1">
-                          {participant.has_date_error && (
-                            <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800 text-wrap">
-                              {participant.date_error_message}
-                            </span>
-                          )}
-                          {!participant.reception_checkin && (
+                          {!participant.reception_checkin && !participant.reception_checkout ? (
                             <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800">
-                              Missing Check-In
+                              Missing both Check-In and Check-Out
                             </span>
-                          )}
-                          {!participant.reception_checkout && (
-                            <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800">
-                              Missing Check-Out
-                            </span>
+                          ) : (
+                            <>
+                              {participant.has_date_error && (
+                                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800 text-wrap">
+                                  {participant.date_error_message}
+                                </span>
+                              )}
+                              {!participant.reception_checkin && (
+                                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800">
+                                  Missing Check-In
+                                </span>
+                              )}
+                              {!participant.reception_checkout && (
+                                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800">
+                                  Missing Check-Out
+                                </span>
+                              )}
+                            </>
                           )}
                           {!participant.has_date_error && participant.date_error_message && (
                             <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800">
@@ -1205,10 +1279,28 @@ export function ParticipantsPage() {
                 )}
 
                 <div className="flex flex-wrap gap-1 mt-2">
-                  {participant.has_date_error && (
-                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800 text-wrap">
-                      {participant.date_error_message}
+                  {!participant.reception_checkin && !participant.reception_checkout ? (
+                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800">
+                      Missing both Check-In and Check-Out
                     </span>
+                  ) : (
+                    <>
+                      {participant.has_date_error && (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800 text-wrap">
+                          {participant.date_error_message}
+                        </span>
+                      )}
+                      {!participant.reception_checkin && (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800">
+                          Missing Check-In
+                        </span>
+                      )}
+                      {!participant.reception_checkout && (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800">
+                          Missing Check-Out
+                        </span>
+                      )}
+                    </>
                   )}
                   {!participant.has_date_error && participant.date_error_message && (
                     <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800">
