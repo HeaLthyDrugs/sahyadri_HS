@@ -220,7 +220,7 @@ const ProductSearch = ({
   };
 
   return (
-    <div className="mb-6">
+    <div className="mb-6 relative">
       {/* Search input with suggestions */}
       <div className="relative">
         <div className="relative">
@@ -242,12 +242,11 @@ const ProductSearch = ({
 
         {/* Suggestions dropdown */}
         {showSuggestions && searchQuery && (
-          <div className="absolute z-[400] w-full max-w-md mt-1 bg-white border rounded-md shadow-lg max-h-60 overflow-auto">
+          <div className="absolute z-[600] w-full max-w-md mt-1 bg-white border rounded-md shadow-lg max-h-60 overflow-auto">
             {filteredProducts.map((product, index) => (
               <button
                 key={product.id}
-                className={`w-full px-4 py-2 text-left hover:bg-gray-50 ${index === selectedIndex ? 'bg-amber-50' : ''
-                  }`}
+                className={`w-full px-4 py-2 text-left hover:bg-gray-50 ${index === selectedIndex ? 'bg-amber-50' : ''}`}
                 onClick={() => {
                   onProductSelect(product);
                   setSearchQuery("");
@@ -633,7 +632,7 @@ export function BillingEntriesPage() {
         return;
       }
 
-      // Update local state first for immediate feedback
+      // Update local state for immediate feedback
       setEntryData(prev => ({
         ...prev,
         [date]: {
@@ -641,76 +640,15 @@ export function BillingEntriesPage() {
           [productId]: numericValue
         }
       }));
-
-      // Get participants consuming this product on this date
-      const participants = await fetchParticipantConsumptions(
-        selectedProgram,
-        new Date(date)
-      );
-
-      // If the new quantity doesn't match participant count, show warning
-      if (participants.length !== numericValue) {
-        toast(
-          `Warning: Entry quantity (${numericValue}) doesn't match participant count (${participants.length})`,
-          {
-            icon: '⚠️',
-            duration: 4000,
-          }
-        );
-      }
     } catch (error) {
       console.error('Error updating quantity:', error);
-      toast.error('Failed to update quantity');
     }
   };
 
-  // Add this function to show participant details
+  // Modify showParticipantDetails to do nothing when cell is clicked
   const showParticipantDetails = async (date: string, productId: string) => {
-    try {
-      const participants = await fetchParticipantConsumptions(
-        selectedProgram,
-        new Date(date)
-      );
-
-      if (participants.length === 0) {
-        toast(
-          'No participants consuming this product at this time',
-          {
-            icon: 'ℹ️',
-            duration: 4000,
-          }
-        );
-        return;
-      }
-
-      // Format participant details
-      const details = participants.map(p => ({
-        name: p.attendee_name,
-        type: p.type,
-        checkin: format(new Date(p.reception_checkin), 'dd MMM yyyy HH:mm'),
-        checkout: format(new Date(p.reception_checkout), 'dd MMM yyyy HH:mm')
-      }));
-
-      // Show details in toast
-      toast.custom((t: Toast) => (
-        <div className="bg-white rounded-lg shadow-lg p-4 max-w-md">
-          <h3 className="font-medium mb-2">Participant Details</h3>
-          <div className="max-h-60 overflow-auto">
-            {details.map((detail, index) => (
-              <div key={index} className="mb-2 pb-2 border-b last:border-b-0">
-                <div className="font-medium">{detail.name}</div>
-                <div className="text-sm text-gray-500">
-                  {detail.type} • {detail.checkin} to {detail.checkout}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      ), { duration: 5000 });
-    } catch (error) {
-      console.error('Error showing participant details:', error);
-      toast.error('Failed to load participant details');
-    }
+    // Remove the participant details display functionality
+    return;
   };
 
   // Modify the keyboard shortcuts effect
@@ -992,19 +930,6 @@ export function BillingEntriesPage() {
   return (
     <div className={`${isFullScreenMode ? 'fixed inset-0 bg-white z-50' : 'p-2 sm:p-4'}`}>
       {/* Toggle Full Screen and Save Button Container */}
-      <div className="fixed top-2 sm:top-4 right-2 sm:right-4 z-50 flex items-center gap-2 sm:gap-4">
-        <button
-          onClick={() => setIsFullScreenMode(!isFullScreenMode)}
-          className="bg-amber-500 text-white px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg shadow-lg hover:bg-amber-600 flex items-center gap-2 text-sm sm:text-base"
-        >
-          {isFullScreenMode ? (
-            <>Exit Edit Mode <IoExitOutline /></>
-          ) : (
-            <>Edit Mode <CiEdit /></>
-          )}
-        </button>
-      </div>
-
       <div className={`${isFullScreenMode ? 'h-screen flex flex-col overflow-hidden' : ''}`}>
         {/* Filter Section - Hide in full screen mode */}
         {!isFullScreenMode && (
@@ -1060,25 +985,38 @@ export function BillingEntriesPage() {
           `}>
             {/* Search Component - Sticky in full screen mode */}
             <div className={`
-              ${isFullScreenMode ? 'sticky top-14 bg-white z-[300] py-2 sm:py-4 border-b' : ''}
+              ${isFullScreenMode ? 'sticky top-14 bg-white z-[400] py-2 sm:py-4 border-b' : ''}
+              relative
             `}>
-              <ProductSearch
-                products={products}
-                selectedProducts={selectedProducts}
-                onProductSelect={handleProductSelect}
-                onProductRemove={handleProductRemove}
-              />
-            </div>
-
-            <div className="flex justify-end mb-2">
-              <button
-                onClick={handleSave}
-                className="bg-green-600 text-white px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg shadow-lg hover:bg-green-700 flex items-center gap-2 text-sm sm:text-base"
-
-              >
-                <RiSave3Line className="w-4 h-4 sm:w-5 sm:h-5" />
-                Save
-              </button>
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex-1">
+                  <ProductSearch
+                    products={products}
+                    selectedProducts={selectedProducts}
+                    onProductSelect={handleProductSelect}
+                    onProductRemove={handleProductRemove}
+                  />
+                </div>
+                <div className="flex gap-2 mt-1">
+                  <button
+                    onClick={handleSave}
+                    className="bg-green-600 text-white px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg shadow-lg hover:bg-green-700 flex items-center gap-2 text-sm sm:text-base whitespace-nowrap"
+                  >
+                    <RiSave3Line className="w-4 h-4 sm:w-5 sm:h-5" />
+                    Save
+                  </button>
+                  <button
+                    onClick={() => setIsFullScreenMode(!isFullScreenMode)}
+                    className="bg-amber-500 text-white px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg shadow-lg hover:bg-amber-600 flex items-center gap-2 text-sm sm:text-base whitespace-nowrap"
+                  >
+                    {isFullScreenMode ? (
+                      <>Exit Edit Mode <IoExitOutline /></>
+                    ) : (
+                      <>Edit Mode <CiEdit /></>
+                    )}
+                  </button>
+                </div>
+              </div>
             </div>
 
             {/* Table Container */}

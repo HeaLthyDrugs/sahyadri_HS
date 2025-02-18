@@ -10,6 +10,7 @@ import {
   RiCalendarLine,
   RiFileTextLine,
   RiBuilding4Line,
+  RiLoader4Line,
 } from "react-icons/ri";
 import Image from 'next/image';
 import html2canvas from 'html2canvas';
@@ -465,6 +466,9 @@ export default async function InvoicePage({
 }: {
   searchParams: { packageId?: string; month?: string }
 }) {
+  const [isLoading, setIsLoading] = useState(false);
+  const [isPrinting, setIsPrinting] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
   const packages = await getPackages();
   const invoiceConfig = await getInvoiceConfig();
   const currentMonth = format(new Date(), 'yyyy-MM');
@@ -473,11 +477,66 @@ export default async function InvoicePage({
   
   if (searchParams.packageId && searchParams.month) {
     try {
+      setIsLoading(true);
       invoiceData = await generateInvoiceData(searchParams.packageId, searchParams.month);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error generating invoice:', error);
+      toast.error(error.message || 'Failed to generate invoice');
+    } finally {
+      setIsLoading(false);
     }
   }
+
+  const handlePrint = async () => {
+    try {
+      setIsPrinting(true);
+      const response = await fetch(`/api/invoice/print?packageId=${searchParams.packageId}&month=${searchParams.month}`, {
+        method: 'POST'
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to generate print version');
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      window.open(url, '_blank');
+      window.URL.revokeObjectURL(url);
+      toast.success('Print version generated successfully');
+    } catch (error: any) {
+      console.error('Error printing invoice:', error);
+      toast.error(error.message || 'Failed to print invoice');
+    } finally {
+      setIsPrinting(false);
+    }
+  };
+
+  const handleDownload = async () => {
+    try {
+      setIsDownloading(true);
+      const response = await fetch(`/api/invoice/download?packageId=${searchParams.packageId}&month=${searchParams.month}`, {
+        method: 'POST'
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to generate PDF');
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `invoice_${searchParams.packageId}_${searchParams.month}.pdf`;
+      window.open(url, '_blank');
+      window.URL.revokeObjectURL(url);
+      toast.success('PDF generated successfully');
+    } catch (error: any) {
+      console.error('Error downloading invoice:', error);
+      toast.error(error.message || 'Failed to download invoice');
+    } finally {
+      setIsDownloading(false);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -490,29 +549,46 @@ export default async function InvoicePage({
         selectedMonth={searchParams.month || currentMonth}
       />
 
+      {/* Loading indicator */}
+      {isLoading && (
+        <div className="fixed bottom-2 right-2 bg-white rounded-lg shadow-lg px-4 py-3 flex items-center gap-3 z-[1000] border border-amber-100">
+          <div className="relative">
+            <div className="w-6 h-6 border-4 border-amber-200 border-t-amber-500 rounded-full animate-spin"></div>
+            <div className="absolute inset-0 border-2 border-amber-100 rounded-full animate-pulse"></div>
+          </div>
+          <span className="text-sm font-medium text-amber-700">Generating invoice...</span>
+        </div>
+      )}
+
       {/* Invoice Preview */}
       {invoiceData && (
         <div className="bg-white rounded-lg shadow">
           {/* Invoice Actions */}
           <div className="print:hidden p-4 border-b flex justify-end space-x-4">
-            <form action={`/api/invoice/print?packageId=${searchParams.packageId}&month=${searchParams.month}`} method="POST">
-              <button
-                type="submit"
-                className="flex items-center gap-2 px-4 py-2 text-gray-600 hover:text-gray-900"
-              >
+            <button
+              onClick={handlePrint}
+              disabled={isPrinting}
+              className="flex items-center gap-2 px-4 py-2 text-gray-600 hover:text-gray-900 disabled:opacity-50"
+            >
+              {isPrinting ? (
+                <RiLoader4Line className="w-5 h-5 animate-spin" />
+              ) : (
                 <RiPrinterLine className="w-5 h-5" />
-                Print
-              </button>
-            </form>
-            <form action={`/api/invoice/download?packageId=${searchParams.packageId}&month=${searchParams.month}`} method="POST">
-              <button
-                type="submit"
-                className="flex items-center gap-2 px-4 py-2 text-gray-600 hover:text-gray-900"
-              >
+              )}
+              {isPrinting ? 'Printing...' : 'Print'}
+            </button>
+            <button
+              onClick={handleDownload}
+              disabled={isDownloading}
+              className="flex items-center gap-2 px-4 py-2 text-gray-600 hover:text-gray-900 disabled:opacity-50"
+            >
+              {isDownloading ? (
+                <RiLoader4Line className="w-5 h-5 animate-spin" />
+              ) : (
                 <RiDownloadLine className="w-5 h-5" />
-                Download PDF
-              </button>
-            </form>
+              )}
+              {isDownloading ? 'Downloading...' : 'Download PDF'}
+            </button>
           </div>
 
           {/* Updated Invoice Content */}
