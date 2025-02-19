@@ -130,7 +130,7 @@ export default function DashboardLayout({
       items: [
         { name: "Roles", path: "/dashboard/users/roles", icon: <RiUserSettingsLine className="w-4 h-4" /> },
         { name: "Users", path: "/dashboard/users/manage", icon: <RiMailLine className="w-4 h-4" /> },
-        { name: "Modules", path: "/dashboard/users/modules", icon: <RiAppsLine className="w-4 h-4" /> }
+        { name: "Permissions", path: "/dashboard/users/permissions", icon: <RiAppsLine className="w-4 h-4" /> }
       ]
     },
     {

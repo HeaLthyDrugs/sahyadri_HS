@@ -25,6 +25,7 @@
     "@radix-ui/react-toast": "^1.2.6",
     "@sparticuz/chromium-min": "^132.0.0",
     "@supabase/auth-helpers-nextjs": "^0.10.0",
+    "@supabase/ssr": "^0.5.2",
     "@supabase/supabase-js": "^2.48.1",
     "@tabler/core": "^1.0.0-beta21",
     "@tabler/icons-react": "^3.26.0",

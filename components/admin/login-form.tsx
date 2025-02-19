@@ -3,8 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
-import { createClientComponentClient } from "@supabase/auth-helpers-nextjs";
-import { toast } from "react-hot-toast";
+import { createClient } from "@/utils/supabase/client";
 
 export function LoginForm() {
   const [credentials, setCredentials] = useState({
@@ -12,42 +11,32 @@ export function LoginForm() {
     password: "",
   });
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const router = useRouter();
-  const supabase = createClientComponentClient();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
+    setError(null);
 
     try {
-      // Sign in with Supabase Auth
-      const { data: { user }, error: signInError } = await supabase.auth.signInWithPassword({
+      const supabase = createClient();
+      const { error } = await supabase.auth.signInWithPassword({
         email: credentials.email,
         password: credentials.password,
       });
 
-      if (signInError) throw signInError;
-
-      // Get user's profile with role
-      const { data: profile, error: profileError } = await supabase
-        .from('profiles')
-        .select('*, roles(name)')
-        .eq('id', user?.id)
-        .single();
-
-      if (profileError) throw profileError;
-
-      if (!profile.role_id) {
-        // If this is the first user (no role assigned), run init_admin function
-        const { error: initError } = await supabase.rpc('init_admin');
-        if (initError) throw initError;
+      if (error) {
+        setError(error.message);
+        return;
       }
 
-      // Redirect to dashboard
-      router.push('/dashboard');
+      // Refresh the page to sync server and client state
       router.refresh();
-    } catch (error: any) {
-      toast.error(error.message || 'Failed to sign in');
+      // Redirect to dashboard on successful login
+      router.push('/dashboard');
+    } catch (err) {
+      setError('An unexpected error occurred');
     } finally {
       setLoading(false);
     }
@@ -67,6 +56,11 @@ export function LoginForm() {
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-6">
+        {error && (
+          <div className="p-3 text-sm text-red-600 bg-red-50 rounded-md">
+            {error}
+          </div>
+        )}
         <div>
           <label htmlFor="email" className="block text-sm font-medium text-gray-700">
             Email

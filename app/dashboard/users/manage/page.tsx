@@ -50,8 +50,6 @@ interface ProfileData {
 }
 
 export default function UsersPage() {
-  const [users, setUsers] = useState<User[]>([]);
-  const [roles, setRoles] = useState<Role[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -69,213 +67,18 @@ export default function UsersPage() {
     is_active: true,
   });
 
-  const fetchUsers = async () => {
-    try {
-      // Get profiles with roles
-      const { data: profilesData, error: profilesError } = await supabase
-        .from('profiles')
-        .select(`
-          id,
-          full_name,
-          roles (
-            id,
-            name
-          ),
-          is_active,
-          created_at
-        `)
-        .order('created_at', { ascending: false });
 
-      if (profilesError) {
-        console.error('Profile fetch error:', profilesError);
-        throw new Error('Failed to fetch profiles');
-      }
+  // const filteredUsers = users.filter(user =>
+  //   user.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
+  //   user.full_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+  //   user.role.name.toLowerCase().includes(searchQuery.toLowerCase())
+  // );
 
-      // Get emails from auth.users using the API endpoint
-      const response = await fetch('/api/admin/users');
-      const data = await response.json();
-
-      if (!response.ok) {
-        console.error('Auth users fetch error:', data.error);
-        throw new Error(data.error || 'Failed to fetch auth users');
-      }
-
-      if (!data.users) {
-        console.error('No users data received');
-        throw new Error('Invalid response format');
-      }
-
-      // Transform the data to match the User interface
-      const transformedData: User[] = (profilesData || []).map(profile => {
-        const authUser = data.users?.find((u: AuthUser) => u.id === profile.id);
-        const profileWithRoles = profile as unknown as { 
-          id: string; 
-          full_name: string; 
-          roles: { id: string; name: string; }[]; 
-          is_active: boolean; 
-          created_at: string; 
-        };
-        
-        return {
-          id: profileWithRoles.id,
-          email: authUser?.email || '',
-          full_name: profileWithRoles.full_name,
-          role: {
-            id: profileWithRoles.roles?.[0]?.id || '',
-            name: profileWithRoles.roles?.[0]?.name || '',
-          },
-          is_active: profileWithRoles.is_active,
-          created_at: profileWithRoles.created_at,
-        };
-      });
-
-      setUsers(transformedData);
-    } catch (error: any) {
-      console.error('Error fetching users:', error);
-      toast({
-        title: "Error",
-        description: error.message || "Failed to fetch users",
-        variant: "destructive",
-      });
-    }
-  };
-
-  const fetchRoles = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('roles')
-        .select('*')
-        .order('name', { ascending: true });
-
-      if (error) throw error;
-      setRoles(data);
-    } catch (error) {
-      console.error('Error fetching roles:', error);
-      toast({
-        title: "Error",
-        description: "Failed to fetch roles",
-        variant: "destructive",
-      });
-    }
-  };
-
-  useEffect(() => {
-    fetchUsers();
-    fetchRoles();
-  }, []);
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsLoading(true);
-
-    try {
-      if (editingUser) {
-        // Update existing user
-        const { error: updateError } = await supabase
-          .from('profiles')
-          .update({
-            full_name: formData.full_name,
-            role_id: formData.role_id,
-            is_active: formData.is_active,
-          })
-          .eq('id', editingUser.id);
-
-        if (updateError) throw updateError;
-
-        toast({
-          title: "Success",
-          description: "User updated successfully",
-        });
-      } else {
-        // Create new user using admin API
-        const response = await fetch('/api/admin/users/create', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            email: formData.email,
-            password: formData.password,
-            full_name: formData.full_name,
-            role_id: formData.role_id,
-            is_active: formData.is_active,
-          }),
-        });
-
-        if (!response.ok) {
-          const error = await response.json();
-          throw new Error(error.error || 'Failed to create user');
-        }
-
-        toast({
-          title: "Success",
-          description: "User created successfully",
-        });
-      }
-
-      setFormData({
-        email: "",
-        full_name: "",
-        password: "",
-        role_id: "",
-        is_active: true,
-      });
-      setEditingUser(null);
-      setIsModalOpen(false);
-      fetchUsers();
-    } catch (error: any) {
-      console.error('Error saving user:', error);
-      toast({
-        title: "Error",
-        description: error.message || "Failed to save user",
-        variant: "destructive",
-      });
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleDelete = async () => {
-    if (!userToDelete) return;
-    
-    try {
-      setIsLoading(true);
-      
-      // Delete user from Supabase Auth (this will cascade to profiles)
-      const { error } = await supabase.auth.admin.deleteUser(userToDelete.id);
-
-      if (error) throw error;
-
-      toast({
-        title: "Success",
-        description: "User deleted successfully",
-      });
-      setUsers(prev => prev.filter(u => u.id !== userToDelete.id));
-      setIsDeleteModalOpen(false);
-      setUserToDelete(null);
-    } catch (error) {
-      console.error('Error deleting user:', error);
-      toast({
-        title: "Error",
-        description: "Failed to delete user",
-        variant: "destructive",
-      });
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const filteredUsers = users.filter(user =>
-    user.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    user.full_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    user.role.name.toLowerCase().includes(searchQuery.toLowerCase())
-  );
-
-  const totalPages = Math.ceil(filteredUsers.length / itemsPerPage);
-  const paginatedUsers = filteredUsers.slice(
-    (currentPage - 1) * itemsPerPage,
-    currentPage * itemsPerPage
-  );
+  // const totalPages = Math.ceil(filteredUsers.length / itemsPerPage);
+  // const paginatedUsers = filteredUsers.slice(
+  //   (currentPage - 1) * itemsPerPage,
+  //   currentPage * itemsPerPage
+  // );
 
   return (
     <div className="space-y-6">
@@ -327,7 +130,7 @@ export default function UsersPage() {
       </div>
 
       <div className="bg-white rounded-lg shadow overflow-hidden">
-        {filteredUsers.length === 0 ? (
+        {/* {filteredUsers.length === 0 ? ( */}
           <div className="flex flex-col items-center justify-center py-12 text-gray-500">
             <RiAlertLine className="w-12 h-12 text-gray-400 mb-4" />
             <p className="text-lg font-medium">No users found</p>
@@ -361,41 +164,51 @@ export default function UsersPage() {
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {paginatedUsers.map((user) => (
-                  <tr key={user.id} className="hover:bg-gray-50">
+                {/* {paginatedUsers.map((user) => ( */}
+                  <tr key="1" className="hover:bg-gray-50">
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm font-medium text-gray-900">{user.full_name}</div>
+                      <div className="text-sm font-medium text-gray-900">John Doe</div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-gray-500">{user.email}</div>
+                      <div className="text-sm text-gray-500">johndoe@example.com</div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-gray-500">{user.role.name}</div>
+                      <div className="text-sm text-gray-500">Admin</div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                        user.is_active
+                        true
                           ? 'bg-green-100 text-green-800'
                           : 'bg-red-100 text-red-800'
                       }`}>
-                        {user.is_active ? 'Active' : 'Inactive'}
+                        Active
                       </span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="text-sm text-gray-500">
-                        {new Date(user.created_at).toLocaleDateString()}
+                        {new Date('2024-01-01').toLocaleDateString()}
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-2">
                       <button
                         onClick={() => {
-                          setEditingUser(user);
+                          setEditingUser({
+                            id: "1",
+                            email: "johndoe@example.com",
+                            full_name: "John Doe",
+                            role: {
+                              id: "1",
+                              name: "Admin",
+                            },
+                            is_active: true,
+                            created_at: "2024-01-01",
+                          });
                           setFormData({
-                            email: user.email,
-                            full_name: user.full_name,
+                            email: "johndoe@example.com",
+                            full_name: "John Doe",
                             password: "",
-                            role_id: user.role.id,
-                            is_active: user.is_active,
+                            role_id: "1",
+                            is_active: true,
                           });
                           setIsModalOpen(true);
                         }}
@@ -406,7 +219,17 @@ export default function UsersPage() {
                       </button>
                       <button
                         onClick={() => {
-                          setUserToDelete(user);
+                          setUserToDelete({
+                            id: "1",
+                            email: "johndoe@example.com",
+                            full_name : "John Doe",
+                            role: {
+                              id: "1",
+                              name: "Admin",
+                            },
+                            is_active: true,
+                            created_at: "2024-01-01",
+                          });
                           setIsDeleteModalOpen(true);
                         }}
                         className="text-red-600 hover:text-red-900"
@@ -416,17 +239,17 @@ export default function UsersPage() {
                       </button>
                     </td>
                   </tr>
-                ))}
+                {/* ))} */}
               </tbody>
             </table>
           </div>
-        )}
+        {/* )} */}
       </div>
 
-      {totalPages > 1 && (
+      {/* {totalPages > 1 && ( */}
         <div className="flex justify-between items-center mt-4 bg-white rounded-lg shadow px-4 py-3">
           <div className="text-sm text-gray-500">
-            Showing {((currentPage - 1) * itemsPerPage) + 1} to {Math.min(currentPage * itemsPerPage, filteredUsers.length)} of {filteredUsers.length} users
+            Showing 1 to 1 of 1 users
           </div>
           <div className="flex gap-2">
             <button
@@ -437,15 +260,15 @@ export default function UsersPage() {
               Previous
             </button>
             <button
-              onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
-              disabled={currentPage === totalPages}
+              onClick={() => setCurrentPage(prev => Math.min(prev + 1, 1))}
+              disabled={currentPage === 1}
               className="px-3 py-1 text-sm text-gray-500 bg-gray-100 rounded-md hover:bg-gray-200 disabled:opacity-50"
             >
               Next
             </button>
           </div>
         </div>
-      )}
+      {/* )}   */}
 
       {/* Add/Edit User Modal */}
       {isModalOpen && (
@@ -473,7 +296,7 @@ export default function UsersPage() {
               </button>
             </div>
 
-            <form onSubmit={handleSubmit} className="space-y-4">
+            <form className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700">
                   Email
@@ -543,11 +366,7 @@ export default function UsersPage() {
                   required
                 >
                   <option value="">Select a role</option>
-                  {roles.map((role) => (
-                    <option key={role.id} value={role.id}>
-                      {role.name}
-                    </option>
-                  ))}
+                  <option value="1">Admin</option>
                 </select>
               </div>
 
@@ -625,7 +444,10 @@ export default function UsersPage() {
                 Cancel
               </button>
               <button
-                onClick={handleDelete}
+                onClick={() => {
+                  setIsDeleteModalOpen(false);
+                  setUserToDelete(null);
+                }}
                 disabled={isLoading}
                 className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 disabled:opacity-50"
               >
