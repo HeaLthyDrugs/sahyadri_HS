@@ -8,16 +8,46 @@ export async function middleware(request: NextRequest) {
     const { supabase, response } = createClient(request)
 
     // Refresh session if expired - required for Server Components
-    await supabase.auth.getSession()
+    const { data: { session } } = await supabase.auth.getSession()
 
-    // If accessing dashboard routes, verify auth
-    if (request.nextUrl.pathname.startsWith('/dashboard')) {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession()
+    // Get the current path
+    const path = request.nextUrl.pathname
 
-      if (!session) {
-        return NextResponse.redirect(new URL('/auth/login', request.url))
+    // If accessing auth routes while logged in, redirect to dashboard
+    if (session && (path.startsWith('/auth') || path === '/')) {
+      return NextResponse.redirect(new URL('/dashboard', request.url))
+    }
+
+    // If accessing protected routes without auth, redirect to login
+    if (!session && path.startsWith('/dashboard')) {
+      return NextResponse.redirect(new URL('/auth/login', request.url))
+    }
+
+    // For authenticated users accessing dashboard routes, check permissions
+    if (session && path.startsWith('/dashboard')) {
+      // Get user's role from user_profiles
+      const { data: userProfile } = await supabase
+        .from('user_profiles')
+        .select('role_id')
+        .eq('auth_id', session.user.id)
+        .single();
+
+      if (userProfile?.role_id) {
+        // Get permissions for the user's role
+        const { data: permissions } = await supabase
+          .from('permissions')
+          .select('page_name, can_view, can_edit')
+          .eq('role_id', userProfile.role_id);
+
+        // Check if user has permission to access this page
+        const hasPermission = permissions?.some(permission => 
+          path.startsWith(permission.page_name) && permission.can_view
+        );
+
+        if (!hasPermission) {
+          // Redirect to dashboard if no permission
+          return NextResponse.redirect(new URL('/dashboard', request.url))
+        }
       }
     }
 

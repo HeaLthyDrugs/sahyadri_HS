@@ -34,13 +34,21 @@ interface Program {
   end_date: string;
 }
 
-export interface ReportData {
+interface ReportData {
   date: string;
   program: string;
   cateringTotal: number;
   extraTotal: number;
   coldDrinkTotal: number;
   grandTotal: number;
+}
+
+interface AnnualReportData {
+  program: string;
+  packages: {
+    [key: string]: number;
+  };
+  total: number;
 }
 
 // Add new interface for day report
@@ -80,7 +88,13 @@ interface ProgramReport {
 interface BillingEntry {
   entry_date: string;
   quantity: number;
+  program_id: string;
   package_id: string;
+  product_id: string;
+  programs: {
+    id: string;
+    name: string;
+  };
   packages: {
     id: string;
     name: string;
@@ -252,11 +266,12 @@ export default function ReportPage() {
   const [selectedMonth, setSelectedMonth] = useState(format(new Date(), 'yyyy-MM'));
   const [selectedDay, setSelectedDay] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [dateRange, setDateRange] = useState({
-    start: format(new Date(new Date().getFullYear(), 0, 1), 'yyyy-MM-dd'),
-    end: format(new Date(), 'yyyy-MM-dd')
+    start: format(new Date(), 'yyyy-MM'),
+    end: format(new Date(), 'yyyy-MM')
   });
   const [isLoading, setIsLoading] = useState(false);
   const [reportData, setReportData] = useState<ReportData[]>([]);
+  const [annualReportData, setAnnualReportData] = useState<BillingEntry[]>([]);
   const [dayReportData, setDayReportData] = useState<DayReportData | null>(null);
   const [summary, setSummary] = useState({
     totalQuantity: 0,
@@ -857,83 +872,45 @@ export default function ReportPage() {
 
   const generateLifetimeReport = async () => {
     if (!dateRange.start || !dateRange.end) {
-      toast.error('Please select both start and end dates');
+      toast.error('Please select both start and end months');
+      return;
+    }
+
+    if (!selectedPackage) {
+      toast.error('Please select a package');
       return;
     }
 
     setIsLoading(true);
     try {
-      // Build query for billing entries
-      let query = supabase
-        .from('billing_entries')
-        .select(`
-          entry_date,
-          quantity,
-          packages (id, name, type),
-          products (name, rate)
-        `)
-        .gte('entry_date', dateRange.start)
-        .lte('entry_date', dateRange.end)
-        .order('entry_date', { ascending: true });
-
-      // Add package filter if selected
-      if (selectedPackage && selectedPackage !== 'all') {
-        query = query.eq('packages.type', selectedPackage);
-      }
-
-      const { data: entriesData, error } = await query;
-
-      if (error) throw error;
-
-      if (!entriesData || entriesData.length === 0) {
-        throw new Error('No entries found for the selected period');
-      }
-
-      // Process and group data by month and package type
-      const monthlyGroups = new Map<string, MonthlyData>();
-
-      entriesData.forEach(entry => {
-        const month = format(new Date(entry.entry_date), 'yyyy-MM');
-        const packageType = entry.packages?.[0]?.type?.toLowerCase() || 'unknown';
-        const quantity = entry.quantity || 0;
-        const rate = entry.products?.[0]?.rate || 0;
-        const total = quantity * rate;
-
-        if (!monthlyGroups.has(month)) {
-          monthlyGroups.set(month, {
-            month,
-            packages: {},
-            total: 0
-          });
-        }
-
-        const monthData = monthlyGroups.get(month)!;
-
-        if (!monthData.packages[packageType]) {
-          monthData.packages[packageType] = {
-            packageName: packageType,
-            items: [],
-            packageTotal: 0
-          };
-        }
-
-        monthData.packages[packageType].items.push({
-          productName: entry.products?.[0]?.name || 'Unknown',
-          quantity,
-          rate,
-          total
-        });
-
-        monthData.packages[packageType].packageTotal += total;
-        monthData.total += total;
+      const response = await fetch('/api/reports/lifetime', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          startMonth: dateRange.start,
+          endMonth: dateRange.end,
+          packageId: selectedPackage === 'all' ? null : selectedPackage
+        }),
       });
 
-      setMonthlyData(Array.from(monthlyGroups.values()));
-      toast.success('Lifetime report generated successfully');
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || 'Failed to generate report');
+      }
+
+      // Get the response data
+      const data = await response.json();
+      
+      // Update the annual report data
+      setAnnualReportData(data);
+
+      toast.success('Report generated successfully');
     } catch (error) {
       console.error('Error generating lifetime report:', error);
       toast.error(error instanceof Error ? error.message : 'Failed to generate report');
-      setMonthlyData([]);
+      setAnnualReportData([]);
     } finally {
       setIsLoading(false);
     }
@@ -1215,6 +1192,54 @@ export default function ReportPage() {
     }
   ];
 
+  // Add a function to download the PDF
+  const downloadPDF = async () => {
+    if (!selectedMonth) {
+      toast.error('Please select a month');
+      return;
+    }
+
+    try {
+      const response = await fetch('/api/reports/lifetime/pdf', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          month: selectedMonth,
+          packageType: selectedPackage
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || 'Failed to generate PDF');
+      }
+
+      // Get the PDF blob from the response
+      const pdfBlob = await response.blob();
+      
+      // Create a URL for the blob
+      const url = window.URL.createObjectURL(pdfBlob);
+      
+      // Create a link element and trigger download
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `monthly-report-${selectedMonth}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      
+      // Clean up the URL
+      window.URL.revokeObjectURL(url);
+
+      toast.success('Report downloaded successfully');
+    } catch (error) {
+      console.error('Error downloading PDF:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to download PDF');
+    }
+  };
+
   return (
     <div className="space-y-6">
       <style>{pdfStyles}</style>
@@ -1377,10 +1402,10 @@ export default function ReportPage() {
               <>
                 <div className="space-y-2">
                   <label className="block text-sm font-medium text-gray-700">
-                    Start Date
+                    Start Month
                   </label>
                   <input
-                    type="date"
+                    type="month"
                     value={dateRange.start}
                     onChange={(e) => setDateRange(prev => ({ ...prev, start: e.target.value }))}
                     className="w-full rounded-md border-gray-300 shadow-sm focus:border-amber-500 focus:ring-amber-500"
@@ -1388,10 +1413,10 @@ export default function ReportPage() {
                 </div>
                 <div className="space-y-2">
                   <label className="block text-sm font-medium text-gray-700">
-                    End Date
+                    End Month
                   </label>
                   <input
-                    type="date"
+                    type="month"
                     value={dateRange.end}
                     onChange={(e) => setDateRange(prev => ({ ...prev, end: e.target.value }))}
                     className="w-full rounded-md border-gray-300 shadow-sm focus:border-amber-500 focus:ring-amber-500"
@@ -1409,7 +1434,7 @@ export default function ReportPage() {
                     <option value="">Select Package</option>
                     <option value="all">All Packages</option>
                     {packages.map((pkg) => (
-                      <option key={pkg.id} value={pkg.type.toLowerCase()}>
+                      <option key={pkg.id} value={pkg.id}>
                         {pkg.name}
                       </option>
                     ))}
@@ -1473,13 +1498,31 @@ export default function ReportPage() {
               grandTotal={programReport.grandTotal}
             />
           )}
-          {reportType === 'lifetime' && monthlyData.length > 0 && (
-            <AnnualReport 
-              startDate={dateRange.start}
-              endDate={dateRange.end}
-              selectedPackage={selectedPackage}
-              monthlyData={monthlyData}
-            />
+          {reportType === 'lifetime' && annualReportData.length > 0 && (
+            <div className="space-y-4">
+              <div className="flex justify-end gap-4 print:hidden">
+                <button
+                  onClick={handlePrint}
+                  className="flex items-center gap-2 px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
+                >
+                  <RiPrinterLine className="w-5 h-5" />
+                  Print
+                </button>
+                <button
+                  onClick={downloadPDF}
+                  className="flex items-center gap-2 px-4 py-2 text-white bg-amber-600 rounded-md hover:bg-amber-700"
+                >
+                  <RiDownloadLine className="w-5 h-5" />
+                  Download PDF
+                </button>
+              </div>
+              <AnnualReport
+                startMonth={dateRange.start}
+                endMonth={dateRange.end}
+                selectedPackage={selectedPackage}
+                data={annualReportData}
+              />
+            </div>
           )}
         </div>
       )}

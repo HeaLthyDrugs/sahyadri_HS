@@ -49,25 +49,8 @@ export default function ProfilePage() {
           throw profileError;
         }
 
-        // Get the user_profile data with role
-        const { data: userProfileData, error: userProfileError } = await supabase
-          .from('user_profiles')
-          .select(`
-            id,
-            role:role_id (
-              name
-            )
-          `)
-          .eq('auth_id', user.id)
-          .single();
-
-        if (userProfileError) {
-          console.error('Error fetching user profile:', userProfileError);
-        }
-
         setProfile({
           ...profileData,
-          role: userProfileData?.role
         });
       } catch (error) {
         console.error('Error loading profile:', error);

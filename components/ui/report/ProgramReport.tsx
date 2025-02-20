@@ -15,16 +15,13 @@ interface ProductEntry {
 
 interface PackageData {
   packageName: string;
-  products: {
-    id: string;
-    name: string;
+  items: {
+    productName: string;
+    quantity: number;
     rate: number;
+    total: number;
   }[];
-  entries: ProductEntry[];
-  totals: { [productId: string]: number };
-  rates: { [productId: string]: number };
-  totalAmounts: { [productId: string]: number };
-  grandTotal: number;
+  packageTotal: number;
 }
 
 interface ProgramReportProps {
@@ -220,7 +217,7 @@ const ProgramReport = ({
   };
 
   // Helper function to split products into chunks for table pagination
-  const chunkProducts = (products: PackageData['products'], packageType: string) => {
+  const chunkProducts = (products: PackageData['items'], packageType: string) => {
     // For Normal package, don't split the table
     if (packageType.toLowerCase() === 'normal') {
       return [products];
@@ -239,12 +236,12 @@ const ProgramReport = ({
       const packageData = updatedPackages[packageType];
       
       if (packageData) {
-        packageData.entries = packageData.entries.map((entry, index) => {
-          const currentEntryKey = entry.id || `${packageType}-${index}`;
+        packageData.items = packageData.items.map((item, index) => {
+          const currentEntryKey = item.id || `${packageType}-${index}`;
           if (currentEntryKey === entryKey) {
-            return { ...entry, comment: newComment || undefined };
+            return { ...item, comment: newComment || undefined };
           }
-          return entry;
+          return item;
         });
       }
       
@@ -258,11 +255,11 @@ const ProgramReport = ({
     packageType: string, 
     packageData: PackageData 
   }) => {
-    if (!packageData?.products || packageData.products.length === 0) return null;
+    if (!packageData?.items || packageData.items.length === 0) return null;
 
     const isCateringPackage = packageType.toLowerCase() === 'normal';
     const tableClassName = isCateringPackage ? 'catering-package-table print-avoid-break' : 'print-allow-break';
-    const productChunks = chunkProducts(packageData.products, packageType);
+    const productChunks = chunkProducts(packageData.items, packageType);
 
     return (
       <div className={`package-section ${isCateringPackage ? 'print-avoid-break' : ''}`}>
@@ -284,8 +281,8 @@ const ProgramReport = ({
                   <table className={`w-full ${tableClassName}`} style={{ tableLayout: 'fixed' }}>
                     <colgroup>
                       <col style={{ width: '12%' }} />
-                      {productChunk.map((product) => (
-                        <col key={product.id} style={{ width: columnWidth }} />
+                      {productChunk.map((item) => (
+                        <col key={item.id} style={{ width: columnWidth }} />
                       ))}
                       <col style={{ width: '15%' }} />
                     </colgroup>
@@ -294,12 +291,12 @@ const ProgramReport = ({
                         <th className="p-2 font-normal text-gray-900 text-center border-r border-b border-gray-900 print:p-1">
                           Date
                         </th>
-                        {productChunk.map((product) => (
+                        {productChunk.map((item) => (
                           <th 
-                            key={product.id}
+                            key={item.id}
                             className="p-2 font-normal text-gray-900 text-center border-r border-b border-gray-900 print:p-1"
                           >
-                            {product.name}
+                            {item.productName}
                           </th>
                         ))}
                         <th className="p-2 font-normal text-gray-900 text-left border-b border-gray-900 print:p-1">
@@ -308,16 +305,16 @@ const ProgramReport = ({
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-900">
-                      {packageData.entries.map((entry, index) => {
-                        const entryKey = entry.id || `${packageType}-${index}`;
+                      {productChunk.map((item, index) => {
+                        const entryKey = item.id || `${packageType}-${index}`;
                         return (
                           <tr key={entryKey} className="hover:bg-gray-50 relative group">
                             <td className="p-2 text-gray-900 text-center border-r border-gray-900 font-medium print:p-1 whitespace-nowrap bg-gray-50">
-                              {format(new Date(entry.date), 'dd/MM/yyyy')}
+                              {format(new Date(item.date), 'dd/MM/yyyy')}
                             </td>
-                            {productChunk.map((product) => (
-                              <td key={product.id} className="p-2 text-gray-900 text-center border-r border-gray-900 print:p-1">
-                                {entry.quantities[product.id] || 0}
+                            {productChunk.map((item) => (
+                              <td key={item.id} className="p-2 text-gray-900 text-center border-r border-gray-900 print:p-1">
+                                {item.quantity}
                               </td>
                             ))}
                             <td className="p-2 text-gray-600 text-left border-r border-gray-900 print:p-1 whitespace-nowrap relative">
@@ -350,12 +347,12 @@ const ProgramReport = ({
                                 </div>
                               ) : (
                                 <div className="flex items-center justify-between gap-2">
-                                  <span>{entry.comment || ''}</span>
+                                  <span>{item.comment || ''}</span>
                                   <Button
                                     size="sm"
                                     variant="ghost"
                                     className="h-8 w-8 p-0 opacity-0 group-hover:opacity-100 print:hidden"
-                                    onClick={() => setEditingComment({ entryKey, comment: entry.comment || '' })}
+                                    onClick={() => setEditingComment({ entryKey, comment: item.comment || '' })}
                                   >
                                     <MessageSquarePlus className="h-4 w-4" />
                                   </Button>
@@ -369,9 +366,9 @@ const ProgramReport = ({
                         <td className="p-2 text-gray-900 text-center border-r border-gray-900 print:p-1 font-semibold bg-gray-100">
                           Total
                         </td>
-                        {productChunk.map((product) => (
-                          <td key={product.id} className="p-2 text-gray-900 text-center border-r border-gray-900 print:p-1 font-medium">
-                            {packageData.totals[product.id] || 0}
+                        {productChunk.map((item) => (
+                          <td key={item.id} className="p-2 text-gray-900 text-center border-r border-gray-900 print:p-1 font-medium">
+                            {item.quantity}
                           </td>
                         ))}
                         <td className="border-r border-gray-900"></td>
@@ -380,9 +377,9 @@ const ProgramReport = ({
                         <td className="p-2 text-gray-900 text-center border-r border-gray-900 print:p-1 font-semibold bg-gray-100">
                           Rate
                         </td>
-                        {productChunk.map((product) => (
-                          <td key={product.id} className="p-2 text-gray-900 text-center border-r border-gray-900 print:p-1 font-medium">
-                            {packageData.rates[product.id] || 0}
+                        {productChunk.map((item) => (
+                          <td key={item.id} className="p-2 text-gray-900 text-center border-r border-gray-900 print:p-1 font-medium">
+                            {item.rate}
                           </td>
                         ))}
                         <td className="border-r border-gray-900"></td>
@@ -391,9 +388,9 @@ const ProgramReport = ({
                         <td className="p-2 text-gray-900 text-center border-r border-gray-900 print:p-1 font-semibold bg-gray-100">
                           Amount
                         </td>
-                        {productChunk.map((product) => (
-                          <td key={product.id} className="p-2 text-gray-900 text-center border-r border-gray-900 print:p-1 font-medium">
-                            {(packageData.totalAmounts[product.id] || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        {productChunk.map((item) => (
+                          <td key={item.id} className="p-2 text-gray-900 text-center border-r border-gray-900 print:p-1 font-medium">
+                            {item.total}
                           </td>
                         ))}
                         <td className="border-r border-gray-900"></td>
@@ -410,19 +407,8 @@ const ProgramReport = ({
   };
 
   const getFilteredPackages = () => {
-    if (!selectedPackage || selectedPackage === 'all') return Object.entries(packagesState);
-    
-    const packageTypeMap: { [key: string]: string } = {
-      '3e46279d-c2ff-4bb6-ab0d-935e32ed7820': 'Normal',
-      '620e67e9-8d50-4505-930a-f571629147a2': 'Extra',
-      '752a6bcb-d6d6-43ba-ab5b-84a787182b41': 'Cold Drink'
-    };
-    
-    const packageType = packageTypeMap[selectedPackage];
-    if (!packageType) return [];
-
-    const filteredPackages = Object.entries(packagesState).filter(([type]) => type === packageType);
-    return filteredPackages;
+    if (!selectedPackage || selectedPackage === 'all') return Object.keys(packagesState);
+    return [selectedPackage];
   };
 
   const styles = `
@@ -544,92 +530,8 @@ const ProgramReport = ({
     </style>
   `;
 
-  // Helper function to generate table HTML for a package and product chunk
-  const generateTableHTML = (packageType: string, packageData: any, products: any[], isFirstChunk: boolean = true) => `
-    <div class="table-container no-break">
-      ${isFirstChunk ? `
-        <div class="package-header">
-          <h4>${PACKAGE_NAMES[packageType as keyof typeof PACKAGE_NAMES] || packageType}</h4>
-        </div>
-      ` : ''}
-      <div class="relative overflow-x-auto">
-        <div class="border border-gray-900">
-          <table class="w-full text-sm border-collapse">
-            <colgroup>
-              <col style="width: 12%" />
-              ${products.map(() => `<col style="width: ${(73 / products.length)}%" />`).join('')}
-              <col style="width: 15%" />
-            </colgroup>
-            <thead>
-              <tr class="bg-gray-100">
-                <th class="p-2 font-normal text-gray-900 text-center border-r border-b border-gray-900">
-                  Date
-                </th>
-                ${products.map(product => `
-                  <th class="p-2 font-normal text-gray-900 text-center border-r border-b border-gray-900">
-                    ${product.name}
-                  </th>
-                `).join('')}
-                <th class="p-2 font-normal text-gray-900 text-left border-b border-gray-900">
-                  Comment
-                </th>
-              </tr>
-            </thead>
-            <tbody class="divide-y divide-gray-900">
-              ${packageData.entries.map((entry: any) => `
-                <tr class="hover:bg-gray-50">
-                  <td class="p-2 text-gray-900 text-center border-r border-gray-900 font-medium bg-gray-50">
-                    ${format(new Date(entry.date), 'dd/MM/yyyy')}
-                  </td>
-                  ${products.map(product => `
-                    <td class="p-2 text-gray-900 text-center border-r border-gray-900">
-                      ${entry.quantities[product.id] || 0}
-                    </td>
-                  `).join('')}
-                  <td class="p-2 text-gray-600 text-left border-r border-gray-900">
-                    ${entry.comment || ''}
-                  </td>
-                </tr>
-              `).join('')}
-              <tr class="bg-gray-50 font-medium border-t-2 border-gray-900">
-                <td class="p-2 text-gray-900 text-center border-r border-gray-900 font-semibold bg-gray-100">
-                  Total
-                </td>
-                ${products.map(product => `
-                  <td class="p-2 text-gray-900 text-center border-r border-gray-900 font-medium">
-                    ${packageData.totals[product.id] || 0}
-                  </td>
-                `).join('')}
-                <td class="border-r border-gray-900"></td>
-              </tr>
-              <tr class="bg-gray-50">
-                <td class="p-2 text-gray-900 text-center border-r border-gray-900 font-semibold bg-gray-100">
-                  Rate
-                </td>
-                ${products.map(product => `
-                  <td class="p-2 text-gray-900 text-center border-r border-gray-900 font-medium">
-                    ${packageData.rates[product.id] || 0}
-                  </td>
-                `).join('')}
-                <td class="border-r border-gray-900"></td>
-              </tr>
-              <tr class="bg-gray-50 font-medium">
-                <td class="p-2 text-gray-900 text-center border-r border-gray-900 font-semibold bg-gray-100">
-                  Amount
-                </td>
-                ${products.map(product => `
-                  <td class="p-2 text-gray-900 text-center border-r border-gray-900 font-medium">
-                    ₹${(packageData.totalAmounts[product.id] || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                  </td>
-                `).join('')}
-                <td class="border-r border-gray-900"></td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-  `;
+  // Helper function to format currency
+  const formatCurrency = (amount: number) => `₹${amount.toFixed(2)}`;
 
   return (
     <div className="w-full bg-white">
@@ -658,17 +560,11 @@ const ProgramReport = ({
 
         {/* Package Tables */}
         <div className="space-y-8">
-          {getFilteredPackages()
-            .sort(([typeA], [typeB]) => {
-              const indexA = PACKAGE_ORDER.indexOf(typeA);
-              const indexB = PACKAGE_ORDER.indexOf(typeB);
-              return indexA - indexB;
-            })
-            .map(([type, data]) => (
-              <div key={type} className="w-full">
-                <PackageTable packageType={type} packageData={data} />
-              </div>
-            ))}
+          {getFilteredPackages().map(packageType => (
+            <div key={packageType} className="w-full">
+              <PackageTable packageType={packageType} packageData={packagesState[packageType]} />
+            </div>
+          ))}
         </div>
 
         {/* Grand Total */}
@@ -676,7 +572,7 @@ const ProgramReport = ({
           <div className="mt-8 print-avoid-break">
             <div className="p-4 bg-gray-50 border border-gray-900 rounded-lg grand-total">
               <p className="text-xl font-bold text-gray-900 text-right print-subheader">
-                Grand Total: ₹{grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                Grand Total: {formatCurrency(grandTotal)}
               </p>
             </div>
           </div>
