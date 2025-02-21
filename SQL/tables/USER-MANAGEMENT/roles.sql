@@ -4,10 +4,11 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 -- Drop existing objects if they exist (in correct order)
 DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
 DROP FUNCTION IF EXISTS public.handle_new_user();
+DROP TABLE IF EXISTS public.permissions;
 DROP TABLE IF EXISTS public.profiles;
 DROP TABLE IF EXISTS public.roles;
 
--- Create the roles table
+-- Create the roles table first
 CREATE TABLE public.roles (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     name TEXT NOT NULL,
@@ -17,7 +18,39 @@ CREATE TABLE public.roles (
     CONSTRAINT roles_name_key UNIQUE (name)
 );
 
--- Create the profiles table
+-- Insert default roles immediately after creation
+INSERT INTO public.roles (name, description) 
+VALUES 
+    ('Owner', 'Owner with complete system access'),
+    ('Admin', 'Administrator with full access'),
+    ('User', 'Regular user with limited access')
+ON CONFLICT (name) DO NOTHING;
+
+-- Enable Row Level Security
+ALTER TABLE public.roles ENABLE ROW LEVEL SECURITY;
+
+-- Drop existing policies
+DROP POLICY IF EXISTS "Roles are viewable by everyone" ON public.roles;
+DROP POLICY IF EXISTS "Admins can manage roles" ON public.roles;
+DROP POLICY IF EXISTS "Owner can manage roles" ON public.roles;
+
+-- Create simplified policies for roles
+CREATE POLICY "Roles are viewable by everyone" 
+    ON public.roles FOR SELECT 
+    USING (true);
+
+CREATE POLICY "Owner can manage roles" 
+    ON public.roles 
+    FOR ALL 
+    USING (
+        EXISTS (
+            SELECT 1 FROM auth.users
+            WHERE auth.uid() = id
+            AND raw_user_meta_data->>'role' = 'Owner'
+        )
+    );
+
+-- Now create the profiles table
 CREATE TABLE public.profiles (
     id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
     email TEXT,
@@ -29,40 +62,8 @@ CREATE TABLE public.profiles (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW())
 );
 
--- Insert default roles
-INSERT INTO public.roles (name, description) 
-VALUES 
-    ('Admin', 'Administrator with full access'),
-    ('User', 'Regular user with limited access')
-ON CONFLICT (name) DO NOTHING;
-
--- Enable Row Level Security
-ALTER TABLE public.roles ENABLE ROW LEVEL SECURITY;
+-- Enable RLS for profiles
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
-
--- Create policies for roles
-DROP POLICY IF EXISTS "Roles are viewable by everyone" ON public.roles;
-DROP POLICY IF EXISTS "Admins can manage roles" ON public.roles;
-
--- Create policies for roles
-CREATE POLICY "Roles are viewable by everyone" 
-    ON public.roles FOR SELECT 
-    USING (true);
-
-CREATE POLICY "Admins can manage roles" 
-    ON public.roles 
-    FOR ALL 
-    USING (
-        EXISTS (
-            SELECT 1 FROM public.profiles p
-            WHERE p.id = auth.uid()
-            AND EXISTS (
-                SELECT 1 FROM public.roles r
-                WHERE r.id = p.role_id
-                AND r.name = 'Admin'
-            )
-        )
-    );
 
 -- Create policies for profiles
 CREATE POLICY "Public profiles are viewable by everyone"
@@ -73,9 +74,16 @@ CREATE POLICY "Users can insert their own profile"
     ON public.profiles FOR INSERT
     WITH CHECK (auth.uid() = id);
 
-CREATE POLICY "Users can update own profile"
-    ON public.profiles FOR UPDATE
-    USING (auth.uid() = id);
+CREATE POLICY "Admins and Owners can manage profiles"
+    ON public.profiles
+    FOR ALL
+    USING (
+        EXISTS (
+            SELECT 1 FROM auth.users
+            WHERE auth.uid() = id
+            AND raw_user_meta_data->>'role' IN ('Admin', 'Owner')
+        )
+    );
 
 -- Create function to handle new user creation
 CREATE OR REPLACE FUNCTION public.handle_new_user()
@@ -83,14 +91,15 @@ RETURNS TRIGGER AS $$
 DECLARE
     default_role_id UUID;
 BEGIN
-    -- Get the default role (User role) if no role_id in metadata
-    IF NEW.raw_user_meta_data->>'role_id' IS NULL THEN
-        SELECT id INTO default_role_id FROM public.roles WHERE name = 'User' LIMIT 1;
-    ELSE
-        default_role_id := (NEW.raw_user_meta_data->>'role_id')::UUID;
-    END IF;
+    -- Get the default role (User role)
+    SELECT id INTO default_role_id FROM public.roles WHERE name = 'User' LIMIT 1;
 
-    -- Only insert if profile doesn't exist
+    -- Set the role in user metadata
+    NEW.raw_user_meta_data = 
+        COALESCE(NEW.raw_user_meta_data::jsonb, '{}'::jsonb) || 
+        jsonb_build_object('role', 'User');
+
+    -- Insert the profile
     INSERT INTO public.profiles (
         id,
         email,
@@ -105,16 +114,9 @@ BEGIN
         NEW.raw_user_meta_data->>'full_name',
         NEW.raw_user_meta_data->>'avatar_url',
         default_role_id,
-        COALESCE((NEW.raw_user_meta_data->>'is_active')::boolean, true)
-    )
-    ON CONFLICT (id) DO UPDATE SET
-        email = EXCLUDED.email,
-        full_name = EXCLUDED.full_name,
-        avatar_url = EXCLUDED.avatar_url,
-        role_id = EXCLUDED.role_id,
-        is_active = EXCLUDED.is_active,
-        updated_at = TIMEZONE('utc'::text, NOW());
-    
+        true
+    );
+
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;

@@ -2,8 +2,8 @@
 
 import { useState, useEffect } from "react";
 import { createClient } from "@/utils/supabase/client";
-import { RiSaveLine } from "react-icons/ri";
-import { toast } from "@/hooks/use-toast";
+import { RiSaveLine, RiLoader4Line, RiCheckLine, RiErrorWarningLine } from "react-icons/ri";
+import { useToast } from "@/hooks/use-toast";
 
 interface Role {
   id: string;
@@ -31,6 +31,7 @@ const AVAILABLE_PAGES = [
 ];
 
 export default function PermissionsPage() {
+  const { toast } = useToast();
   const [roles, setRoles] = useState<Role[]>([]);
   const [permissions, setPermissions] = useState<Permission[]>([]);
   const [selectedRole, setSelectedRole] = useState<string>("");
@@ -167,11 +168,6 @@ export default function PermissionsPage() {
         if (insertError) throw insertError;
       }
 
-      toast({
-        title: "Success",
-        description: "Permissions saved successfully.",
-      });
-
       // Refresh permissions
       const { data: newPermissions } = await supabase
         .from('permissions')
@@ -190,12 +186,33 @@ export default function PermissionsPage() {
         });
         setPermissions(updatedPermissions);
       }
-    } catch (error) {
-      console.error('Error saving permissions:', error);
+
+      // Show success notification
       toast({
-        title: "Error",
-        description: "Failed to save permissions. Please try again.",
+        title: "Success!",
+        description: "Permissions have been saved successfully.",
+        variant: "default",
+        className: "bg-green-50 border-green-200 text-green-800",
+        action: (
+          <div className="h-8 w-8 bg-green-500/20 rounded-full flex items-center justify-center">
+            <RiCheckLine className="h-5 w-5 text-green-600" />
+          </div>
+        )
+      });
+
+    } catch (error: any) {
+      console.error('Error saving permissions:', error);
+      // Show error notification
+      toast({
+        title: "Error!",
+        description: error.message || "Failed to save permissions. Please try again.",
         variant: "destructive",
+        className: "border-red-200",
+        action: (
+          <div className="h-8 w-8 bg-red-500/20 rounded-full flex items-center justify-center">
+            <RiErrorWarningLine className="h-5 w-5 text-red-600" />
+          </div>
+        )
       });
     } finally {
       setIsSaving(false);
@@ -289,10 +306,19 @@ export default function PermissionsPage() {
         <button
           onClick={handleSavePermissions}
           disabled={isSaving}
-          className="flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-amber-500 disabled:opacity-50"
+          className="flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-amber-500 disabled:opacity-50 transition-colors duration-200"
         >
-          <RiSaveLine className="w-5 h-5" />
-          {isSaving ? 'Saving...' : 'Save Permissions'}
+          {isSaving ? (
+            <>
+              <RiLoader4Line className="w-5 h-5 animate-spin" />
+              Saving...
+            </>
+          ) : (
+            <>
+              <RiSaveLine className="w-5 h-5" />
+              Save Permissions
+            </>
+          )}
         </button>
       </div>
     </div>

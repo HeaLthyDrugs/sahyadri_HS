@@ -11,6 +11,7 @@ import {
   RiCheckLine,
   RiEyeLine,
   RiEyeOffLine,
+  RiErrorWarningLine,
 } from "react-icons/ri";
 import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/lib/supabase";
@@ -273,26 +274,83 @@ export default function ManageUsersPage() {
   const handleDelete = async (id: string) => {
     try {
       setIsLoading(true);
-      const { error } = await supabase
+
+      // First, check if the user has permission to delete
+      const { data: currentUser, error: userError } = await supabase.auth.getUser();
+      if (userError) throw userError;
+
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('role_id')
+        .eq('id', currentUser.user.id)
+        .single();
+
+      if (profileError) throw profileError;
+
+      const { data: role, error: roleError } = await supabase
+        .from('roles')
+        .select('name')
+        .eq('id', profile.role_id)
+        .single();
+
+      if (roleError) throw roleError;
+
+      if (!['Admin', 'Owner'].includes(role.name)) {
+        throw new Error('You do not have permission to delete users');
+      }
+
+      // Delete the user's profile first
+      const { error: deleteProfileError } = await supabase
         .from('profiles')
         .delete()
         .eq('id', id);
 
-      if (error) throw error;
+      if (deleteProfileError) {
+        console.error('Error deleting profile:', deleteProfileError);
+        throw new Error('Failed to delete user profile');
+      }
+
+      // Then delete the user from auth.users through the API
+      const response = await fetch('/api/users', {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ userId: id }),
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || 'Failed to delete user');
+      }
 
       toast({
         title: "Success",
         description: "User deleted successfully",
+        variant: "default",
+        className: "bg-green-50 border-green-200 text-green-800",
+        action: (
+          <div className="h-8 w-8 bg-green-500/20 rounded-full flex items-center justify-center">
+            <RiCheckLine className="h-5 w-5 text-green-600" />
+          </div>
+        )
       });
+
       setIsDeleteModalOpen(false);
       setUserToDelete(null);
       refreshUsers();
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error deleting user:', error);
       toast({
         title: "Error",
-        description: "Failed to delete user",
+        description: error.message || "Failed to delete user",
         variant: "destructive",
+        className: "border-red-200",
+        action: (
+          <div className="h-8 w-8 bg-red-500/20 rounded-full flex items-center justify-center">
+            <RiErrorWarningLine className="h-5 w-5 text-red-600" />
+          </div>
+        )
       });
     } finally {
       setIsLoading(false);
