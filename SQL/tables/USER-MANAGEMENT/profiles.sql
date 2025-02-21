@@ -5,14 +5,18 @@ DROP TABLE IF EXISTS public.profiles;
 
 -- Create the profiles table that Supabase expects
 CREATE TABLE public.profiles (
-    id UUID REFERENCES auth.users(id) PRIMARY KEY,
-    email TEXT,
-    full_name TEXT,
-    avatar_url TEXT,
-    role_id UUID REFERENCES roles(id),
-    updated_at TIMESTAMP WITH TIME ZONE,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW())
-);
+    id UUID NOT NULL,
+    email TEXT NULL,
+    full_name TEXT NULL,
+    avatar_url TEXT NULL,
+    role_id UUID NULL,
+    is_active BOOLEAN DEFAULT TRUE,
+    updated_at TIMESTAMP WITH TIME ZONE NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()),
+    CONSTRAINT profiles_pkey PRIMARY KEY (id),
+    CONSTRAINT profiles_id_fkey FOREIGN KEY (id) REFERENCES auth.users (id),
+    CONSTRAINT profiles_role_id_fkey FOREIGN KEY (role_id) REFERENCES roles (id)
+) TABLESPACE pg_default;
 
 -- Enable Row Level Security
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
@@ -36,70 +40,30 @@ RETURNS TRIGGER AS $$
 DECLARE
     default_role_id UUID;
 BEGIN
-    -- Get the default role (assuming 'User' is the default role)
+    -- Get the default role (User role)
     SELECT id INTO default_role_id FROM roles WHERE name = 'User' LIMIT 1;
 
-    -- Insert into Supabase's expected profiles table
     INSERT INTO public.profiles (
         id,
         email,
         full_name,
+        avatar_url,
         role_id,
-        updated_at
+        is_active
     )
     VALUES (
         new.id,
         new.email,
-        COALESCE(new.raw_user_meta_data->>'full_name', new.email),
-        default_role_id,
-        now()
+        new.raw_user_meta_data->>'full_name',
+        new.raw_user_meta_data->>'avatar_url',
+        COALESCE(new.raw_user_meta_data->>'role_id', default_role_id),
+        true
     );
-
-    -- Also insert into our custom user_profiles table
-    INSERT INTO public.user_profiles (
-        auth_id,
-        email,
-        role_id,
-        created_at,
-        updated_at
-    )
-    VALUES (
-        new.id,
-        new.email,
-        default_role_id,
-        now(),
-        now()
-    );
-
-    -- Insert default permissions for the user's role if they don't exist
-    INSERT INTO public.permissions (role_id, page_name, can_view, can_edit)
-    SELECT 
-        default_role_id,
-        page_path,
-        true,  -- can_view for basic pages
-        false  -- can_edit set to false by default
-    FROM (
-        VALUES
-            ('/dashboard'),
-            ('/dashboard/profile')
-    ) AS p(page_path)
-    WHERE NOT EXISTS (
-        SELECT 1 
-        FROM permissions 
-        WHERE role_id = default_role_id 
-        AND page_name = p.page_path
-    );
-
     RETURN new;
-EXCEPTION
-    WHEN OTHERS THEN
-        -- Log the error (you can customize this part)
-        RAISE NOTICE 'Error in handle_new_user: %', SQLERRM;
-        RETURN new;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- Create trigger for new user signup
 CREATE TRIGGER on_auth_user_created
     AFTER INSERT ON auth.users
-    FOR EACH ROW EXECUTE FUNCTION public.handle_new_user(); 
+    FOR EACH ROW EXECUTE PROCEDURE public.handle_new_user();

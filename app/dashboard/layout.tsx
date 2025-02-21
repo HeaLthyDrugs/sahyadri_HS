@@ -64,8 +64,8 @@ export default function DashboardLayout({
   useEffect(() => {
     const fetchUserProfile = async () => {
       try {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session?.user) {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
           const { data } = await supabase
             .from('profiles')
             .select(`
@@ -74,7 +74,7 @@ export default function DashboardLayout({
                 name
               )
             `)
-            .eq('id', session.user.id)
+            .eq('id', user.id)
             .single();
 
           if (data && Array.isArray(data.roles) && data.roles.length > 0) {

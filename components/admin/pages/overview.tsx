@@ -11,12 +11,12 @@ export function OverviewPage() {
   useEffect(() => {
     const fetchUserProfile = async () => {
       try {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session?.user) {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
           const { data: profile } = await supabase
             .from('profiles')
             .select('full_name')
-            .eq('id', session.user.id)
+            .eq('id', user.id)
             .single();
 
           if (profile?.full_name) {
@@ -48,6 +48,7 @@ export function OverviewPage() {
   };
 
   return (
+    
     <div className="min-h-[80vh] flex flex-col items-center justify-center p-8">
       {/* Logo Container with Animation */}
       <motion.div 

@@ -13,14 +13,7 @@ import {
   RiLoader4Line,
 } from "react-icons/ri";
 import Image from 'next/image';
-import html2canvas from 'html2canvas';
-import jsPDF from 'jspdf';
-import { createServerComponentClient } from '@supabase/auth-helpers-nextjs';
-import { cookies } from 'next/headers';
-import { generatePDF } from '@/lib/pdf-generator';
-import { revalidatePath } from 'next/cache';
 import InvoiceForm from "./invoice-form";
-
 
 interface Package {
   id: string;
@@ -49,39 +42,16 @@ interface BillingEntry {
   products: Product;
 }
 
-interface SupabaseBillingEntry {
-  id: string;
-  entry_date: string;
-  quantity: number;
-  program_id: string;
-  package_id: string;
-  product_id: string;
-  programs: Program;
-  products: Product;
-}
-
 interface DatabaseBillingEntry {
   id: string;
   entry_date: string;
   quantity: number;
-  program_id: string;
-  package_id: string;
-  product_id: string;
-  programs: {
-    id: string;
-    name: string;
-    customer_name: string;
-  };
-  products: {
-    id: string;
-    name: string;
-    rate: number;
-    index: number;
-  };
+  programs: Program;
+  products: Product;
 }
 
 interface InvoiceData {
-  packageDetails: Package | null;
+  packageDetails: Package;
   month: string;
   entries: BillingEntry[];
   totalAmount: number;
@@ -98,449 +68,237 @@ interface InvoiceConfig {
   logo_url: string;
 }
 
-const pdfStyles = `
-  @media print {
-    body * {
-      -webkit-print-color-adjust: exact !important;
-      print-color-adjust: exact !important;
-    }
-  }
-  
-  #invoice-content {
-    max-width: 1140px;
-    margin: 0 auto;
-    padding: 20px;
-    font-size: 12px;
-    line-height: 1.4;
-    color: #1f2937;
-  }
-  
-  #invoice-content .table-container {
-    margin: 12px 0;
-    overflow-x: visible;
-    page-break-inside: avoid;
-  }
-  
-  #invoice-content table {
-    width: 100%;
-    border-collapse: collapse;
-  }
-  
-  #invoice-content table th,
-  #invoice-content table td {
-    padding: 4px 8px;
-    text-align: left;
-    border-bottom: 1px solid #e5e7eb;
-    vertical-align: middle;
-  }
-  
-  #invoice-content table th {
-    background-color: #fff7ed;
-    font-weight: 600;
-    font-size: 11px;
-  }
-  
-  #invoice-content .company-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    margin-bottom: 16px;
-    padding-bottom: 8px;
-    border-bottom: 1px solid #e5e7eb;
-  }
-  
-  #invoice-content .company-header img {
-    width: 48px;
-    height: auto;
-  }
-  
-  #invoice-content .company-header h1 {
-    font-size: 18px;
-    margin-bottom: 2px;
-  }
-  
-  #invoice-content .company-header p {
-    margin: 1px 0;
-    font-size: 11px;
-  }
-  
-  #invoice-content .billing-details {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 16px;
-    margin: 8px 0;
-  }
-  
-  #invoice-content .billing-details h3 {
-    font-size: 14px;
-    margin-bottom: 2px;
-  }
-  
-  #invoice-content .billing-details p {
-    margin: 1px 0;
-    font-size: 11px;
-  }
-  
-  #invoice-content .total-section {
-    margin-top: 8px;
-    border-top: 1px solid #e5e7eb;
-    padding-top: 8px;
-  }
-  
-  #invoice-content .total-section .total-amount {
-    font-size: 14px;
-    font-weight: 600;
-  }
-  
-  #invoice-content .footer {
-    margin-top: 16px;
-    padding-top: 8px;
-    border-top: 1px solid #e5e7eb;
-    font-size: 11px;
-  }
-  
-  #invoice-content .footer-note {
-    margin-top: 8px;
-    text-align: center;
-    font-size: 10px;
-    color: #6b7280;
-  }
-  
-  #invoice-content .signature-section {
-    margin-top: 24px;
-    text-align: right;
-  }
-  
-  #invoice-content .signature-line {
-    margin-top: 32px;
-    border-top: 1px solid #e5e7eb;
-    width: 200px;
-    display: inline-block;
-  }
-  
-  #invoice-content .company-details {
-    display: flex;
-    justify-content: space-between;
-    font-size: 11px;
-    margin: 6px 0;
-  }
-  
-  #invoice-content .company-details .detail-item {
-    margin: 1px 0;
-  }
-  
-  #invoice-content .invoice-info {
-    text-align: right;
-    font-size: 11px;
-    margin-bottom: 6px;
-  }
-  
-  #invoice-content .invoice-info h2 {
-    font-size: 16px;
-    color: #d97706;
-    margin-bottom: 2px;
-  }
-  
-  #invoice-content .page-break-after {
-    page-break-after: always;
-  }
-  
-  #invoice-content .page-break-inside-avoid {
-    page-break-inside: avoid;
-  }
-  
-  /* Pagination styles */
-  #invoice-content .entries-table {
-    page-break-inside: auto;
-  }
-
-  #invoice-content .entries-table tr {
-    page-break-inside: avoid;
-    page-break-after: auto;
-  }
-
-  #invoice-content .entries-table thead {
-    display: table-header-group;
-  }
-
-  #invoice-content .entries-table tbody {
-    page-break-inside: avoid;
-  }
-
-  #invoice-content .page-header {
-    display: none;
-  }
-
-  @media print {
-    #invoice-content .page-header {
-      display: block;
-      margin-bottom: 20px;
-    }
-
-    #invoice-content .entries-table {
-      margin-bottom: 20px;
-    }
-  }
-
-  /* Column width styles */
-  #invoice-content table th,
-  #invoice-content table td {
-    padding: 4px 8px;
-    text-align: left;
-    border-bottom: 1px solid #e5e7eb;
-    vertical-align: middle;
-  }
-
-  /* Specific column widths */
-  #invoice-content table th:nth-child(1),
-  #invoice-content table td:nth-child(1) {
-    width: 10%; /* Sr. No column - reduced width */
-    padding-right: 4px;
-  }
-
-  #invoice-content table th:nth-child(2),
-  #invoice-content table td:nth-child(2) {
-    width: 45%; /* Product Name column - increased width */
-    padding-right: 24px; /* Add more spacing after product name */
-  }
-
-  #invoice-content table th:nth-child(3),
-  #invoice-content table td:nth-child(3) {
-    width: 15%; /* Quantity column */
-  }
-
-  #invoice-content table th:nth-child(4),
-  #invoice-content table td:nth-child(4) {
-    width: 17.5%; /* Basic Rate column */
-  }
-
-  #invoice-content table th:nth-child(5),
-  #invoice-content table td:nth-child(5) {
-    width: 17.5%; /* Total column */
-  }
-
-  /* Ensure table uses these fixed widths */
-  #invoice-content table {
-    table-layout: fixed;
-    width: 100%;
-  }
-
-  /* Prevent text overflow in cells */
-  #invoice-content table td {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  /* Page break and spacing styles */
-  #invoice-content .page-break-before {
-    page-break-before: always;
-    padding-top: 12mm; /* Add top padding for subsequent pages */
-  }
-
-  /* Page header spacing */
-  #invoice-content .page-header {
-    margin-bottom: 30px;
-    padding-bottom: 15px;
-    border-bottom: 1px solid #e5e7eb;
-  }
-`;
-
-async function getPackages() {
-  const supabase = createServerComponentClient({ cookies });
-  const { data, error } = await supabase
-    .from('packages')
-    .select('*')
-    .order('name');
-
-  if (error) throw error;
-  return data || [];
-}
-
-async function getInvoiceConfig() {
-  const supabase = createServerComponentClient({ cookies });
-  const { data, error } = await supabase
-    .from('invoice_config')
-    .select('*')
-    .single();
-
-  if (error) throw error;
-  return {
-    ...data,
-    from_address: data?.from_address || [],
-    bill_to_address: Array.isArray(data?.bill_to_address) 
-      ? data.bill_to_address 
-      : data?.bill_to_address ? [data.bill_to_address] : [],
-    logo_url: 'https://sahyadriservices.in/production/images/logo.png'
+interface InvoicePageProps {
+  searchParams: {
+    packageId?: string;
+    month?: string;
   };
 }
 
-async function generateInvoiceData(packageId: string, month: string) {
-  const supabase = createServerComponentClient({ cookies });
-
-  // Get start and end dates for the selected month
-  const startDate = `${month}-01`;
-  const endDate = new Date(month + '-01');
-  endDate.setMonth(endDate.getMonth() + 1);
-  endDate.setDate(endDate.getDate() - 1);
-  const endDateStr = format(endDate, 'yyyy-MM-dd');
-
-  // Get package details
-  const { data: packageData, error: packageError } = await supabase
-    .from('packages')
-    .select('*')
-    .eq('id', packageId)
-    .single();
-
-  if (packageError) throw packageError;
-
-  // Get billing entries
-  const { data: entriesData, error: entriesError } = await supabase
-    .from('billing_entries')
-    .select(`
-      id,
-      entry_date,
-      quantity,
-      programs:program_id (
-        id,
-        name,
-        customer_name
-      ),
-      products:product_id (
-        id,
-        name,
-        rate,
-        index
-      )
-    `)
-    .eq('package_id', packageId)
-    .gte('entry_date', startDate)
-    .lte('entry_date', endDateStr)
-    .order('products(index)', { ascending: true });
-
-  if (entriesError) throw entriesError;
-
-  if (!entriesData || entriesData.length === 0) {
-    throw new Error(`No entries found for package ${packageData.name} between ${format(new Date(startDate), 'dd/MM/yyyy')} and ${format(new Date(endDateStr), 'dd/MM/yyyy')}`);
-  }
-
-  // Transform and aggregate entries
-  const transformedEntries = entriesData.reduce((acc: BillingEntry[], entry) => {
-    if (!entry.products || !entry.programs) return acc;
-
-    const existingEntry = acc.find(e => e.products?.id === entry.products?.id);
-    if (existingEntry) {
-      existingEntry.quantity += entry.quantity || 0;
-    } else {
-      acc.push({
-        id: entry.id,
-        entry_date: entry.entry_date,
-        quantity: entry.quantity || 0,
-        programs: entry.programs,
-        products: entry.products
-      });
-    }
-    return acc;
-  }, []);
-
-  // Sort entries by product index
-  transformedEntries.sort((a, b) => (a.products.index || 0) - (b.products.index || 0));
-
-  // Calculate total
-  const totalAmount = transformedEntries.reduce((sum, entry) => {
-    const rate = entry.products.rate || 0;
-    const quantity = entry.quantity || 0;
-    return sum + (rate * quantity);
-  }, 0);
-
-  return {
-    packageDetails: packageData,
-    month,
-    entries: transformedEntries,
-    totalAmount
-  };
-}
-
-export default async function InvoicePage({
-  searchParams
-}: {
-  searchParams: { packageId?: string; month?: string }
-}) {
+export default function InvoicePage({ searchParams }: InvoicePageProps) {
   const [isLoading, setIsLoading] = useState(false);
-  const [isPrinting, setIsPrinting] = useState(false);
-  const [isDownloading, setIsDownloading] = useState(false);
-  const packages = await getPackages();
-  const invoiceConfig = await getInvoiceConfig();
+  const [packages, setPackages] = useState<Package[]>([]);
+  const [invoiceConfig, setInvoiceConfig] = useState<InvoiceConfig | null>(null);
+  const [invoiceData, setInvoiceData] = useState<InvoiceData | null>(null);
   const currentMonth = format(new Date(), 'yyyy-MM');
 
-  let invoiceData: InvoiceData | null = null;
-  
-  if (searchParams.packageId && searchParams.month) {
+  useEffect(() => {
+    fetchPackages();
+    fetchInvoiceConfig();
+  }, []);
+
+  useEffect(() => {
+    if (searchParams.packageId && searchParams.month) {
+      generateInvoiceData(searchParams.packageId, searchParams.month);
+    }
+  }, [searchParams.packageId, searchParams.month]);
+
+  const fetchPackages = async () => {
     try {
-      setIsLoading(true);
-      invoiceData = await generateInvoiceData(searchParams.packageId, searchParams.month);
-    } catch (error: any) {
+      const { data, error } = await supabase
+        .from('packages')
+        .select('*')
+        .order('name');
+
+      if (error) throw error;
+      setPackages(data || []);
+    } catch (error) {
+      console.error('Error fetching packages:', error);
+      toast.error('Failed to fetch packages');
+    }
+  };
+
+  const fetchInvoiceConfig = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('invoice_config')
+        .select('*')
+        .single();
+
+      if (error) throw error;
+
+      setInvoiceConfig({
+        ...data,
+        from_address: data?.from_address || [],
+        bill_to_address: Array.isArray(data?.bill_to_address)
+          ? data.bill_to_address
+          : data?.bill_to_address ? [data.bill_to_address] : [],
+        logo_url: 'https://sahyadriservices.in/production/images/logo.png'
+      });
+    } catch (error) {
+      console.error('Error fetching invoice config:', error);
+      toast.error('Failed to fetch invoice configuration');
+    }
+  };
+
+  const generateInvoiceData = async (packageId: string, month: string) => {
+    setIsLoading(true);
+    try {
+      // Get start and end dates for the selected month
+      const startDate = `${month}-01`;
+      const endDate = new Date(month + '-01');
+      endDate.setMonth(endDate.getMonth() + 1);
+      endDate.setDate(endDate.getDate() - 1);
+      const endDateStr = format(endDate, 'yyyy-MM-dd');
+
+      // Get package details
+      const { data: packageData, error: packageError } = await supabase
+        .from('packages')
+        .select('*')
+        .eq('id', packageId)
+        .single();
+
+      if (packageError) throw packageError;
+      if (!packageData) throw new Error('Package not found');
+
+      // Get billing entries
+      const { data: entriesData, error: entriesError } = await supabase
+        .from('billing_entries')
+        .select(`
+          id,
+          entry_date,
+          quantity,
+          programs:program_id (
+            id,
+            name,
+            customer_name
+          ),
+          products:product_id (
+            id,
+            name,
+            rate,
+            index
+          )
+        `)
+        .eq('package_id', packageId)
+        .gte('entry_date', startDate)
+        .lte('entry_date', endDateStr)
+        .order('products(index)', { ascending: true });
+
+      if (entriesError) throw entriesError;
+
+      if (!entriesData || entriesData.length === 0) {
+        throw new Error(`No entries found for package ${packageData.name} between ${format(new Date(startDate), 'dd/MM/yyyy')} and ${format(new Date(endDateStr), 'dd/MM/yyyy')}`);
+      }
+
+      // Transform and aggregate entries
+      const transformedEntries = entriesData.reduce((acc: BillingEntry[], entry: any) => {
+        if (!entry.products || !entry.programs) return acc;
+
+        const existingEntry = acc.find(e => e.products.id === entry.products.id);
+        if (existingEntry) {
+          existingEntry.quantity += entry.quantity || 0;
+        } else {
+          const newEntry: BillingEntry = {
+            id: entry.id,
+            entry_date: entry.entry_date,
+            quantity: entry.quantity || 0,
+            programs: {
+              id: entry.programs.id,
+              name: entry.programs.name,
+              customer_name: entry.programs.customer_name
+            },
+            products: {
+              id: entry.products.id,
+              name: entry.products.name,
+              rate: entry.products.rate,
+              index: entry.products.index
+            }
+          };
+          acc.push(newEntry);
+        }
+        return acc;
+      }, []);
+
+      // Sort entries by product index
+      transformedEntries.sort((a, b) => (a.products.index || 0) - (b.products.index || 0));
+
+      // Calculate total
+      const totalAmount = transformedEntries.reduce((sum, entry) => {
+        const rate = entry.products.rate || 0;
+        const quantity = entry.quantity || 0;
+        return sum + (rate * quantity);
+      }, 0);
+
+      setInvoiceData({
+        packageDetails: packageData,
+        month,
+        entries: transformedEntries,
+        totalAmount
+      });
+    } catch (error) {
       console.error('Error generating invoice:', error);
-      toast.error(error.message || 'Failed to generate invoice');
+      toast.error('Failed to generate invoice');
     } finally {
       setIsLoading(false);
     }
-  }
+  };
 
   const handlePrint = async () => {
+    if (!searchParams.packageId || !searchParams.month) return;
+    
     try {
-      setIsPrinting(true);
-      const response = await fetch(`/api/invoice/print?packageId=${searchParams.packageId}&month=${searchParams.month}`, {
-        method: 'POST'
+      const response = await fetch('/api/invoice/print', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          packageId: searchParams.packageId,
+          month: searchParams.month,
+        }),
       });
       
-      if (!response.ok) {
-        throw new Error('Failed to generate print version');
-      }
-
+      if (!response.ok) throw new Error('Failed to print invoice');
+      
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
-      window.open(url, '_blank');
-      window.URL.revokeObjectURL(url);
-      toast.success('Print version generated successfully');
-    } catch (error: any) {
+      const printWindow = window.open(url);
+      if (printWindow) {
+        printWindow.onload = () => {
+          printWindow.print();
+        };
+      }
+    } catch (error) {
       console.error('Error printing invoice:', error);
-      toast.error(error.message || 'Failed to print invoice');
-    } finally {
-      setIsPrinting(false);
+      toast.error('Failed to print invoice');
     }
   };
 
   const handleDownload = async () => {
+    if (!searchParams.packageId || !searchParams.month) return;
+    
     try {
-      setIsDownloading(true);
-      const response = await fetch(`/api/invoice/download?packageId=${searchParams.packageId}&month=${searchParams.month}`, {
-        method: 'POST'
+      const response = await fetch('/api/invoice/download', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          packageId: searchParams.packageId,
+          month: searchParams.month,
+        }),
       });
       
-      if (!response.ok) {
-        throw new Error('Failed to generate PDF');
-      }
-
+      if (!response.ok) throw new Error('Failed to download invoice');
+      
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `invoice_${searchParams.packageId}_${searchParams.month}.pdf`;
-      window.open(url, '_blank');
+      a.download = `invoice-${searchParams.month}-${searchParams.packageId}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
       window.URL.revokeObjectURL(url);
-      toast.success('PDF generated successfully');
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error downloading invoice:', error);
-      toast.error(error.message || 'Failed to download invoice');
-    } finally {
-      setIsDownloading(false);
+      toast.error('Failed to download invoice');
     }
   };
 
   return (
     <div className="space-y-6">
-      <style>{pdfStyles}</style>
       {/* Controls Section */}
       <InvoiceForm 
         packages={packages}
@@ -561,37 +319,27 @@ export default async function InvoicePage({
       )}
 
       {/* Invoice Preview */}
-      {invoiceData && (
+      {invoiceData && invoiceConfig && (
         <div className="bg-white rounded-lg shadow">
           {/* Invoice Actions */}
           <div className="print:hidden p-4 border-b flex justify-end space-x-4">
             <button
               onClick={handlePrint}
-              disabled={isPrinting}
-              className="flex items-center gap-2 px-4 py-2 text-gray-600 hover:text-gray-900 disabled:opacity-50"
+              className="flex items-center gap-2 px-4 py-2 text-gray-600 hover:text-gray-900"
             >
-              {isPrinting ? (
-                <RiLoader4Line className="w-5 h-5 animate-spin" />
-              ) : (
-                <RiPrinterLine className="w-5 h-5" />
-              )}
-              {isPrinting ? 'Printing...' : 'Print'}
+              <RiPrinterLine className="w-5 h-5" />
+              Print
             </button>
             <button
               onClick={handleDownload}
-              disabled={isDownloading}
-              className="flex items-center gap-2 px-4 py-2 text-gray-600 hover:text-gray-900 disabled:opacity-50"
+              className="flex items-center gap-2 px-4 py-2 text-gray-600 hover:text-gray-900"
             >
-              {isDownloading ? (
-                <RiLoader4Line className="w-5 h-5 animate-spin" />
-              ) : (
-                <RiDownloadLine className="w-5 h-5" />
-              )}
-              {isDownloading ? 'Downloading...' : 'Download PDF'}
+              <RiDownloadLine className="w-5 h-5" />
+              Download PDF
             </button>
           </div>
 
-          {/* Updated Invoice Content */}
+          {/* Invoice Content */}
           <div id="invoice-content" className="p-8 bg-white">
             {/* Company Header */}
             <div className="flex justify-between items-start mb-4 pb-2 border-b">
@@ -625,6 +373,8 @@ export default async function InvoicePage({
                   {invoiceConfig.from_address.map((line: string, index: number) => (
                     <p key={index}>{line}</p>
                   ))}
+                  <p className="mt-1">GSTIN: {invoiceConfig.gstin}</p>
+                  <p>PAN: {invoiceConfig.pan}</p>
                 </div>
               </div>
               <div className="space-y-1">
@@ -641,7 +391,7 @@ export default async function InvoicePage({
             <div className="bg-gray-50 p-4 rounded-lg mb-6">
               <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
                 <RiFileTextLine className="w-4 h-4 text-amber-600" />
-                INVOICE for {format(new Date(invoiceData.month), 'MMMM yyyy')} - {invoiceData.packageDetails?.name}
+                INVOICE for {format(new Date(invoiceData.month), 'MMMM yyyy')} - {invoiceData.packageDetails.name}
               </h3>
             </div>
 
@@ -720,21 +470,6 @@ export default async function InvoicePage({
           </div>
         </div>
       )}
-
-      {/* Add print-specific styles */}
-      <style jsx global>{`
-        @media print {
-          img {
-            -webkit-print-color-adjust: exact !important;
-            print-color-adjust: exact !important;
-          }
-          .company-logo {
-            -webkit-print-color-adjust: exact !important;
-            print-color-adjust: exact !important;
-            print-color: exact !important;
-          }
-        }
-      `}</style>
     </div>
   );
 }
