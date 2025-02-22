@@ -1,9 +1,29 @@
 import { createServerComponentClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
-import { redirect } from 'next/navigation';
 import { format } from 'date-fns';
 import InvoiceForm from '@/components/admin/pages/billing/invoice-form';
 import InvoicePreview from '@/components/admin/pages/billing/invoice-preview';
+
+interface Product {
+  id: string;
+  name: string;
+  rate: number;
+  index: number;
+}
+
+interface Program {
+  id: string;
+  name: string;
+  customer_name: string;
+}
+
+interface BillingEntry {
+  id: string;
+  entry_date: string;
+  quantity: number;
+  programs: Program;
+  products: Product;
+}
 
 interface PageProps {
   searchParams: {
@@ -16,25 +36,11 @@ export default async function InvoicePage({ searchParams }: PageProps) {
   const supabase = createServerComponentClient({ cookies });
   const currentMonth = format(new Date(), 'yyyy-MM');
 
-  // Check authentication
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-
-  if (!session) {
-    redirect('/login');
-  }
-
-  // Fetch packages
-  const { data: packages, error: packagesError } = await supabase
+  // Fetch packages for the form
+  const { data: packages } = await supabase
     .from('packages')
     .select('*')
     .order('name');
-
-  if (packagesError) {
-    console.error('Error fetching packages:', packagesError);
-    throw new Error('Failed to fetch packages');
-  }
 
   // If no search params are provided, just render the form
   if (!searchParams.packageId || !searchParams.month) {
@@ -57,59 +63,47 @@ export default async function InvoicePage({ searchParams }: PageProps) {
   endDate.setDate(endDate.getDate() - 1);
   const endDateStr = format(endDate, 'yyyy-MM-dd');
 
-  // Get package details
-  const { data: packageData, error: packageError } = await supabase
-    .from('packages')
-    .select('*')
-    .eq('id', searchParams.packageId)
-    .single();
-
-  if (packageError) {
-    console.error('Error fetching package:', packageError);
-    throw new Error('Failed to fetch package details');
-  }
-
-  // Get invoice configuration
-  const { data: invoiceConfig, error: configError } = await supabase
-    .from('invoice_config')
-    .select('*')
-    .single();
-
-  if (configError) {
-    console.error('Error fetching config:', configError);
-    throw new Error('Failed to fetch invoice configuration');
-  }
-
-  // Get billing entries
-  const { data: entriesData, error: entriesError } = await supabase
-    .from('billing_entries')
-    .select(`
-      id,
-      entry_date,
-      quantity,
-      programs:program_id (
+  // Get all required data in parallel
+  const [packageResponse, configResponse, entriesResponse] = await Promise.all([
+    supabase
+      .from('packages')
+      .select('*')
+      .eq('id', searchParams.packageId)
+      .single(),
+    supabase
+      .from('invoice_config')
+      .select('*')
+      .single(),
+    supabase
+      .from('billing_entries')
+      .select(`
         id,
-        name,
-        customer_name
-      ),
-      products:product_id (
-        id,
-        name,
-        rate,
-        index
-      )
-    `)
-    .eq('package_id', searchParams.packageId)
-    .gte('entry_date', startDate)
-    .lte('entry_date', endDateStr)
-    .order('products(index)', { ascending: true });
+        entry_date,
+        quantity,
+        programs:program_id (
+          id,
+          name,
+          customer_name
+        ),
+        products:product_id (
+          id,
+          name,
+          rate,
+          index
+        )
+      `)
+      .eq('package_id', searchParams.packageId)
+      .gte('entry_date', startDate)
+      .lte('entry_date', endDateStr)
+      .order('products(index)', { ascending: true })
+  ]);
 
-  if (entriesError) {
-    console.error('Error fetching entries:', entriesError);
-    throw new Error('Failed to fetch billing entries');
-  }
+  const packageData = packageResponse.data;
+  const invoiceConfig = configResponse.data;
+  const entriesData = entriesResponse.data || [];
 
-  if (!entriesData || entriesData.length === 0) {
+  // Show form with message if no entries found
+  if (entriesData.length === 0) {
     return (
       <div className="space-y-6">
         <InvoiceForm
@@ -126,7 +120,7 @@ export default async function InvoicePage({ searchParams }: PageProps) {
   }
 
   // Transform and aggregate entries
-  const transformedEntries = entriesData.reduce((acc: any[], entry) => {
+  const transformedEntries = entriesData.reduce((acc: BillingEntry[], entry: any) => {
     if (!entry.products || !entry.programs) return acc;
 
     const existingEntry = acc.find(e => e.products.id === entry.products.id);

@@ -1,4 +1,4 @@
-import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
+import { createServerComponentClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { format } from 'date-fns';
@@ -56,88 +56,67 @@ export async function POST(request: Request) {
       }, { status: 400 });
     }
 
-    const cookieStore = cookies();
-    const supabase = createRouteHandlerClient({ cookies: () => cookieStore });
+    const supabase = createServerComponentClient({ cookies });
 
-    // Get start and end dates for the selected month
+    // Get all required data in parallel
     const startDate = `${month}-01`;
     const endDate = new Date(month + '-01');
     endDate.setMonth(endDate.getMonth() + 1);
     endDate.setDate(endDate.getDate() - 1);
     const endDateStr = format(endDate, 'yyyy-MM-dd');
 
-    // Get package details
-    const { data: packageData, error: packageError } = await supabase
-      .from('packages')
-      .select('*')
-      .eq('id', packageId)
-      .single();
-
-    if (packageError) {
-      console.error('Package error:', packageError);
-      return NextResponse.json({ 
-        error: 'Failed to fetch package details' 
-      }, { status: 500 });
-    }
-
-    if (!packageData) {
-      return NextResponse.json({ 
-        error: 'Package not found' 
-      }, { status: 404 });
-    }
-
-    // Get invoice configuration
-    const { data: invoiceConfig, error: configError } = await supabase
-      .from('invoice_config')
-      .select('*')
-      .single();
-
-    if (configError) {
-      console.error('Config error:', configError);
-      return NextResponse.json({ 
-        error: 'Failed to fetch invoice configuration' 
-      }, { status: 500 });
-    }
-
-    // Get billing entries
-    const { data: entriesData, error: entriesError } = await supabase
-      .from('billing_entries')
-      .select(`
-        id,
-        entry_date,
-        quantity,
-        programs:program_id (
+    const [packageResponse, configResponse, entriesResponse] = await Promise.all([
+      supabase
+        .from('packages')
+        .select('*')
+        .eq('id', packageId)
+        .single(),
+      supabase
+        .from('invoice_config')
+        .select('*')
+        .single(),
+      supabase
+        .from('billing_entries')
+        .select(`
           id,
-          name,
-          customer_name
-        ),
-        products:product_id (
-          id,
-          name,
-          rate,
-          index
-        )
-      `)
-      .eq('package_id', packageId)
-      .gte('entry_date', startDate)
-      .lte('entry_date', endDateStr)
-      .order('products(index)', { ascending: true });
+          entry_date,
+          quantity,
+          programs:program_id (
+            id,
+            name,
+            customer_name
+          ),
+          products:product_id (
+            id,
+            name,
+            rate,
+            index
+          )
+        `)
+        .eq('package_id', packageId)
+        .gte('entry_date', startDate)
+        .lte('entry_date', endDateStr)
+        .order('products(index)', { ascending: true })
+    ]);
 
-    if (entriesError) {
-      console.error('Entries error:', entriesError);
+    const packageData = packageResponse.data;
+    const invoiceConfig = configResponse.data;
+    const entriesData = entriesResponse.data || [];
+
+    if (!packageData || !invoiceConfig) {
       return NextResponse.json({ 
-        error: 'Failed to fetch billing entries' 
+        error: 'Failed to fetch required data' 
       }, { status: 500 });
     }
 
-    if (!entriesData || entriesData.length === 0) {
+    if (entriesData.length === 0) {
       return NextResponse.json({ 
         error: `No entries found for package ${packageData.name} between ${format(new Date(startDate), 'dd/MM/yyyy')} and ${format(new Date(endDateStr), 'dd/MM/yyyy')}` 
       }, { status: 404 });
     }
 
     // Transform and aggregate entries
-    const transformedEntries = (entriesData as unknown as DatabaseBillingEntry[]).reduce((acc: BillingEntry[], entry) => {
+    const transformedEntries = entriesData.reduce((acc: BillingEntry[], entry: any) => {
       if (!entry.products || !entry.programs) return acc;
 
       const existingEntry = acc.find(e => e.products.id === entry.products.id);
