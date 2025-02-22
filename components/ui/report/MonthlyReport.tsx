@@ -1,6 +1,5 @@
 'use client';
 
-import { ReportData } from "@/components/admin/pages/billing/report";
 import { format } from "date-fns";
 import React, { useState } from "react";
 import { RiDownloadLine, RiPrinterLine } from "react-icons/ri";
@@ -18,6 +17,15 @@ interface CateringData {
   total: number;
 }
 
+interface ReportData {
+  date: string;
+  program: string;
+  cateringTotal: number;
+  extraTotal: number;
+  coldDrinkTotal: number;
+  grandTotal: number;
+}
+
 interface MonthlyReportProps {
   data: ReportData[];
   month: string;
@@ -25,6 +33,19 @@ interface MonthlyReportProps {
   cateringData?: CateringData[];
   products?: CateringProduct[];
 }
+
+// Package type mapping and order
+const PACKAGE_TYPE_DISPLAY = {
+  'normal': 'CATERING PACKAGE',
+  'Normal': 'CATERING PACKAGE',
+  'catering': 'CATERING PACKAGE',
+  'extra': 'EXTRA CATERING PACKAGE',
+  'Extra': 'EXTRA CATERING PACKAGE',
+  'cold drink': 'COLD DRINKS PACKAGE',
+  'Cold Drink': 'COLD DRINKS PACKAGE',
+  'cold': 'COLD DRINKS PACKAGE',
+  'all': 'ALL PACKAGES'
+} as const;
 
 const MonthlyReport = ({
   data,
@@ -34,6 +55,21 @@ const MonthlyReport = ({
   products = []
 }: MonthlyReportProps) => {
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
+
+  // Add debug logs
+  console.log('MonthlyReport Props:', {
+    type,
+    dataLength: data.length,
+    cateringDataLength: cateringData?.length,
+    productsLength: products.length,
+    month
+  });
+
+  console.log('Detailed Data:', {
+    reportData: data,
+    cateringData,
+    products
+  });
 
   const handlePrint = async () => {
     try {
@@ -192,81 +228,113 @@ const MonthlyReport = ({
     </div>
   );
 
-  const renderCateringTable = () => {
-    if (!cateringData || !products.length) return null;
+  const renderPackageTable = (title: string) => {
+    if (!cateringData || !products.length) {
+      console.log('No catering data or products:', { cateringData, products });
+      return null;
+    }
 
-    const totals: { [key: string]: number } = {};
-    products.forEach(product => {
-      totals[product.id] = 0;
+    // Add debug log to check data structure
+    console.log('Package table data:', {
+      title,
+      cateringData,
+      products,
+      firstProgram: cateringData[0],
+      firstProduct: products[0]
     });
 
-    cateringData.forEach(row => {
-      Object.entries(row.products).forEach(([productId, quantity]) => {
-        totals[productId] = (totals[productId] || 0) + quantity;
-      });
-    });
+    // Sort products by name
+    const sortedProducts = [...products].sort((a, b) => a.name.localeCompare(b.name));
+
+    // Filter out programs with no consumption
+    const programsWithConsumption = cateringData.filter(program => 
+      Object.values(program.products).some(quantity => quantity > 0)
+    );
+
+    // Add debug log for filtered programs
+    console.log('Programs with consumption:', programsWithConsumption);
+
+    if (programsWithConsumption.length === 0) {
+      return (
+        <div className="text-center py-8 bg-gray-50 rounded-lg border border-gray-200">
+          <p className="text-gray-500">
+            No consumption data found for {title.toLowerCase()} in {format(new Date(month), 'MMMM yyyy')}.
+          </p>
+        </div>
+      );
+    }
 
     return (
       <div className="w-full print-avoid-break">
         <div className="mb-4 bg-white">
           <div className="flex justify-center items-center bg-gray-50 p-6 border border-gray-200 rounded-t-lg">
-            <h3 className="text-lg font-semibold text-gray-900 print-subheader">
-              CATERING PACKAGE DETAILS
+            <h3 className="text-lg font-semibold text-gray-900">
+              {title}
             </h3>
           </div>
         </div>
-        <div className="relative overflow-x-auto shadow-sm rounded-b-lg">
+        <div className="relative overflow-x-auto shadow-sm rounded-lg mb-4">
           <div className="border border-gray-200">
             <table className="w-full text-sm border-collapse">
-              <colgroup>
-                <col style={{ width: '12%' }} />
-                {products.map(() => (
-                  <col key={`col-${Math.random()}`} style={{ width: `${73 / products.length}%` }} />
-                ))}
-                <col style={{ width: '15%' }} />
-              </colgroup>
               <thead>
                 <tr className="bg-gray-50">
-                  <th className="p-4 font-medium text-gray-900 text-center border-b border-r border-gray-200 print-text">
+                  <th className="px-4 py-3 border-b border-r border-gray-200 text-left font-medium text-gray-700 w-[20%]">
                     Program Name
                   </th>
-                  {products.map(product => (
-                    <th key={product.id} className="p-4 font-medium text-gray-900 text-center border-b border-r border-gray-200 print-text">
+                  {sortedProducts.map(product => (
+                    <th key={product.id} className="px-4 py-3 border-b border-r border-gray-200 text-center font-medium text-gray-700">
                       {product.name}
                     </th>
                   ))}
-                  <th className="p-4 font-medium text-gray-900 text-right border-b border-gray-200 print-text">
+                  <th className="px-4 py-3 border-b border-gray-200 text-right font-medium text-gray-700 w-[10%]">
                     Total
                   </th>
                 </tr>
               </thead>
               <tbody className="bg-white">
-                {cateringData.map((row, index) => (
-                  <tr key={index} className="border-b border-gray-200 hover:bg-gray-50 transition-colors">
-                    <td className="p-4 text-gray-900 text-center border-r border-gray-200 bg-gray-50 font-medium print-text">
-                      {row.program}
-                    </td>
-                    {products.map(product => (
-                      <td key={product.id} className="p-4 text-gray-900 text-center border-r border-gray-200 print-text">
-                        {row.products[product.id] || 0}
+                {programsWithConsumption.map((program, index) => {
+                  const rowTotal = sortedProducts.reduce((sum, product) => 
+                    sum + (program.products[product.id] || 0), 0);
+                  
+                  return (
+                    <tr key={index} className="border-b border-gray-200 hover:bg-gray-50">
+                      <td className="px-4 py-3 border-r border-gray-200 text-gray-900 font-medium">
+                        {program.program}
                       </td>
-                    ))}
-                    <td className="p-4 text-gray-900 text-right print-text">
-                      {row.total}
-                    </td>
-                  </tr>
-                ))}
-                <tr className="bg-gray-50 border-t-2 border-gray-200">
-                  <td className="p-4 text-gray-900 text-center border-r border-gray-200 font-semibold print-text">
-                    TOTAL
+                      {sortedProducts.map(product => (
+                        <td key={product.id} className="px-4 py-3 border-r border-gray-200 text-center text-gray-700">
+                          {program.products[product.id] || 0}
+                        </td>
+                      ))}
+                      <td className="px-4 py-3 text-right text-gray-900 font-medium">
+                        {rowTotal}
+                      </td>
+                    </tr>
+                  );
+                })}
+                <tr className="bg-gray-50 font-medium">
+                  <td className="px-4 py-3 border-r border-gray-200 text-gray-900">
+                    Total
                   </td>
-                  {products.map(product => (
-                    <td key={product.id} className="p-4 text-gray-900 text-center border-r border-gray-200 font-medium print-text">
-                      {totals[product.id]}
-                    </td>
-                  ))}
-                  <td className="p-4 text-gray-900 text-right font-semibold bg-gray-50 print-text">
-                    {Object.values(totals).reduce((a, b) => a + b, 0)}
+                  {sortedProducts.map(product => {
+                    const productTotal = programsWithConsumption.reduce(
+                      (sum, program) => sum + (program.products[product.id] || 0), 
+                      0
+                    );
+                    return (
+                      <td key={product.id} className="px-4 py-3 border-r border-gray-200 text-center text-gray-900">
+                        {productTotal}
+                      </td>
+                    );
+                  })}
+                  <td className="px-4 py-3 text-right text-gray-900">
+                    {programsWithConsumption.reduce(
+                      (sum, program) => sum + sortedProducts.reduce(
+                        (rowSum, product) => rowSum + (program.products[product.id] || 0), 
+                        0
+                      ), 
+                      0
+                    )}
                   </td>
                 </tr>
               </tbody>
@@ -277,41 +345,41 @@ const MonthlyReport = ({
     );
   };
 
-  const renderExtraPackageTable = () => {
-    if (!cateringData || !products.length) return null;
+  const renderPackageContent = () => {
+    console.log('Rendering package content:', {
+      type,
+      hasData: type === 'all' ? data.length > 0 : cateringData && cateringData.length > 0,
+      data,
+      cateringData
+    });
 
-    return (
-      <div className="w-full">
-        <div className="mb-2 p-3 bg-white border-b">
-          <div className="flex justify-center items-center bg-gray-50 p-4">
-            <h3 className="text-base font-semibold text-gray-900">
-              EXTRA PACKAGE DETAILS
-            </h3>
-          </div>
-        </div>
-        {/* Similar table structure as renderCateringTable */}
-      </div>
-    );
+    switch (type.toLowerCase()) {
+      case 'all':
+        return renderAllPackagesTable();
+      case 'normal':
+      case 'extra':
+      case 'cold drink':
+        return renderPackageTable(
+          type === 'normal' ? 'CATERING PACKAGE DETAILS' :
+          type === 'extra' ? 'EXTRA CATERING PACKAGE DETAILS' :
+          'COLD DRINKS PACKAGE DETAILS'
+        );
+      default:
+        console.log('Unknown package type:', type);
+        return null;
+    }
   };
 
-  const renderColdDrinkPackageTable = () => {
-    if (!cateringData || !products.length) return null;
+  const hasData = type === 'all' ? data.length > 0 : cateringData && cateringData.length > 0 && products.length > 0;
 
-    return (
-      <div className="w-full">
-        <div className="mb-2 p-3 bg-white border-b">
-          <div className="flex justify-center items-center bg-gray-50 p-4">
-            <h3 className="text-base font-semibold text-gray-900">
-              COLD DRINK PACKAGE DETAILS
-            </h3>
-          </div>
-        </div>
-        {/* Similar table structure as renderCateringTable */}
-      </div>
-    );
-  };
-
-  const hasData = type === 'all' ? data.length > 0 : cateringData && cateringData.length > 0;
+  // Add debug log for data presence
+  console.log('Data presence check:', {
+    type,
+    hasData,
+    dataLength: data.length,
+    cateringDataLength: cateringData?.length,
+    productsLength: products.length
+  });
 
   const printStyles = `
     @media print {
@@ -384,23 +452,26 @@ const MonthlyReport = ({
         {hasData ? (
           <>
             {/* Report Header */}
-            <div className="text-center mb-6 p-4 bg-gray-50 border border-gray-200 rounded-lg print-header">
-              <h2 className="text-xl font-semibold text-gray-900">
-                {format(new Date(month), 'MMMM yyyy')} {type === 'all' ? 'All Packages Report' : 
-                  type === 'normal' ? 'Catering Report' :
-                  type === 'extra' ? 'Extra Package Report' : 'Cold Drink Report'}
+            <div className="text-center mb-6 p-4 bg-gray-50 border border-gray-200 rounded-lg">
+              <h2 className="text-xl font-semibold text-gray-900 mb-2">
+                Monthly Report - {format(new Date(month), 'MMMM yyyy')}
               </h2>
+              <p className="text-sm text-gray-600">
+                {type === 'normal' ? 'CATERING PACKAGE' :
+                 type === 'extra' ? 'EXTRA CATERING PACKAGE' :
+                 type === 'cold drink' ? 'COLD DRINKS PACKAGE' :
+                 'ALL PACKAGES'}
+              </p>
             </div>
-            {type === 'all' && renderAllPackagesTable()}
-            {type === 'normal' && renderCateringTable()}
-            {type === 'extra' && renderExtraPackageTable()}
-            {type === 'cold drink' && renderColdDrinkPackageTable()}
+            {renderPackageContent()}
           </>
         ) : (
           <div className="text-center py-8 bg-gray-50 rounded-lg border border-gray-200">
             <p className="text-gray-500">
               No entries found for {format(new Date(month), 'MMMM yyyy')}
-              {type !== 'all' ? ` in ${type} package` : ''}.
+              {type !== 'all' ? ` in ${type === 'normal' ? 'Catering Package' :
+                                   type === 'extra' ? 'Extra Catering Package' :
+                                   'Cold Drinks Package'}` : ''}.
             </p>
           </div>
         )}

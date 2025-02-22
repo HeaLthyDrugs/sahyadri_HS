@@ -45,10 +45,8 @@ const DayReport = ({ data, selectedDay, selectedPackage = 'all' }: DayReportProp
       toast.loading('Preparing document for print...');
       setIsGeneratingPDF(true);
 
-      // Ensure we're using the correct date format (YYYY-MM-DD)
       const formattedDate = format(new Date(selectedDay), 'yyyy-MM-dd');
-      console.log('Sending request with date:', formattedDate);
-
+      
       const packageTypeMap: { [key: string]: string } = {
         'normal': 'Normal',
         'extra': 'Extra',
@@ -67,8 +65,12 @@ const DayReport = ({ data, selectedDay, selectedPackage = 'all' }: DayReportProp
         body: JSON.stringify({
           date: formattedDate,
           packageType: mappedPackageType,
-          action: 'print'
-        }),
+          action: 'print',
+          layoutOptions: {
+            compactTables: true,
+            optimizePageBreaks: true
+          }
+        })
       });
 
       console.log('API Request:', {

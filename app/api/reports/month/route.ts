@@ -1,7 +1,7 @@
 import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
-import { format, parseISO } from 'date-fns';
+import { format, parseISO, parse, isValid, startOfMonth, endOfMonth } from 'date-fns';
 import puppeteer from 'puppeteer';
 import puppeteerCore from 'puppeteer-core';
 import chromium from '@sparticuz/chromium-min';
@@ -28,7 +28,7 @@ interface CateringData {
 
 interface RequestBody {
   month: string;
-  type: 'all' | 'normal';
+  type: 'all' | 'normal' | 'extra' | 'cold drink';
   action?: 'print' | 'download';
 }
 
@@ -77,7 +77,7 @@ interface ProductData {
 const generatePDF = async (
   data: ReportData[],
   month: string,
-  type: 'all' | 'normal',
+  type: 'all' | 'normal' | 'extra' | 'cold drink',
   cateringData?: CateringData[],
   products?: CateringProduct[]
 ) => {
@@ -99,6 +99,11 @@ const generatePDF = async (
     }
 
     const page = await browser.newPage();
+
+    const PRODUCTS_PER_TABLE = 7;
+    const productChunks = products ? Array.from({ length: Math.ceil(products.length / PRODUCTS_PER_TABLE) }, (_, i) =>
+      products.slice(i * PRODUCTS_PER_TABLE, (i + 1) * PRODUCTS_PER_TABLE)
+    ) : [];
 
     const htmlContent = `
       <!DOCTYPE html>
@@ -166,12 +171,17 @@ const generatePDF = async (
               .no-break {
                 page-break-inside: avoid;
               }
+              .page-break-before {
+                page-break-before: always;
+              }
             }
           </style>
         </head>
         <body>
           <div class="report-header">
-            <h2>${format(parseISO(month), 'MMMM yyyy')} ${type === 'all' ? 'All Packages Report' : 'Catering Report'}</h2>
+            <h2>${format(parseISO(month), 'MMMM yyyy')} ${type === 'all' ? 'All Packages Report' : 
+              type === 'normal' ? 'Catering Package Report' :
+              type === 'extra' ? 'Extra Package Report' : 'Cold Drink Package Report'}</h2>
           </div>
 
           ${type === 'all' ? `
@@ -206,62 +216,40 @@ const generatePDF = async (
               </table>
             </div>
           ` : cateringData && products ? `
-            <div class="table-container no-break">
-              <table>
-                <thead>
-                  <tr>
-                    <th style="width: 8%; text-align: center">No.</th>
-                    <th style="width: 25%; text-align: left">Program Name</th>
-                    <th style="width: 10%; text-align: center">MT</th>
-                    <th style="width: 10%; text-align: center">BF</th>
-                    <th style="width: 10%; text-align: center">M-CRT</th>
-                    <th style="width: 10%; text-align: center">LUNCH</th>
-                    <th style="width: 7%; text-align: center">A-CRT</th>
-                    <th style="width: 7%; text-align: center">HINER</th>
-                    <th style="width: 13%; text-align: center">Total</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  ${cateringData.map((row, index) => {
-                    const getProductQuantity = (productName: string) => {
-                      const product = products?.find(p => p.name === productName);
-                      return product ? (row.products[product.id] || 0) : 0;
-                    };
-
-                    const mt = getProductQuantity('MT');
-                    const bf = getProductQuantity('BF');
-                    const mcrt = getProductQuantity('M-CRT');
-                    const lunch = getProductQuantity('LUNCH');
-                    const acrt = getProductQuantity('A-CRT');
-                    const hiner = getProductQuantity('HINER');
-                    const total = mt + bf + mcrt + lunch + acrt + hiner;
-
-                    return `
+            ${productChunks.map((chunk, chunkIndex) => `
+              ${chunkIndex > 0 ? '<div class="page-break-before"></div>' : ''}
+              <div class="table-container no-break">
+                <table>
+                  <thead>
+                    <tr>
+                      <th style="width: 12%; text-align: center">Program Name</th>
+                      ${chunk.map(product => `
+                        <th style="text-align: center">${product.name}</th>
+                      `).join('')}
+                      <th style="width: 15%; text-align: center">Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${cateringData.map(row => `
                       <tr>
-                        <td style="text-align: center">${index + 1}</td>
-                        <td>${row.program}</td>
-                        <td style="text-align: center">${mt || ''}</td>
-                        <td style="text-align: center">${bf || ''}</td>
-                        <td style="text-align: center">${mcrt || ''}</td>
-                        <td style="text-align: center">${lunch || ''}</td>
-                        <td style="text-align: center">${acrt || ''}</td>
-                        <td style="text-align: center">${hiner || ''}</td>
-                        <td style="text-align: center">${total || ''}</td>
+                        <td style="text-align: center">${row.program}</td>
+                        ${chunk.map(product => `
+                          <td style="text-align: center">${row.products[product.id] || 0}</td>
+                        `).join('')}
+                        <td style="text-align: center">${chunk.reduce((sum, product) => sum + (row.products[product.id] || 0), 0)}</td>
                       </tr>
-                    `;
-                  }).join('')}
-                  <tr class="total-row">
-                    <td colspan="2" style="text-align: right">TOTAL</td>
-                    ${['MT', 'BF', 'M-CRT', 'LUNCH', 'A-CRT', 'HINER'].map(productName => {
-                      const product = products?.find(p => p.name === productName);
-                      const total = product ? cateringData.reduce((sum, row) => sum + (row.products[product.id] || 0), 0) : 0;
-                      return `<td style="text-align: center">${total || ''}</td>`;
-                    }).join('')}
-                    <td style="text-align: center">${cateringData.reduce((sum, row) => sum + Object.values(row.products).reduce((a, b) => a + b, 0), 0)}</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
+                    `).join('')}
+                    <tr class="total-row">
+                      <td style="text-align: center">TOTAL</td>
+                      ${chunk.map(product => `
+                        <td style="text-align: center">${cateringData.reduce((sum, row) => sum + (row.products[product.id] || 0), 0)}</td>
+                      `).join('')}
+                      <td style="text-align: center">${chunk.reduce((sum, product) => sum + cateringData.reduce((rowSum, row) => rowSum + (row.products[product.id] || 0), 0), 0)}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            `).join('')}
           ` : ''}
         </body>
       </html>
@@ -295,39 +283,34 @@ const generatePDF = async (
 
 export async function POST(request: Request) {
   try {
-    const body: RequestBody = await request.json();
+    const supabase = createRouteHandlerClient({ cookies });
+    const body = await request.json() as RequestBody;
     const { month, type, action } = body;
-    
-    if (!month || typeof month !== 'string') {
-      return NextResponse.json({ 
-        error: 'Invalid or missing month parameter'
-      }, { status: 400 });
+
+    // Validate month format
+    const parsedDate = parse(month, 'yyyy-MM', new Date());
+    if (!isValid(parsedDate)) {
+      return NextResponse.json({ error: 'Invalid month format' }, { status: 400 });
     }
 
-    let parsedDate: Date;
-    try {
-      parsedDate = parseISO(month);
-      if (isNaN(parsedDate.getTime())) {
-        throw new Error('Invalid date format');
-      }
-    } catch (err) {
-      return NextResponse.json({ 
-        error: 'Invalid date format. Expected format: YYYY-MM'
-      }, { status: 400 });
-    }
-
-    const cookieStore = cookies();
-    const supabase = createRouteHandlerClient({ cookies: () => cookieStore });
-
-    // Fetch the report data based on the month and type
-    const startDate = format(parsedDate, 'yyyy-MM-01');
-    const endDate = format(parsedDate, 'yyyy-MM-dd');
+    const startDate = format(startOfMonth(parsedDate), 'yyyy-MM-dd');
+    const endDate = format(endOfMonth(parsedDate), 'yyyy-MM-dd');
 
     let reportData: ReportData[] = [];
     let cateringData: CateringData[] | undefined;
     let products: CateringProduct[] | undefined;
 
+    // Add debug logging
+    console.log('Processing monthly report:', {
+      month,
+      type,
+      startDate,
+      endDate,
+      action
+    });
+
     if (type === 'all') {
+      // Fetch all entries for the month
       const { data: entries, error } = await supabase
         .from('billing_entries')
         .select(`
@@ -335,11 +318,6 @@ export async function POST(request: Request) {
           entry_date,
           quantity,
           package_id,
-          packages!inner (
-            id,
-            name,
-            type
-          ),
           products!inner (
             id,
             name,
@@ -348,6 +326,11 @@ export async function POST(request: Request) {
           programs!inner (
             id,
             name
+          ),
+          packages!inner (
+            id,
+            name,
+            type
           )
         `)
         .gte('entry_date', startDate)
@@ -374,12 +357,16 @@ export async function POST(request: Request) {
         const amount = entry.quantity * entry.products.rate;
         const packageType = entry.packages.type.toLowerCase();
 
-        if (packageType === 'normal' || packageType === 'catering') {
-          acc[programName].cateringTotal += amount;
-        } else if (packageType === 'extra') {
-          acc[programName].extraTotal += amount;
-        } else if (packageType === 'cold drink' || packageType === 'cold') {
-          acc[programName].coldDrinkTotal += amount;
+        switch (packageType) {
+          case 'normal':
+            acc[programName].cateringTotal += amount;
+            break;
+          case 'extra':
+            acc[programName].extraTotal += amount;
+            break;
+          case 'cold drink':
+            acc[programName].coldDrinkTotal += amount;
+            break;
         }
 
         acc[programName].grandTotal += amount;
@@ -388,24 +375,54 @@ export async function POST(request: Request) {
 
       reportData = Object.values(programTotals);
     } else {
-      // Fetch catering products
+      // Get package ID based on type
+      const packageTypeMap = {
+        'normal': 'Normal',
+        'extra': 'Extra',
+        'cold drink': 'Cold Drink'
+      };
+
+      const mappedType = packageTypeMap[type as keyof typeof packageTypeMap];
+      
+      console.log('Fetching specific package:', { type, mappedType });
+
+      const { data: packageData, error: packageError } = await supabase
+        .from('packages')
+        .select('id')
+        .eq('type', mappedType)
+        .single();
+
+      if (packageError) {
+        console.error('Error fetching package:', packageError);
+        return NextResponse.json({ error: 'Failed to fetch package details' }, { status: 500 });
+      }
+
+      if (!packageData) {
+        return NextResponse.json({ error: `Package not found for type: ${type}` }, { status: 404 });
+      }
+
+      const packageId = packageData.id;
+
+      // Fetch products for the selected package
       const { data: productData, error: productError } = await supabase
         .from('products')
         .select('id, name')
-        .eq('package_id', 1); // Assuming 1 is the ID for normal/catering package
+        .eq('package_id', packageId)
+        .order('name');
 
       if (productError) {
         console.error('Error fetching products:', productError);
         return NextResponse.json({ error: 'Failed to fetch products' }, { status: 500 });
       }
 
-      // Convert product data to match CateringProduct interface
       products = (productData as ProductData[]).map(p => ({
         ...p,
-        quantity: 0 // Add required quantity field with default value
+        quantity: 0
       }));
 
-      // Fetch catering entries
+      console.log('Fetched products:', products);
+
+      // Fetch entries for the selected package
       const { data: entries, error } = await supabase
         .from('billing_entries')
         .select(`
@@ -423,7 +440,7 @@ export async function POST(request: Request) {
             name
           )
         `)
-        .eq('package_id', 1)
+        .eq('package_id', packageId)
         .gte('entry_date', startDate)
         .lte('entry_date', endDate);
 
@@ -431,6 +448,8 @@ export async function POST(request: Request) {
         console.error('Database query error:', error);
         return NextResponse.json({ error: 'Failed to fetch entries' }, { status: 500 });
       }
+
+      console.log('Fetched entries:', entries);
 
       // Process entries and group by program
       const programTotals = (entries as unknown as DatabaseEntryWithoutPackages[]).reduce((acc: { [key: string]: CateringData }, entry) => {
@@ -450,6 +469,8 @@ export async function POST(request: Request) {
       }, {});
 
       cateringData = Object.values(programTotals);
+
+      console.log('Processed catering data:', cateringData);
     }
 
     // Generate PDF if requested
@@ -466,14 +487,19 @@ export async function POST(request: Request) {
       });
     }
 
-    // Return JSON response
+    // Return JSON response with debug info
     return NextResponse.json({
       data: {
         month: format(parsedDate, 'yyyy-MM'),
         type,
         reportData,
         cateringData,
-        products
+        products,
+        debug: {
+          hasReportData: reportData.length > 0,
+          hasCateringData: cateringData ? cateringData.length > 0 : false,
+          hasProducts: products ? products.length > 0 : false
+        }
       }
     });
 

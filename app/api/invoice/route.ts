@@ -47,10 +47,13 @@ interface DatabaseBillingEntry {
 
 export async function POST(request: Request) {
   try {
-    const { packageId, month, action } = await request.json();
+    const body = await request.json();
+    const { packageId, month, action = 'view' } = body;
     
     if (!packageId || !month) {
-      return NextResponse.json({ error: 'Package ID and month are required' }, { status: 400 });
+      return NextResponse.json({ 
+        error: 'Package ID and month are required' 
+      }, { status: 400 });
     }
 
     const cookieStore = cookies();
@@ -70,7 +73,18 @@ export async function POST(request: Request) {
       .eq('id', packageId)
       .single();
 
-    if (packageError) throw packageError;
+    if (packageError) {
+      console.error('Package error:', packageError);
+      return NextResponse.json({ 
+        error: 'Failed to fetch package details' 
+      }, { status: 500 });
+    }
+
+    if (!packageData) {
+      return NextResponse.json({ 
+        error: 'Package not found' 
+      }, { status: 404 });
+    }
 
     // Get invoice configuration
     const { data: invoiceConfig, error: configError } = await supabase
@@ -78,18 +92,20 @@ export async function POST(request: Request) {
       .select('*')
       .single();
 
-    if (configError) throw configError;
+    if (configError) {
+      console.error('Config error:', configError);
+      return NextResponse.json({ 
+        error: 'Failed to fetch invoice configuration' 
+      }, { status: 500 });
+    }
 
-    // Get billing entries with proper joins
+    // Get billing entries
     const { data: entriesData, error: entriesError } = await supabase
       .from('billing_entries')
       .select(`
         id,
         entry_date,
         quantity,
-        program_id,
-        package_id,
-        product_id,
         programs:program_id (
           id,
           name,
@@ -107,7 +123,12 @@ export async function POST(request: Request) {
       .lte('entry_date', endDateStr)
       .order('products(index)', { ascending: true });
 
-    if (entriesError) throw entriesError;
+    if (entriesError) {
+      console.error('Entries error:', entriesError);
+      return NextResponse.json({ 
+        error: 'Failed to fetch billing entries' 
+      }, { status: 500 });
+    }
 
     if (!entriesData || entriesData.length === 0) {
       return NextResponse.json({ 
@@ -144,13 +165,6 @@ export async function POST(request: Request) {
       return sum + (rate * quantity);
     }, 0);
 
-    console.log('Transformed Data:', {
-      packageDetails: packageData,
-      entries: transformedEntries,
-      totalAmount,
-      month
-    });
-
     // Generate HTML content
     const invoiceHtml = generateInvoiceHTML({
       packageDetails: packageData,
@@ -160,27 +174,36 @@ export async function POST(request: Request) {
       config: invoiceConfig
     });
 
-    // Generate PDF
-    const pdf = await generatePDF(invoiceHtml);
+    try {
+      // Generate PDF with a timeout
+      const pdf = await Promise.race([
+        generatePDF(invoiceHtml),
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('PDF generation timed out')), 25000)
+        )
+      ]) as Buffer;
 
-    // Return response based on action
-    if (action === 'download') {
-      return new NextResponse(pdf, {
-        headers: {
-          'Content-Type': 'application/pdf',
-          'Content-Disposition': `attachment; filename=Invoice-${format(new Date(), 'yyyyMMdd')}-${packageData.name}.pdf`
-        }
-      });
-    } else {
-      return new NextResponse(pdf, {
-        headers: {
-          'Content-Type': 'application/pdf'
-        }
-      });
+      // Return response based on action
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/pdf'
+      };
+
+      if (action === 'download') {
+        headers['Content-Disposition'] = `attachment; filename=Invoice-${format(new Date(), 'yyyyMMdd')}-${packageData.name}.pdf`;
+      }
+
+      return new NextResponse(pdf, { headers });
+    } catch (pdfError) {
+      console.error('PDF generation error:', pdfError);
+      return NextResponse.json({ 
+        error: 'Failed to generate PDF. Please try again.' 
+      }, { status: 500 });
     }
   } catch (error) {
     console.error('Error generating invoice:', error);
-    return NextResponse.json({ error: 'Failed to generate invoice' }, { status: 500 });
+    return NextResponse.json({ 
+      error: 'An unexpected error occurred' 
+    }, { status: 500 });
   }
 }
 

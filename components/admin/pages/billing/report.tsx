@@ -17,8 +17,8 @@ import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
 import MonthlyReport from "@/components/ui/report/MonthlyReport";
 import ProgramReport from "@/components/ui/report/ProgramReport";
-import AnnualReport from "@/components/ui/report/AnnualReport";
 import DayReport from "@/components/ui/report/DayReport";
+import LifeTimeReport from "@/components/ui/report/LifeTimeReport";
 
 interface Package {
   id: string;
@@ -139,6 +139,14 @@ interface CateringProduct {
 
 // Update the report type definition
 type ReportType = 'day' | 'program' | 'monthly' | 'lifetime';
+
+// Add the ProductConsumption interface at the top with other interfaces
+interface ProductConsumption {
+  id: string;
+  name: string;
+  monthlyQuantities: { [month: string]: number };
+  total: number;
+}
 
 const pdfStyles = `
   @media print {
@@ -271,7 +279,7 @@ export default function ReportPage() {
   });
   const [isLoading, setIsLoading] = useState(false);
   const [reportData, setReportData] = useState<ReportData[]>([]);
-  const [annualReportData, setAnnualReportData] = useState<BillingEntry[]>([]);
+  const [annualReportData, setAnnualReportData] = useState<ProductConsumption[]>([]);
   const [dayReportData, setDayReportData] = useState<DayReportData | null>(null);
   const [summary, setSummary] = useState({
     totalQuantity: 0,
@@ -342,7 +350,7 @@ export default function ReportPage() {
 
       if (error) throw error;
       setPrograms(data || []);
-      
+
       // Reset selected program when date changes
       setSelectedProgram("");
     } catch (error) {
@@ -354,22 +362,38 @@ export default function ReportPage() {
 
   const fetchCateringProducts = async () => {
     try {
-      // First get the catering package (type: Normal)
-      const { data: packagesData, error: packagesError } = await supabase
-        .from('packages')
-        .select('id')
-        .eq('type', 'Normal');
+      // Get the package type based on selection
+      const packageTypeMap = {
+        'normal': 'Normal',
+        'extra': 'Extra',
+        'cold drink': 'Cold Drink'
+      };
 
-      if (packagesError) throw packagesError;
-      
-      // If no catering packages found, return early
-      if (!packagesData || packagesData.length === 0) {
-        console.log('No catering packages found');
+      if (!selectedPackage || selectedPackage === 'all') {
         setCateringProducts([]);
         return;
       }
 
-      // Get all products from catering packages
+      const mappedType = packageTypeMap[selectedPackage.toLowerCase() as keyof typeof packageTypeMap];
+      
+      console.log('Fetching products for package type:', mappedType);
+
+      // Get the package ID for the selected type
+      const { data: packagesData, error: packagesError } = await supabase
+        .from('packages')
+        .select('id')
+        .eq('type', mappedType);
+
+      if (packagesError) throw packagesError;
+
+      // If no packages found, return early
+      if (!packagesData || packagesData.length === 0) {
+        console.log('No packages found for type:', mappedType);
+        setCateringProducts([]);
+        return;
+      }
+
+      // Get all products for the selected package type
       const packageIds = packagesData.map(pkg => pkg.id);
       const { data: productsData, error: productsError } = await supabase
         .from('products')
@@ -380,15 +404,16 @@ export default function ReportPage() {
       if (productsError) throw productsError;
 
       if (!productsData || productsData.length === 0) {
-        console.log('No products found for catering packages');
+        console.log('No products found for package type:', mappedType);
         setCateringProducts([]);
         return;
       }
 
+      console.log('Fetched products:', productsData);
       setCateringProducts(productsData.map(p => ({ ...p, quantity: 0 })));
     } catch (error) {
-      console.error('Error fetching catering products:', error);
-      toast.error('Failed to fetch catering products');
+      console.error('Error fetching products:', error);
+      toast.error('Failed to fetch products');
       setCateringProducts([]);
     }
   };
@@ -420,127 +445,35 @@ export default function ReportPage() {
     // Clear previous data
     setReportData([]);
     setCateringData([]);
-    
+    setCateringProducts([]);
+    setAnnualReportData([]); // Clear annual report data
+
     try {
-      // Get start and end dates for the selected month
-      const startDate = `${selectedMonth}-01`;
-      const endDate = new Date(selectedMonth + '-01');
-      endDate.setMonth(endDate.getMonth() + 1);
-      endDate.setDate(endDate.getDate() - 1);
-      const endDateStr = format(endDate, 'yyyy-MM-dd');
-
-      // Build query for billing entries
-      let query = supabase
-        .from('billing_entries')
-        .select(`
-          entry_date,
-          quantity,
-          program_id,
-          package_id,
-          product_id,
-          programs:programs!inner (
-            id,
-            name
-          ),
-          packages:packages!inner (
-            id,
-            name,
-            type
-          ),
-          products:products!inner (
-            id,
-            name,
-            rate
-          )
-        `)
-        .gte('entry_date', startDate)
-        .lte('entry_date', endDateStr);
-
-      // Add program filter if selected
-      if (selectedProgram) {
-        query = query.eq('program_id', selectedProgram);
-      }
-
-      const { data: entriesData, error } = await query;
-
-      if (error) throw error;
-
-      if (!entriesData || entriesData.length === 0) {
-        throw new Error('No entries found for the selected period');
-      }
-
-      // Always process data for all packages view
-      const programTotals = new Map<string, ReportData>();
-
-      entriesData.forEach((entry: any) => {
-        const programId = entry.programs.id;
-        const programName = entry.programs.name;
-        const amount = entry.quantity * entry.products.rate;
-        const packageType = entry.packages.type.toLowerCase();
-
-        if (!programTotals.has(programId)) {
-          programTotals.set(programId, {
-            date: format(new Date(entry.entry_date), 'yyyy-MM-dd'),
-            program: programName,
-            cateringTotal: 0,
-            extraTotal: 0,
-            coldDrinkTotal: 0,
-            grandTotal: 0
-          });
-        }
-
-        const programData = programTotals.get(programId)!;
-        
-        // Update totals based on package type
-        switch (packageType) {
-          case 'normal':
-            programData.cateringTotal += amount;
-            break;
-          case 'extra':
-            programData.extraTotal += amount;
-            break;
-          case 'cold drink':
-            programData.coldDrinkTotal += amount;
-            break;
-        }
-        
-        programData.grandTotal += amount;
+      const response = await fetch('/api/reports/month', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          month: selectedMonth,
+          type: selectedPackage
+        }),
       });
 
-      const reportDataArray = Array.from(programTotals.values());
-      setReportData(reportDataArray);
-
-      // Process data for catering view if needed
-      if (selectedPackage === 'normal') {
-        const cateringEntries = new Map<string, CateringData>();
-
-        entriesData.forEach((entry: any) => {
-          if (entry.packages.type.toLowerCase() !== 'normal') return;
-
-          const programId = entry.programs.id;
-          const programName = entry.programs.name;
-          const productId = entry.product_id;
-          const quantity = entry.quantity;
-
-          if (!cateringEntries.has(programId)) {
-            cateringEntries.set(programId, {
-              program: programName,
-              products: {},
-              total: 0
-            });
-          }
-
-          const data = cateringEntries.get(programId)!;
-          data.products[productId] = (data.products[productId] || 0) + quantity;
-          data.total += quantity;
-        });
-
-        const cateringDataArray = Array.from(cateringEntries.values());
-        if (cateringDataArray.length === 0) {
-          throw new Error('No catering data found for the selected period');
-        }
-        setCateringData(cateringDataArray);
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || 'Failed to generate report');
       }
+
+      const { data } = await response.json();
+      
+      if (!data) {
+        throw new Error('No data received from server');
+      }
+
+      setReportData(data.reportData || []);
+      setCateringData(data.cateringData || []);
+      setCateringProducts(data.products || []);
 
       toast.success('Report generated successfully');
     } catch (error) {
@@ -549,6 +482,7 @@ export default function ReportPage() {
       // Clear report data on error
       setReportData([]);
       setCateringData([]);
+      setCateringProducts([]);
     } finally {
       setIsLoading(false);
     }
@@ -571,32 +505,31 @@ export default function ReportPage() {
 
       if (programError) throw programError;
 
+      // Map package type to database type
+      const packageTypeMap = {
+        'normal': 'Normal',
+        'extra': 'Extra',
+        'cold drink': 'Cold Drink',
+        'all': 'all'
+      };
+
+      const mappedPackageType = packageTypeMap[selectedPackage.toLowerCase() as keyof typeof packageTypeMap] || selectedPackage;
+
       // Build query for billing entries
       let query = supabase
         .from('billing_entries')
         .select(`
-          id,
           entry_date,
           quantity,
-          package_id,
-          product_id,
-          packages:packages!inner (
-            id,
-            name,
-            type
-          ),
-          products:products!inner (
-            id,
-            name,
-            rate
-          )
+          packages:packages!inner (id, name, type),
+          products:products!inner (id, name, rate)
         `)
         .eq('program_id', selectedProgram)
         .order('entry_date', { ascending: true });
 
       // Add package filter if selected
       if (selectedPackage && selectedPackage !== 'all') {
-        query = query.eq('package_id', selectedPackage);
+        query = query.eq('packages.type', mappedPackageType);
       }
 
       const { data: billingData, error: billingError } = await query;
@@ -623,58 +556,46 @@ export default function ReportPage() {
         if (!packageGroups[packageType]) {
           packageGroups[packageType] = {
             packageName: entry.packages.name,
-            products: new Map(),
-            entries: new Map(),
-            totals: {},
-            rates: {},
-            totalAmounts: {},
-            grandTotal: 0
+            items: [],
+            packageTotal: 0
           };
         }
 
-        // Store unique products
-        packageGroups[packageType].products.set(entry.product_id, {
-          id: entry.product_id,
-          name: entry.products.name,
-          rate: entry.products.rate
-        });
+        // Find existing item or create new one
+        let item = packageGroups[packageType].items.find(
+          (i: any) => i.productName === entry.products.name
+        );
 
-        // Group quantities by date and product
-        const dateKey = entry.entry_date;
-        if (!packageGroups[packageType].entries.has(dateKey)) {
-          packageGroups[packageType].entries.set(dateKey, {
-            date: dateKey,
-            quantities: {}
-          });
+        if (!item) {
+          item = {
+            productName: entry.products.name,
+            quantity: 0,
+            rate: entry.products.rate,
+            total: 0,
+            dates: {}
+          };
+          packageGroups[packageType].items.push(item);
         }
 
-        const dateEntry = packageGroups[packageType].entries.get(dateKey);
-        dateEntry.quantities[entry.product_id] = (dateEntry.quantities[entry.product_id] || 0) + entry.quantity;
+        // Update item quantities and totals
+        item.quantity += entry.quantity;
+        item.total = item.quantity * item.rate;
 
-        // Update totals
-        packageGroups[packageType].totals[entry.product_id] = 
-          (packageGroups[packageType].totals[entry.product_id] || 0) + entry.quantity;
-        packageGroups[packageType].rates[entry.product_id] = entry.products.rate;
-        packageGroups[packageType].totalAmounts[entry.product_id] = 
-          packageGroups[packageType].totals[entry.product_id] * entry.products.rate;
-        
-        // Update package grand total
-        packageGroups[packageType].grandTotal += entry.quantity * entry.products.rate;
-        grandTotal += entry.quantity * entry.products.rate;
-      });
+        // Add or update date-wise consumption
+        const dateKey = format(new Date(entry.entry_date), 'yyyy-MM-dd');
+        item.dates[dateKey] = (item.dates[dateKey] || 0) + entry.quantity;
 
-      // Convert Map objects to arrays and sort products by name
-      const processedPackages: { [key: string]: any } = {};
-      Object.entries(packageGroups).forEach(([type, data]) => {
-        processedPackages[type] = {
-          packageName: data.packageName,
-          products: Array.from(data.products.values()).sort((a: any, b: any) => a.name.localeCompare(b.name)),
-          entries: Array.from(data.entries.values()).sort((a: any, b: any) => a.date.localeCompare(b.date)),
-          totals: data.totals,
-          rates: data.rates,
-          totalAmounts: data.totalAmounts,
-          grandTotal: data.grandTotal
-        };
+        // Update package total
+        packageGroups[packageType].packageTotal = packageGroups[packageType].items.reduce(
+          (sum: number, item: any) => sum + item.total,
+          0
+        );
+
+        // Update grand total
+        grandTotal = Object.values(packageGroups).reduce(
+          (sum: number, pkg: any) => sum + pkg.packageTotal,
+          0
+        );
       });
 
       setProgramReport({
@@ -685,7 +606,7 @@ export default function ReportPage() {
           totalParticipants: programData.total_participants,
           customerName: programData.customer_name
         },
-        packages: processedPackages,
+        packages: packageGroups,
         grandTotal
       });
 
@@ -693,9 +614,9 @@ export default function ReportPage() {
       setReportData([{
         date: format(new Date(), 'yyyy-MM-dd'),
         program: programData.name,
-        cateringTotal: 0,
-        extraTotal: 0,
-        coldDrinkTotal: 0,
+        cateringTotal: packageGroups['Normal']?.packageTotal || 0,
+        extraTotal: packageGroups['Extra']?.packageTotal || 0,
+        coldDrinkTotal: packageGroups['Cold Drink']?.packageTotal || 0,
         grandTotal
       }]);
 
@@ -814,11 +735,11 @@ export default function ReportPage() {
 
       const mappedPackageType = packageTypeMap[selectedPackage.toLowerCase() as keyof typeof packageTypeMap] || selectedPackage;
 
-      console.log('Generating report for:', { 
+      console.log('Generating report for:', {
         selectedDay,
         formattedDate,
         selectedPackage,
-        mappedPackageType 
+        mappedPackageType
       });
 
       const response = await fetch('/api/reports/day', {
@@ -883,6 +804,14 @@ export default function ReportPage() {
 
     setIsLoading(true);
     try {
+      console.log('Generating lifetime report with params:', {
+        startMonth: dateRange.start,
+        endMonth: dateRange.end,
+        packageId: selectedPackage,
+        currentReportType: reportType,
+        hasAnnualData: annualReportData.length > 0
+      });
+
       const response = await fetch('/api/reports/lifetime', {
         method: 'POST',
         headers: {
@@ -901,11 +830,25 @@ export default function ReportPage() {
       }
 
       // Get the response data
-      const data = await response.json();
+      const { data } = await response.json();
       
-      // Update the annual report data
-      setAnnualReportData(data);
+      console.log('Received response data:', data);
 
+      if (!data || !data.package) {
+        throw new Error('Invalid response data structure');
+      }
+
+      // Ensure the data structure is correct
+      const processedData = data.package.products.map((product: { id: string; name: string; monthlyQuantities?: { [key: string]: number }; total?: number }) => ({
+        id: product.id,
+        name: product.name,
+        monthlyQuantities: product.monthlyQuantities || {},
+        total: product.total || 0
+      }));
+
+      // Update the state with the processed data
+      setAnnualReportData(processedData);
+      
       toast.success('Report generated successfully');
     } catch (error) {
       console.error('Error generating lifetime report:', error);
@@ -1046,9 +989,9 @@ export default function ReportPage() {
     };
 
     // Package table component
-    const PackageTable = ({ packageType, packageData }: { 
-      packageType: string, 
-      packageData: ProgramReport['packages'][string] 
+    const PackageTable = ({ packageType, packageData }: {
+      packageType: string,
+      packageData: ProgramReport['packages'][string]
     }) => {
       if (!packageData?.items || packageData.items.length === 0) return null;
 
@@ -1153,10 +1096,10 @@ export default function ReportPage() {
   };
 
   const handleDownloadPDF = async () => {
-    const fileName = reportType === 'monthly' 
+    const fileName = reportType === 'monthly'
       ? `Monthly-Report-${selectedMonth}.pdf`
       : `Program-Report-${programReport?.programDetails.name}-${format(new Date(), 'yyyyMMdd')}.pdf`;
-    
+
     await generateEnhancedPDF('report-content', fileName);
   };
 
@@ -1218,10 +1161,10 @@ export default function ReportPage() {
 
       // Get the PDF blob from the response
       const pdfBlob = await response.blob();
-      
+
       // Create a URL for the blob
       const url = window.URL.createObjectURL(pdfBlob);
-      
+
       // Create a link element and trigger download
       const link = document.createElement('a');
       link.href = url;
@@ -1229,7 +1172,7 @@ export default function ReportPage() {
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-      
+
       // Clean up the URL
       window.URL.revokeObjectURL(url);
 
@@ -1239,6 +1182,33 @@ export default function ReportPage() {
       toast.error(error instanceof Error ? error.message : 'Failed to download PDF');
     }
   };
+
+  // Update the render conditions check
+  const shouldShowReport = (() => {
+    switch (reportType) {
+      case 'day':
+        return dayReportData !== null;
+      case 'monthly':
+        return reportData.length > 0;
+      case 'program':
+        return programReport !== null;
+      case 'lifetime':
+        return annualReportData.length > 0;
+      default:
+        return false;
+    }
+  })();
+
+  // Debug logging for rendering conditions
+  console.log('Render conditions:', {
+    reportType,
+    reportDataLength: reportData.length,
+    annualReportDataLength: annualReportData.length,
+    isLoading,
+    selectedPackage,
+    dateRange,
+    shouldShowReport
+  });
 
   return (
     <div className="space-y-6">
@@ -1262,16 +1232,14 @@ export default function ReportPage() {
                   setSelectedProgram("");
                   setReportData([]);
                 }}
-                className={`p-3 rounded-lg border transition-all duration-200 shadow-sm hover:shadow-md ${
-                  reportType === type.id
+                className={`p-3 rounded-lg border transition-all duration-200 shadow-sm hover:shadow-md ${reportType === type.id
                     ? 'border-amber-500 bg-gradient-to-br from-amber-50 to-amber-100 text-amber-900 shadow-inner'
                     : 'border-gray-200 hover:border-amber-200 hover:bg-amber-50/30'
-                }`}
+                  }`}
               >
                 <div className="flex flex-col items-center gap-2">
-                  <type.icon className={`w-5 h-5 ${
-                    reportType === type.id ? 'text-amber-600' : 'text-gray-400'
-                  }`} />
+                  <type.icon className={`w-5 h-5 ${reportType === type.id ? 'text-amber-600' : 'text-gray-400'
+                    }`} />
                   <div className="text-center">
                     <p className="font-medium text-sm">{type.name}</p>
                     <p className="text-xs text-gray-500 mt-0.5">{type.description}</p>
@@ -1343,9 +1311,9 @@ export default function ReportPage() {
                   >
                     <option value="">Select Package</option>
                     <option value="all">All Packages</option>
-                    <option value="normal">Catering Package</option>
+                    {/* <option value="normal">Catering Package</option>
                     <option value="extra">Extra Package</option>
-                    <option value="cold drink">Cold Drink Package</option>
+                    <option value="cold drink">Cold Drink Package</option> */}
                   </select>
                 </div>
               </>
@@ -1390,15 +1358,13 @@ export default function ReportPage() {
                   >
                     <option value="">Select Package</option>
                     <option value="all">All Packages</option>
-                    {packages.map((pkg) => (
-                      <option key={pkg.id} value={pkg.id}>
-                        {pkg.name}
-                      </option>
-                    ))}
+                    <option value="normal">Catering Package</option>
+                    <option value="extra">Extra Package</option>
+                    <option value="cold drink">Cold Drink Package</option>
                   </select>
                 </div>
               </>
-            ) : (
+            ) : reportType === 'lifetime' ? (
               <>
                 <div className="space-y-2">
                   <label className="block text-sm font-medium text-gray-700">
@@ -1432,7 +1398,7 @@ export default function ReportPage() {
                     className="w-full rounded-md border-gray-300 shadow-sm focus:border-amber-500 focus:ring-amber-500 p-2 border-2"
                   >
                     <option value="">Select Package</option>
-                    <option value="all">All Packages</option>
+                    {/* <option value="all">All Packages</option> */}
                     {packages.map((pkg) => (
                       <option key={pkg.id} value={pkg.id}>
                         {pkg.name}
@@ -1441,7 +1407,7 @@ export default function ReportPage() {
                   </select>
                 </div>
               </>
-            )}
+            ) : null}
 
             <div className="flex items-end">
               <button
@@ -1467,27 +1433,27 @@ export default function ReportPage() {
       </div>
 
       {/* Report Content */}
-      {reportData.length > 0 && (
+      {shouldShowReport && (
         <div className="bg-white rounded-lg shadow-md">
           {/* Report Content based on type */}
           {reportType === 'day' && dayReportData && (
-            <DayReport 
+            <DayReport
               data={dayReportData}
               selectedDay={selectedDay}
               selectedPackage={selectedPackage || 'all'}
             />
           )}
           {reportType === 'monthly' && (
-            <MonthlyReport 
-              data={reportData} 
-              month={selectedMonth} 
-              type={selectedPackage as 'all' | 'normal'}
-              cateringData={selectedPackage === 'normal' ? cateringData : undefined}
-              products={selectedPackage === 'normal' ? cateringProducts : undefined}
+            <MonthlyReport
+              data={reportData}
+              month={selectedMonth}
+              type={selectedPackage as 'all' | 'normal' | 'extra' | 'cold drink'}
+              cateringData={selectedPackage !== 'all' ? cateringData : undefined}
+              products={selectedPackage !== 'all' ? cateringProducts : undefined}
             />
           )}
           {reportType === 'program' && programReport && (
-            <ProgramReport 
+            <ProgramReport
               programName={programReport.programDetails.name}
               customerName={programReport.programDetails.customerName}
               startDate={programReport.programDetails.startDate}
@@ -1499,36 +1465,34 @@ export default function ReportPage() {
             />
           )}
           {reportType === 'lifetime' && annualReportData.length > 0 && (
-            <div className="space-y-4">
-              <div className="flex justify-end gap-4 print:hidden">
-                <button
-                  onClick={handlePrint}
-                  className="flex items-center gap-2 px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
-                >
-                  <RiPrinterLine className="w-5 h-5" />
-                  Print
-                </button>
-                <button
-                  onClick={downloadPDF}
-                  className="flex items-center gap-2 px-4 py-2 text-white bg-amber-600 rounded-md hover:bg-amber-700"
-                >
-                  <RiDownloadLine className="w-5 h-5" />
-                  Download PDF
-                </button>
-              </div>
-              <AnnualReport
-                startMonth={dateRange.start}
-                endMonth={dateRange.end}
-                selectedPackage={selectedPackage}
-                data={annualReportData}
-              />
-            </div>
+            <LifeTimeReport
+              startMonth={dateRange.start}
+              endMonth={dateRange.end}
+              packageData={{
+                id: selectedPackage,
+                name: packages.find(p => p.id === selectedPackage)?.name || 'All Packages',
+                type: packages.find(p => p.id === selectedPackage)?.type || 'all',
+                products: annualReportData.map(product => ({
+                  id: product.id,
+                  name: product.name,
+                  monthlyQuantities: product.monthlyQuantities || {},
+                  total: product.total || 0
+                }))
+              }}
+              months={Array.from(
+                new Set(
+                  annualReportData.flatMap(product => 
+                    Object.keys(product.monthlyQuantities || {})
+                  )
+                )
+              ).sort()}
+            />
           )}
         </div>
       )}
 
       {/* No Data Message */}
-      {!isLoading && reportData.length === 0 && (
+      {!isLoading && !shouldShowReport && (
         <div className="text-center py-12 bg-white rounded-lg shadow-md">
           <RiFileChartLine className="w-12 h-12 text-gray-400 mx-auto mb-4" />
           <h3 className="text-lg font-medium text-gray-900 mb-2">No Report Data</h3>

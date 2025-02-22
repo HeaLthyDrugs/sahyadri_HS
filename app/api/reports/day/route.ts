@@ -68,7 +68,10 @@ const PACKAGE_NAMES = {
 
 const PACKAGE_ORDER = ['Normal', 'Extra', 'Cold Drink'];
 
-const generatePDF = async (data: DayReportEntry[], date: string, packageType?: string) => {
+const generatePDF = async (data: DayReportEntry[], date: string, packageType?: string, options?: { 
+  compactTables?: boolean;
+  optimizePageBreaks?: boolean;
+}) => {
   let browser;
   try {
     if (process.env.NODE_ENV === 'production' || process.env.VERCEL_ENV === 'production') {
@@ -95,17 +98,17 @@ const generatePDF = async (data: DayReportEntry[], date: string, packageType?: s
           <meta charset="UTF-8">
           <title>Day Report - ${date}</title>
           <style>
-            body { 
-              font-family: Arial, sans-serif; 
+            body {
+              font-family: Arial, sans-serif;
               margin: 0;
-              padding: 12px;
+              padding: 0;
               font-size: 11px;
             }
             .report-header {
               text-align: center;
-              margin-bottom: 20px;
-              padding: 12px;
-              background-color: #f8f9fa;
+              margin-bottom: ${options?.compactTables ? '10px' : '20px'};
+              padding: ${options?.compactTables ? '8px' : '12px'};
+              background-color: #fff;
               border-bottom: 1px solid #dee2e6;
             }
             .report-header h2 {
@@ -118,41 +121,21 @@ const generatePDF = async (data: DayReportEntry[], date: string, packageType?: s
               color: #4a5568;
               font-size: 12px;
             }
-            table { 
-              width: 100%; 
-              border-collapse: collapse; 
-              margin-bottom: 16px;
-              border: 1px solid #dee2e6;
-            }
-            th, td { 
-              border: 1px solid #dee2e6; 
-              padding: 6px 8px;
-              font-size: 11px;
-            }
-            th { 
-              background-color: #f8f9fa;
-              font-weight: 600;
-              color: #1a1a1a;
-            }
-            .package-section { 
-              page-break-before: always;
-              margin-bottom: 24px;
-            }
-            .package-section:first-of-type { 
-              page-break-before: avoid;
+            .package-section {
+              margin-bottom: ${options?.compactTables ? '10px' : '20px'};
+              page-break-inside: avoid;
             }
             .package-header { 
-              background-color: #f8f9fa;
+              background-color: #fff;
               padding: 8px;
               margin: 12px 0 8px;
               text-align: center;
-              border: 1px solid #dee2e6;
-              border-radius: 3px;
             }
             .package-header h4 {
               margin: 0;
               color: #1a1a1a;
               font-size: 13px;
+              text-decoration: underline;
             }
             .total-row { 
               background-color: #f8f9fa;
@@ -171,83 +154,99 @@ const generatePDF = async (data: DayReportEntry[], date: string, packageType?: s
               font-size: 13px;
               color: #1a1a1a;
             }
-            @page { 
-              margin: 15mm;
-              size: A4;
+            .table-container {
+              width: 100%;
+              margin: ${options?.compactTables ? '5px 0' : '10px 0'};
+            }
+            table {
+              width: 100%;
+              border-collapse: collapse;
+              margin-bottom: ${options?.compactTables ? '5px' : '10px'};
+            }
+            th, td {
+              padding: ${options?.compactTables ? '4px' : '8px'};
+              border: 1px solid #ddd;
+            }
+            .page-break-before {
+              page-break-before: always;
             }
             @media print {
-              .page-break-before {
-                page-break-before: always;
-              }
-              .no-break {
-                page-break-inside: avoid;
+              .report-header {
+                position: relative;
+                top: 0;
+                margin-top: 0;
               }
             }
           </style>
         </head>
         <body>
           <div class="report-header">
-            <h2>Day Report - ${format(parseISO(date), 'dd/MM/yyyy')}</h2>
+            <h2>Day Report - ${format(new Date(date), 'dd/MM/yyyy')}</h2>
           </div>
 
           ${Object.entries(
-            data.reduce((groups: { [key: string]: DayReportEntry[] }, entry) => {
-              const type = normalizePackageType(entry.packageType);
-              if (!groups[type]) groups[type] = [];
-              groups[type].push(entry);
+            data.reduce((groups, entry) => {
+              const groupKey = entry.packageType === 'Extra' ? 'Extra' : 
+                            entry.packageType === 'Cold Drink' || entry.packageType === 'cold' ? 'Cold Drink' :
+                            'Normal';
+              if (!groups[groupKey]) {
+                groups[groupKey] = [];
+              }
+              groups[groupKey].push(entry);
               return groups;
-            }, {})
+            }, {} as { [key: string]: DayReportEntry[] })
           )
-          .filter(([type]) => {
-            if (!packageType || packageType === 'all') return true;
-            return normalizePackageType(type) === normalizePackageType(packageType);
-          })
-          .sort(([typeA], [typeB]) => {
-            const indexA = PACKAGE_ORDER.indexOf(typeA);
-            const indexB = PACKAGE_ORDER.indexOf(typeB);
-            return indexA - indexB;
-          })
-          .map(([type, entries], index) => {
-            const needsPageBreak = type === 'Cold Drink' || (type === 'Extra' && entries.length > 10);
-            const packageTotal = entries.reduce((sum, entry) => sum + entry.total, 0);
-            
-            return `
-              ${needsPageBreak ? '<div class="page-break-before"></div>' : ''}
-              <div class="package-section">
-                <div class="package-header">
-                  <h4>${PACKAGE_NAMES[type as keyof typeof PACKAGE_NAMES] || type}</h4>
+            .filter(([type]) => {
+              if (!packageType || packageType === 'all') return true;
+              return normalizePackageType(type) === normalizePackageType(packageType);
+            })
+            .sort(([typeA], [typeB]) => {
+              const orderA = PACKAGE_ORDER.indexOf(typeA);
+              const orderB = PACKAGE_ORDER.indexOf(typeB);
+              return orderA - orderB;
+            })
+            .map(([type, entries], index) => {
+              const packageTotal = entries.reduce((sum, entry) => sum + entry.total, 0);
+              const needsPageBreak = type === 'Cold Drink' && 
+                (entries.length > 10 || !options?.optimizePageBreaks);
+
+              return `
+                ${needsPageBreak ? '<div class="page-break-before"></div>' : ''}
+                <div class="package-section">
+                  <div class="package-header">
+                    <h4>${PACKAGE_NAMES[type as keyof typeof PACKAGE_NAMES] || type}</h4>
+                  </div>
+                  <div class="table-container">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th style="width: 40%; text-align: left">Product Name</th>
+                          <th style="width: 15%; text-align: center">Quantity</th>
+                          <th style="width: 20%; text-align: right">Rate</th>
+                          <th style="width: 25%; text-align: right">Total Amount</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        ${[...entries]
+                          .sort((a, b) => a.productName.localeCompare(b.productName))
+                          .map(entry => `
+                            <tr>
+                              <td>${entry.productName}</td>
+                              <td style="text-align: center">${entry.quantity}</td>
+                              <td style="text-align: right">₹${entry.rate.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                              <td style="text-align: right">₹${entry.total.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                            </tr>
+                          `).join('')}
+                        <tr class="total-row">
+                          <td colspan="3" style="text-align: right">Package Total</td>
+                          <td style="text-align: right">₹${packageTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
-                <div class="table-container no-break">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th style="width: 40%; text-align: left">Product Name</th>
-                        <th style="width: 15%; text-align: center">Quantity</th>
-                        <th style="width: 20%; text-align: right">Rate</th>
-                        <th style="width: 25%; text-align: right">Total Amount</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      ${[...entries]
-                        .sort((a, b) => a.productName.localeCompare(b.productName))
-                        .map(entry => `
-                          <tr>
-                            <td>${entry.productName}</td>
-                            <td style="text-align: center">${entry.quantity}</td>
-                            <td style="text-align: right">₹${entry.rate.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-                            <td style="text-align: right">₹${entry.total.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-                          </tr>
-                        `).join('')}
-                      <tr class="total-row">
-                        <td colspan="3" style="text-align: right; padding-right: 12px">Package Total</td>
-                        <td style="text-align: right">₹${packageTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            `;
-          }).join('')}
+              `;
+            }).join('')}
 
           ${(!packageType || packageType === 'all') ? `
             <div class="grand-total">

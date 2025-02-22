@@ -235,10 +235,14 @@ export default function InvoicePage({ searchParams }: InvoicePageProps) {
   };
 
   const handlePrint = async () => {
-    if (!searchParams.packageId || !searchParams.month) return;
+    if (!searchParams.packageId || !searchParams.month) {
+      toast.error('Package ID and month are required');
+      return;
+    }
     
     try {
-      const response = await fetch('/api/invoice/print', {
+      setIsLoading(true);
+      const response = await fetch(`/api/invoice/print`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -249,7 +253,10 @@ export default function InvoicePage({ searchParams }: InvoicePageProps) {
         }),
       });
       
-      if (!response.ok) throw new Error('Failed to print invoice');
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to print invoice');
+      }
       
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
@@ -257,19 +264,26 @@ export default function InvoicePage({ searchParams }: InvoicePageProps) {
       if (printWindow) {
         printWindow.onload = () => {
           printWindow.print();
+          window.URL.revokeObjectURL(url);
         };
       }
     } catch (error) {
       console.error('Error printing invoice:', error);
-      toast.error('Failed to print invoice');
+      toast.error(error instanceof Error ? error.message : 'Failed to print invoice');
+    } finally {
+      setIsLoading(false);
     }
   };
 
   const handleDownload = async () => {
-    if (!searchParams.packageId || !searchParams.month) return;
+    if (!searchParams.packageId || !searchParams.month) {
+      toast.error('Package ID and month are required');
+      return;
+    }
     
     try {
-      const response = await fetch('/api/invoice/download', {
+      setIsLoading(true);
+      const response = await fetch(`/api/invoice/download`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -280,7 +294,10 @@ export default function InvoicePage({ searchParams }: InvoicePageProps) {
         }),
       });
       
-      if (!response.ok) throw new Error('Failed to download invoice');
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to download invoice');
+      }
       
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
@@ -293,7 +310,9 @@ export default function InvoicePage({ searchParams }: InvoicePageProps) {
       window.URL.revokeObjectURL(url);
     } catch (error) {
       console.error('Error downloading invoice:', error);
-      toast.error('Failed to download invoice');
+      toast.error(error instanceof Error ? error.message : 'Failed to download invoice');
+    } finally {
+      setIsLoading(false);
     }
   };
 
