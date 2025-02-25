@@ -9,6 +9,7 @@ import {
   RiCalendarLine,
   RiFileTextLine,
   RiBuilding4Line,
+  RiLoader4Line,
 } from 'react-icons/ri';
 import Image from 'next/image';
 
@@ -49,6 +50,7 @@ interface InvoiceConfig {
   company_name: string;
   from_address: string[];
   bill_to_address: string[];
+  address: string[];
   gstin: string;
   pan: string;
   footer_note: string;
@@ -62,10 +64,14 @@ interface InvoicePreviewProps {
 
 export default function InvoicePreview({ invoiceData, invoiceConfig }: InvoicePreviewProps) {
   const [isLoading, setIsLoading] = useState(false);
+  const [isPrinting, setIsPrinting] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
 
   const handlePrint = async () => {
     try {
-      setIsLoading(true);
+      setIsPrinting(true);
+      const loadingToast = toast.loading('Preparing invoice for printing...');
+      
       const response = await fetch('/api/invoice/print', {
         method: 'POST',
         headers: {
@@ -84,6 +90,10 @@ export default function InvoicePreview({ invoiceData, invoiceConfig }: InvoicePr
 
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
+      
+      toast.dismiss(loadingToast);
+      toast.success('Invoice ready for printing');
+      
       const printWindow = window.open(url);
       if (printWindow) {
         printWindow.onload = () => {
@@ -95,13 +105,15 @@ export default function InvoicePreview({ invoiceData, invoiceConfig }: InvoicePr
       console.error('Error printing invoice:', error);
       toast.error(error instanceof Error ? error.message : 'Failed to print invoice');
     } finally {
-      setIsLoading(false);
+      setIsPrinting(false);
     }
   };
 
   const handleDownload = async () => {
     try {
-      setIsLoading(true);
+      setIsDownloading(true);
+      const loadingToast = toast.loading('Preparing invoice for download...');
+      
       const response = await fetch('/api/invoice/download', {
         method: 'POST',
         headers: {
@@ -127,24 +139,29 @@ export default function InvoicePreview({ invoiceData, invoiceConfig }: InvoicePr
       a.click();
       document.body.removeChild(a);
       window.URL.revokeObjectURL(url);
+      
+      toast.dismiss(loadingToast);
+      toast.success('Invoice downloaded successfully');
     } catch (error) {
       console.error('Error downloading invoice:', error);
       toast.error(error instanceof Error ? error.message : 'Failed to download invoice');
     } finally {
-      setIsLoading(false);
+      setIsDownloading(false);
     }
   };
 
   return (
     <div className="bg-white rounded-lg shadow">
-      {/* Loading indicator */}
-      {isLoading && (
+      {/* Loading indicators */}
+      {(isPrinting || isDownloading) && (
         <div className="fixed bottom-2 right-2 bg-white rounded-lg shadow-lg px-4 py-3 flex items-center gap-3 z-[1000] border border-amber-100">
           <div className="relative">
             <div className="w-6 h-6 border-4 border-amber-200 border-t-amber-500 rounded-full animate-spin"></div>
             <div className="absolute inset-0 border-2 border-amber-100 rounded-full animate-pulse"></div>
           </div>
-          <span className="text-sm font-medium text-amber-700">Processing invoice...</span>
+          <span className="text-sm font-medium text-amber-700">
+            {isPrinting ? 'Preparing for print...' : 'Preparing download...'}
+          </span>
         </div>
       )}
 
@@ -152,19 +169,37 @@ export default function InvoicePreview({ invoiceData, invoiceConfig }: InvoicePr
       <div className="print:hidden p-4 border-b flex justify-end space-x-4">
         <button
           onClick={handlePrint}
-          className="flex items-center gap-2 px-4 py-2 text-gray-600 hover:text-gray-900"
-          disabled={isLoading}
+          disabled={isPrinting}
+          className="flex items-center gap-2 px-4 py-2 text-gray-600 hover:text-gray-900 disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          <RiPrinterLine className="w-5 h-5" />
-          Print
+          {isPrinting ? (
+            <>
+              <RiLoader4Line className="w-5 h-5 animate-spin" />
+              Printing...
+            </>
+          ) : (
+            <>
+              <RiPrinterLine className="w-5 h-5" />
+              Print
+            </>
+          )}
         </button>
         <button
           onClick={handleDownload}
-          className="flex items-center gap-2 px-4 py-2 text-gray-600 hover:text-gray-900"
-          disabled={isLoading}
+          disabled={isDownloading}
+          className="flex items-center gap-2 px-4 py-2 text-gray-600 hover:text-gray-900 disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          <RiDownloadLine className="w-5 h-5" />
-          Download PDF
+          {isDownloading ? (
+            <>
+              <RiLoader4Line className="w-5 h-5 animate-spin" />
+              Downloading...
+            </>
+          ) : (
+            <>
+              <RiDownloadLine className="w-5 h-5" />
+              Download PDF
+            </>
+          )}
         </button>
       </div>
 
@@ -184,14 +219,17 @@ export default function InvoicePreview({ invoiceData, invoiceConfig }: InvoicePr
             />
             <div>
               <h1 className="text-2xl font-bold text-gray-900">{invoiceConfig.company_name}</h1>
-              {invoiceConfig.from_address.map((line, index) => (
-                <p key={index} className="text-gray-600 text-sm">{line}</p>
-              ))}
+              {Array.isArray(invoiceConfig.address) ? 
+                invoiceConfig.address.map((line, index) => (
+                  <p key={index} className="text-gray-600 text-sm">{line}</p>
+                )) : 
+                <p className="text-gray-600 text-sm">{invoiceConfig.address}</p>
+              }
             </div>
           </div>
-          <div className="text-right">
+          {/* <div className="text-right">
             <h2 className="text-3xl font-bold text-amber-600">INVOICE</h2>
-          </div>
+          </div> */}
         </div>
 
         {/* Billing Details */}
@@ -202,8 +240,6 @@ export default function InvoicePreview({ invoiceData, invoiceConfig }: InvoicePr
               {invoiceConfig.from_address.map((line, index) => (
                 <p key={index}>{line}</p>
               ))}
-              <p className="mt-1">GSTIN: {invoiceConfig.gstin}</p>
-              <p>PAN: {invoiceConfig.pan}</p>
             </div>
           </div>
           <div className="space-y-1">

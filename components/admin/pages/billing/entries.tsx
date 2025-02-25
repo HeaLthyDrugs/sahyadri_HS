@@ -482,20 +482,16 @@ export function BillingEntriesPage() {
       fetchPackages(selectedProgram);
       const program = programs.find(p => p.id === selectedProgram);
       if (program) {
-        // Set date range based on program dates and selected month
-        const monthStart = startOfMonth(new Date(selectedMonth));
-        const monthEnd = endOfMonth(new Date(selectedMonth));
+        // Set date range based on program dates only, not limited by selected month
         const programStart = new Date(program.start_date);
         const programEnd = new Date(program.end_date);
 
-        const rangeStart = programStart > monthStart ? programStart : monthStart;
-        const rangeEnd = programEnd < monthEnd ? programEnd : monthEnd;
-
-        const dates = eachDayOfInterval({ start: rangeStart, end: rangeEnd });
+        // Use the full program date range
+        const dates = eachDayOfInterval({ start: programStart, end: programEnd });
         setDateRange(dates);
       }
     }
-  }, [selectedProgram, programs, selectedMonth]);
+  }, [selectedProgram, programs]);
 
   // Fetch entries when package is selected
   useEffect(() => {
@@ -568,6 +564,10 @@ export function BillingEntriesPage() {
         dateRange: dateRange.map(d => format(d, 'yyyy-MM-dd'))
       });
 
+      // Get the full date range for the program
+      const startDate = format(dateRange[0], 'yyyy-MM-dd');
+      const endDate = format(dateRange[dateRange.length - 1], 'yyyy-MM-dd');
+
       const { data: billingEntries, error: entriesError } = await supabase
         .from('billing_entries')
         .select(`
@@ -581,8 +581,8 @@ export function BillingEntriesPage() {
         `)
         .eq('program_id', selectedProgram)
         .eq('package_id', selectedPackage)
-        .gte('entry_date', format(dateRange[0], 'yyyy-MM-dd'))
-        .lte('entry_date', format(dateRange[dateRange.length - 1], 'yyyy-MM-dd'));
+        .gte('entry_date', startDate)
+        .lte('entry_date', endDate);
 
       if (entriesError) throw entriesError;
 
@@ -668,6 +668,10 @@ export function BillingEntriesPage() {
   const handleSave = async () => {
     setIsLoading(true);
     try {
+      // Get the full date range for the program
+      const startDate = format(dateRange[0], 'yyyy-MM-dd');
+      const endDate = format(dateRange[dateRange.length - 1], 'yyyy-MM-dd');
+
       // Create entries array with only the fields that exist in the table
       const entries = Object.entries(entryData).flatMap(([date, products]) =>
         Object.entries(products)
@@ -692,8 +696,8 @@ export function BillingEntriesPage() {
         .delete()
         .eq('program_id', selectedProgram)
         .eq('package_id', selectedPackage)
-        .gte('entry_date', format(dateRange[0], 'yyyy-MM-dd'))
-        .lte('entry_date', format(dateRange[dateRange.length - 1], 'yyyy-MM-dd'));
+        .gte('entry_date', startDate)
+        .lte('entry_date', endDate);
 
       if (deleteError) throw deleteError;
 
@@ -785,24 +789,6 @@ export function BillingEntriesPage() {
       });
     } catch (error) {
       toast.error('Failed to import data');
-    }
-  };
-
-  // Function to copy previous day's entries
-  const handleCopyPrevious = (date: Date) => {
-    const prevDate = new Date(date);
-    prevDate.setDate(prevDate.getDate() - 1);
-    const prevDateStr = format(prevDate, 'yyyy-MM-dd');
-    const dateStr = format(date, 'yyyy-MM-dd');
-
-    if (entryData[prevDateStr]) {
-      setEntryData(prev => ({
-        ...prev,
-        [dateStr]: { ...prev[prevDateStr] }
-      }));
-      toast.success('Copied previous day\'s entries');
-    } else {
-      toast.error('No entries found for previous day');
     }
   };
 
@@ -927,6 +913,12 @@ export function BillingEntriesPage() {
     }
   };
 
+  // Update the helper function to use consistent background color
+  const getCellBackgroundColor = (date: Date) => {
+    // Use consistent background color for all cells
+    return 'bg-white';
+  };
+
   return (
     <div className={`${isFullScreenMode ? 'fixed inset-0 bg-white z-50' : 'p-2 sm:p-4'}`}>
       {/* Toggle Full Screen and Save Button Container */}
@@ -934,25 +926,39 @@ export function BillingEntriesPage() {
         {/* Filter Section - Hide in full screen mode */}
         {!isFullScreenMode && (
           <div className="flex flex-col sm:flex-row flex-wrap gap-2 sm:gap-4 mb-4 sm:mb-6 items-start sm:items-center bg-white p-2 sm:p-4 rounded-lg shadow">
-            <input
-              type="month"
-              value={selectedMonth}
-              onChange={(e) => setSelectedMonth(e.target.value)}
-              className="w-full sm:w-auto border rounded px-2 py-1.5 sm:px-3 sm:py-2 text-sm sm:text-base"
-            />
+            <div className="relative">
+              <label className="block text-xs text-gray-500 mb-1">
+                Filter Programs by Month
+              </label>
+              <input
+                type="month"
+                value={selectedMonth}
+                onChange={(e) => setSelectedMonth(e.target.value)}
+                className="w-full sm:w-auto border rounded px-2 py-1.5 sm:px-3 sm:py-2 text-sm sm:text-base"
+                title="Select month to filter programs that occur during this month"
+              />
+            </div>
 
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="w-full sm:w-auto border rounded px-2 py-1.5 sm:px-3 sm:py-2 text-sm sm:text-base"
-            >
-              <option value="all">All Programs</option>
-              <option value="Upcoming">Upcoming</option>
-              <option value="Ongoing">Ongoing</option>
-              <option value="Completed">Completed</option>
-            </select>
+            <div className="relative">
+              <label className="block text-xs text-gray-500 mb-1">
+                Program Status
+              </label>
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                className="w-full sm:w-auto border rounded px-2 py-1.5 sm:px-3 sm:py-2 text-sm sm:text-base"
+              >
+                <option value="all">All Programs</option>
+                <option value="Upcoming">Upcoming</option>
+                <option value="Ongoing">Ongoing</option>
+                <option value="Completed">Completed</option>
+              </select>
+            </div>
 
             <div className="w-full sm:w-auto">
+              <label className="block text-xs text-gray-500 mb-1">
+                Select Program
+              </label>
               <ProgramSelect
                 value={selectedProgram}
                 onChange={setSelectedProgram}
@@ -960,20 +966,25 @@ export function BillingEntriesPage() {
               />
             </div>
 
-            <div className="flex items-center gap-2 bg-white rounded-lg shadow px-3 py-2">
-              <select
-                value={selectedPackage}
-                onChange={(e) => setSelectedPackage(e.target.value)}
-                className="w-full sm:w-auto border-none focus:ring-0 text-sm"
-                disabled={!selectedProgram}
-              >
-                <option value="">Select Package</option>
-                {packages.map(pkg => (
-                  <option key={pkg.id} value={pkg.id}>
-                    {pkg.name} ({pkg.type})
-                  </option>
-                ))}
-              </select>
+            <div className="relative">
+              <label className="block text-xs text-gray-500 mb-1">
+                Select Package
+              </label>
+              <div className="flex items-center gap-2 bg-white rounded-lg shadow px-3 py-2">
+                <select
+                  value={selectedPackage}
+                  onChange={(e) => setSelectedPackage(e.target.value)}
+                  className="w-full sm:w-auto border-none focus:ring-0 text-sm"
+                  disabled={!selectedProgram}
+                >
+                  <option value="">Select Package</option>
+                  {packages.map(pkg => (
+                    <option key={pkg.id} value={pkg.id}>
+                      {pkg.name} ({pkg.type})
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
           </div>
         )}
@@ -1035,24 +1046,29 @@ export function BillingEntriesPage() {
                       >
                         <div className="truncate p-2">Product Name</div>
                       </th>
-                      {dateRange.map(date => (
-                        <th
-                          key={date.toISOString()}
-                          className="border bg-gray-50 sticky top-0 z-[50] min-w-[70px] sm:min-w-[80px] max-w-[100px] text-xs sm:text-sm whitespace-nowrap shadow-[0_2px_4px_-2px_rgba(0,0,0,0.1)]"
-                          style={{ minHeight: '64px' }}
-                        >
-                          <div className="flex flex-col items-center p-1 sm:p-2">
-                            <span>{format(date, 'dd-MM-yyyy')}</span>
-                            <button
-                              onClick={() => handleCopyPrevious(date)}
-                              className="text-xs text-blue-500 hover:text-blue-700 mt-1"
-                              title="Copy previous day's entries"
-                            >
-                              <RiCalendarLine />
-                            </button>
-                          </div>
-                        </th>
-                      ))}
+                      {dateRange.map(date => {
+                        // Determine if this is the first date of a month
+                        const isFirstOfMonth = date.getDate() === 1;
+                        // Get month name for the first date of each month
+                        const monthName = isFirstOfMonth ? format(date, 'MMMM yyyy') : '';
+                        
+                        return (
+                          <th
+                            key={date.toISOString()}
+                            className="border bg-gray-50 sticky top-0 z-[50] min-w-[70px] sm:min-w-[80px] max-w-[100px] text-xs sm:text-sm whitespace-nowrap shadow-[0_2px_4px_-2px_rgba(0,0,0,0.1)]"
+                            style={{ minHeight: '64px' }}
+                          >
+                            {isFirstOfMonth && (
+                              <div className="text-xs font-medium text-gray-700 border-b pb-1 mb-1">
+                                {monthName}
+                              </div>
+                            )}
+                            <div className="flex flex-col items-center p-1 sm:p-2">
+                              <span>{format(date, 'dd-MM-yyyy')}</span>
+                            </div>
+                          </th>
+                        );
+                      })}
                       {showSummary && (
                         <>
                           <th className="border bg-gray-50 sticky top-0 z-40 p-1 sm:p-2 text-xs sm:text-sm shadow-[0_2px_4px_-2px_rgba(0,0,0,0.1)]">Total</th>
@@ -1080,10 +1096,12 @@ export function BillingEntriesPage() {
                           </td>
                           {dateRange.map((date, colIndex) => {
                             const dateStr = format(date, 'yyyy-MM-dd');
+                            // Get background color based on month
+                            const bgColor = getCellBackgroundColor(date);
                             return (
                               <td
                                 key={`${date}-${product.id}`}
-                                className="border text-center bg-white"
+                                className={`border text-center ${bgColor}`}
                               >
                                 <div className="flex items-center justify-center p-1">
                                   <input

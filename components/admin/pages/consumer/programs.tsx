@@ -35,6 +35,7 @@ interface Program {
   total_participants: number;
   status: 'Upcoming' | 'Ongoing' | 'Completed';
   created_at: string;
+  billing_month?: string;
 }
 
 interface PaginationProps {
@@ -149,11 +150,24 @@ export function ProgramsPage() {
     try {
       const { data, error } = await supabase
         .from('programs')
-        .select('*')
+        .select(`
+          *,
+          program_month_mappings (
+            billing_month
+          )
+        `)
         .order('program_number', { ascending: true });
 
       if (error) throw error;
-      setPrograms(data || []);
+      
+      // Transform the data to include billing_month directly in the program object
+      const transformedData = (data || []).map(program => ({
+        ...program,
+        billing_month: program.program_month_mappings?.billing_month || 
+                      calculateBillingMonth(program.end_date)
+      }));
+      
+      setPrograms(transformedData);
     } catch (error) {
       console.error('Error fetching programs:', error);
       toast.error('Failed to fetch programs');
@@ -185,6 +199,26 @@ export function ProgramsPage() {
     return `${formattedHour}:${minutes} ${ampm}`;
   };
 
+  const calculateBillingMonth = (endDate: string): string => {
+    const date = new Date(endDate);
+    const day = date.getDate();
+    
+    // If end date is > 4th of the month, use that month
+    // Otherwise, use the previous month
+    if (day > 4) {
+      return format(date, 'yyyy-MM');
+    } else {
+      // Go to previous month
+      const prevMonth = new Date(date);
+      prevMonth.setMonth(prevMonth.getMonth() - 1);
+      return format(prevMonth, 'yyyy-MM');
+    }
+  };
+
+  const formatBillingMonth = (billingMonth: string): string => {
+    return format(new Date(billingMonth + '-01'), 'MMMM yyyy');
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
@@ -192,6 +226,7 @@ export function ProgramsPage() {
     try {
       const days = calculateDays(formData.start_date, formData.end_date);
       const status = getStatus(formData.start_date, formData.end_date);
+      const billingMonth = calculateBillingMonth(formData.end_date);
 
       const programData = {
         name: formData.name,
@@ -590,6 +625,9 @@ export function ProgramsPage() {
                   Participants
                 </th>
                 <th className="w-1/4 min-w-[150px] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Billing Month
+                </th>
+                <th className="w-1/4 min-w-[150px] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Status
                 </th>
                 <th className="w-1/4 min-w-[120px] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -622,6 +660,9 @@ export function ProgramsPage() {
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                     {program.total_participants}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    {program.billing_month ? formatBillingMonth(program.billing_month) : '-'}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(program.status)}`}>

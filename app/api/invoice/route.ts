@@ -59,13 +59,7 @@ export async function POST(request: Request) {
     const supabase = createServerComponentClient({ cookies });
 
     // Get all required data in parallel
-    const startDate = `${month}-01`;
-    const endDate = new Date(month + '-01');
-    endDate.setMonth(endDate.getMonth() + 1);
-    endDate.setDate(endDate.getDate() - 1);
-    const endDateStr = format(endDate, 'yyyy-MM-dd');
-
-    const [packageResponse, configResponse, entriesResponse] = await Promise.all([
+    const [packageResponse, configResponse, programMappingsResponse] = await Promise.all([
       supabase
         .from('packages')
         .select('*')
@@ -76,32 +70,14 @@ export async function POST(request: Request) {
         .select('*')
         .single(),
       supabase
-        .from('billing_entries')
-        .select(`
-          id,
-          entry_date,
-          quantity,
-          programs:program_id (
-            id,
-            name,
-            customer_name
-          ),
-          products:product_id (
-            id,
-            name,
-            rate,
-            index
-          )
-        `)
-        .eq('package_id', packageId)
-        .gte('entry_date', startDate)
-        .lte('entry_date', endDateStr)
-        .order('products(index)', { ascending: true })
+        .from('program_month_mappings')
+        .select('program_id')
+        .eq('billing_month', month)
     ]);
 
     const packageData = packageResponse.data;
     const invoiceConfig = configResponse.data;
-    const entriesData = entriesResponse.data || [];
+    const programMappings = programMappingsResponse.data || [];
 
     if (!packageData || !invoiceConfig) {
       return NextResponse.json({ 
@@ -109,9 +85,47 @@ export async function POST(request: Request) {
       }, { status: 500 });
     }
 
-    if (entriesData.length === 0) {
+    if (programMappings.length === 0) {
       return NextResponse.json({ 
-        error: `No entries found for package ${packageData.name} between ${format(new Date(startDate), 'dd/MM/yyyy')} and ${format(new Date(endDateStr), 'dd/MM/yyyy')}` 
+        error: `No programs found for billing month ${format(new Date(month + '-01'), 'MMMM yyyy')}` 
+      }, { status: 404 });
+    }
+
+    // Extract program IDs
+    const programIds = programMappings.map(p => p.program_id);
+
+    // Get all billing entries for these programs, regardless of entry date
+    const { data: entriesData, error: entriesError } = await supabase
+      .from('billing_entries')
+      .select(`
+        id,
+        entry_date,
+        quantity,
+        programs:program_id (
+          id,
+          name,
+          customer_name
+        ),
+        products:product_id (
+          id,
+          name,
+          rate,
+          index
+        )
+      `)
+      .eq('package_id', packageId)
+      .in('program_id', programIds)
+      .order('products(index)', { ascending: true });
+
+    if (entriesError) {
+      return NextResponse.json({ 
+        error: 'Failed to fetch billing entries' 
+      }, { status: 500 });
+    }
+
+    if (!entriesData || entriesData.length === 0) {
+      return NextResponse.json({ 
+        error: `No entries found for package ${packageData.name} in billing month ${format(new Date(month + '-01'), 'MMMM yyyy')}` 
       }, { status: 404 });
     }
 
@@ -260,7 +274,7 @@ function generateInvoiceHTML({ packageDetails, month, entries, totalAmount, conf
         border: 1px solid #e5e7eb;
       }
       th {
-        background-color: #fff7ed;
+        background-color: #ffffff;
         font-weight: 600;
         font-size: 12px;
       }
@@ -272,7 +286,7 @@ function generateInvoiceHTML({ packageDetails, month, entries, totalAmount, conf
       }
       .total-row {
         font-weight: bold;
-        background-color: #f8f9fa;
+          background-color: #ffffff;
       }
       .footer {
         margin-top: 32px;
@@ -315,11 +329,10 @@ function generateInvoiceHTML({ packageDetails, month, entries, totalAmount, conf
             <img src="https://sahyadriservices.in/production/images/logo.png" alt="Company Logo" class="company-logo" />
             <div class="company-details">
               <h1>${config.company_name}</h1>
-              ${config.from_address.map((line: string) => `<p>${line}</p>`).join('')}
+              ${Array.isArray(config.address) 
+                ? config.address.map((line: string) => `<p>${line}</p>`).join('') 
+                : config.address ? `<p>${config.address}</p>` : ''}
             </div>
-          </div>
-          <div>
-            <h2 class="invoice-title">INVOICE</h2>
           </div>
         </div>
 
@@ -327,8 +340,6 @@ function generateInvoiceHTML({ packageDetails, month, entries, totalAmount, conf
           <div>
             <h3>Ship to:</h3>
             ${config.from_address.map((line: string) => `<p>${line}</p>`).join('')}
-            <p>GSTIN: ${config.gstin}</p>
-            <p>PAN: ${config.pan}</p>
           </div>
           <div>
             <h3>Bill to:</h3>
@@ -336,9 +347,9 @@ function generateInvoiceHTML({ packageDetails, month, entries, totalAmount, conf
           </div>
         </div>
 
-        <div style="background-color: #f8f9fa; padding: 16px; border-radius: 8px; margin: 16px 0;">
+        <div style="background-color: #ffffff; padding: 16px; border-radius: 8px; margin: 16px 0;">
           <h3 style="margin: 0; font-size: 14px;">
-            INVOICE for ${format(new Date(month), 'MMMM yyyy')} - ${packageDetails.name}
+           ● INVOICE for ${format(new Date(month), 'MMMM yyyy')} - ${packageDetails.name}
           </h3>
         </div>
 

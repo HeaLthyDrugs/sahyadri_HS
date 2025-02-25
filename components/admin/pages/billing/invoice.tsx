@@ -62,6 +62,7 @@ interface InvoiceConfig {
   company_name: string;
   from_address: string[];
   bill_to_address: string[];
+  address: string[];
   gstin: string;
   pan: string;
   footer_note: string;
@@ -77,6 +78,8 @@ interface InvoicePageProps {
 
 export default function InvoicePage({ searchParams }: InvoicePageProps) {
   const [isLoading, setIsLoading] = useState(false);
+  const [isPrinting, setIsPrinting] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
   const [packages, setPackages] = useState<Package[]>([]);
   const [invoiceConfig, setInvoiceConfig] = useState<InvoiceConfig | null>(null);
   const [invoiceData, setInvoiceData] = useState<InvoiceData | null>(null);
@@ -95,6 +98,7 @@ export default function InvoicePage({ searchParams }: InvoicePageProps) {
 
   const fetchPackages = async () => {
     try {
+      const loadingToast = toast.loading('Fetching packages...');
       const { data, error } = await supabase
         .from('packages')
         .select('*')
@@ -102,6 +106,7 @@ export default function InvoicePage({ searchParams }: InvoicePageProps) {
 
       if (error) throw error;
       setPackages(data || []);
+      toast.dismiss(loadingToast);
     } catch (error) {
       console.error('Error fetching packages:', error);
       toast.error('Failed to fetch packages');
@@ -123,6 +128,7 @@ export default function InvoicePage({ searchParams }: InvoicePageProps) {
         bill_to_address: Array.isArray(data?.bill_to_address)
           ? data.bill_to_address
           : data?.bill_to_address ? [data.bill_to_address] : [],
+        address: data?.address || [],
         logo_url: 'https://sahyadriservices.in/production/images/logo.png'
       });
     } catch (error) {
@@ -133,14 +139,9 @@ export default function InvoicePage({ searchParams }: InvoicePageProps) {
 
   const generateInvoiceData = async (packageId: string, month: string) => {
     setIsLoading(true);
+    const loadingToast = toast.loading('Generating invoice...');
+    
     try {
-      // Get start and end dates for the selected month
-      const startDate = `${month}-01`;
-      const endDate = new Date(month + '-01');
-      endDate.setMonth(endDate.getMonth() + 1);
-      endDate.setDate(endDate.getDate() - 1);
-      const endDateStr = format(endDate, 'yyyy-MM-dd');
-
       // Get package details
       const { data: packageData, error: packageError } = await supabase
         .from('packages')
@@ -151,13 +152,39 @@ export default function InvoicePage({ searchParams }: InvoicePageProps) {
       if (packageError) throw packageError;
       if (!packageData) throw new Error('Package not found');
 
-      // Get billing entries
+      // Get programs that belong to this billing month
+      const { data: programsData, error: programsError } = await supabase
+        .from('program_month_mappings')
+        .select(`
+          program_id,
+          programs:program_id (
+            id,
+            name,
+            customer_name,
+            start_date,
+            end_date
+          )
+        `)
+        .eq('billing_month', month);
+
+      if (programsError) throw programsError;
+      
+      // If no programs found for this month, show an error
+      if (!programsData || programsData.length === 0) {
+        throw new Error(`No programs found for billing month ${format(new Date(month + '-01'), 'MMMM yyyy')}`);
+      }
+      
+      // Extract program IDs and date ranges
+      const programIds = programsData.map(p => p.program_id);
+      
+      // Get all billing entries for these programs, regardless of entry date
       const { data: entriesData, error: entriesError } = await supabase
         .from('billing_entries')
         .select(`
           id,
           entry_date,
           quantity,
+          program_id,
           programs:program_id (
             id,
             name,
@@ -171,14 +198,13 @@ export default function InvoicePage({ searchParams }: InvoicePageProps) {
           )
         `)
         .eq('package_id', packageId)
-        .gte('entry_date', startDate)
-        .lte('entry_date', endDateStr)
+        .in('program_id', programIds)
         .order('products(index)', { ascending: true });
 
       if (entriesError) throw entriesError;
 
       if (!entriesData || entriesData.length === 0) {
-        throw new Error(`No entries found for package ${packageData.name} between ${format(new Date(startDate), 'dd/MM/yyyy')} and ${format(new Date(endDateStr), 'dd/MM/yyyy')}`);
+        throw new Error(`No entries found for package ${packageData.name} in billing month ${format(new Date(month + '-01'), 'MMMM yyyy')}`);
       }
 
       // Transform and aggregate entries
@@ -226,9 +252,13 @@ export default function InvoicePage({ searchParams }: InvoicePageProps) {
         entries: transformedEntries,
         totalAmount
       });
+      
+      toast.dismiss(loadingToast);
+      toast.success('Invoice generated successfully');
     } catch (error) {
       console.error('Error generating invoice:', error);
-      toast.error('Failed to generate invoice');
+      toast.dismiss(loadingToast);
+      toast.error(error instanceof Error ? error.message : 'Failed to generate invoice');
     } finally {
       setIsLoading(false);
     }
@@ -241,7 +271,9 @@ export default function InvoicePage({ searchParams }: InvoicePageProps) {
     }
     
     try {
-      setIsLoading(true);
+      setIsPrinting(true);
+      const loadingToast = toast.loading('Preparing invoice for printing...');
+      
       const response = await fetch(`/api/invoice/print`, {
         method: 'POST',
         headers: {
@@ -261,6 +293,10 @@ export default function InvoicePage({ searchParams }: InvoicePageProps) {
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
       const printWindow = window.open(url);
+      
+      toast.dismiss(loadingToast);
+      toast.success('Invoice ready for printing');
+      
       if (printWindow) {
         printWindow.onload = () => {
           printWindow.print();
@@ -271,7 +307,7 @@ export default function InvoicePage({ searchParams }: InvoicePageProps) {
       console.error('Error printing invoice:', error);
       toast.error(error instanceof Error ? error.message : 'Failed to print invoice');
     } finally {
-      setIsLoading(false);
+      setIsPrinting(false);
     }
   };
 
@@ -282,7 +318,9 @@ export default function InvoicePage({ searchParams }: InvoicePageProps) {
     }
     
     try {
-      setIsLoading(true);
+      setIsDownloading(true);
+      const loadingToast = toast.loading('Preparing invoice for download...');
+      
       const response = await fetch(`/api/invoice/download`, {
         method: 'POST',
         headers: {
@@ -308,11 +346,14 @@ export default function InvoicePage({ searchParams }: InvoicePageProps) {
       a.click();
       document.body.removeChild(a);
       window.URL.revokeObjectURL(url);
+      
+      toast.dismiss(loadingToast);
+      toast.success('Invoice downloaded successfully');
     } catch (error) {
       console.error('Error downloading invoice:', error);
       toast.error(error instanceof Error ? error.message : 'Failed to download invoice');
     } finally {
-      setIsLoading(false);
+      setIsDownloading(false);
     }
   };
 
@@ -344,17 +385,37 @@ export default function InvoicePage({ searchParams }: InvoicePageProps) {
           <div className="print:hidden p-4 border-b flex justify-end space-x-4">
             <button
               onClick={handlePrint}
-              className="flex items-center gap-2 px-4 py-2 text-gray-600 hover:text-gray-900"
+              disabled={isPrinting}
+              className="flex items-center gap-2 px-4 py-2 text-gray-600 hover:text-gray-900 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              <RiPrinterLine className="w-5 h-5" />
-              Print
+              {isPrinting ? (
+                <>
+                  <RiLoader4Line className="w-5 h-5 animate-spin" />
+                  Printing...
+                </>
+              ) : (
+                <>
+                  <RiPrinterLine className="w-5 h-5" />
+                  Print
+                </>
+              )}
             </button>
             <button
               onClick={handleDownload}
-              className="flex items-center gap-2 px-4 py-2 text-gray-600 hover:text-gray-900"
+              disabled={isDownloading}
+              className="flex items-center gap-2 px-4 py-2 text-gray-600 hover:text-gray-900 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              <RiDownloadLine className="w-5 h-5" />
-              Download PDF
+              {isDownloading ? (
+                <>
+                  <RiLoader4Line className="w-5 h-5 animate-spin" />
+                  Downloading...
+                </>
+              ) : (
+                <>
+                  <RiDownloadLine className="w-5 h-5" />
+                  Download PDF
+                </>
+              )}
             </button>
           </div>
 
@@ -374,9 +435,12 @@ export default function InvoicePage({ searchParams }: InvoicePageProps) {
                 />
                 <div>
                   <h1 className="text-2xl font-bold text-gray-900">{invoiceConfig.company_name}</h1>
-                  {invoiceConfig.from_address.map((line: string, index: number) => (
-                    <p key={index} className="text-gray-600 text-sm">{line}</p>
-                  ))}
+                  {Array.isArray(invoiceConfig.address) ? 
+                    invoiceConfig.address.map((line: string, index: number) => (
+                      <p key={index} className="text-gray-600 text-sm">{line}</p>
+                    )) : 
+                    <p className="text-gray-600 text-sm">{invoiceConfig.address}</p>
+                  }
                 </div>
               </div>
               <div className="text-right">
@@ -392,8 +456,6 @@ export default function InvoicePage({ searchParams }: InvoicePageProps) {
                   {invoiceConfig.from_address.map((line: string, index: number) => (
                     <p key={index}>{line}</p>
                   ))}
-                  <p className="mt-1">GSTIN: {invoiceConfig.gstin}</p>
-                  <p>PAN: {invoiceConfig.pan}</p>
                 </div>
               </div>
               <div className="space-y-1">
