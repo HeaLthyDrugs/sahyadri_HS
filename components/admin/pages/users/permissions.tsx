@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { createClient } from "@/utils/supabase/client";
-import { RiSaveLine, RiLoader4Line, RiCheckLine, RiErrorWarningLine } from "react-icons/ri";
+import { RiSaveLine, RiLoader4Line, RiCheckLine, RiErrorWarningLine, RiArrowRightSLine, RiArrowDownSLine, RiArrowUpSLine } from "react-icons/ri";
 import { useToast } from "@/hooks/use-toast";
 
 interface Role {
@@ -18,16 +18,45 @@ interface Permission {
   can_edit: boolean;
 }
 
-const AVAILABLE_PAGES = [
-  { name: 'Full Access', path: '*', description: 'Grants complete access to all dashboard features' },
-  { name: 'Dashboard Overview', path: '/dashboard', description: 'Main dashboard overview page' },
-  { name: 'Users Management', path: '/dashboard/users', description: 'User management section' },
-  { name: 'Roles Management', path: '/dashboard/users/roles', description: 'Role management section' },
-  { name: 'Permissions Management', path: '/dashboard/users/permissions', description: 'Permission management section' },
-  { name: 'Inventory Management', path: '/dashboard/inventory', description: 'Inventory management section' },
-  { name: 'Consumer Management', path: '/dashboard/consumer', description: 'Consumer management section' },
-  { name: 'Billing Management', path: '/dashboard/billing', description: 'Billing management section' },
-  { name: 'Configuration', path: '/dashboard/config', description: 'System configuration section' },
+interface NavigationItem {
+  id: string;
+  name: string;
+  path: string;
+  description: string;
+  parentId?: string;
+  isParent?: boolean;
+}
+
+// Define navigation structure with parent-child relationships
+const NAVIGATION_STRUCTURE: NavigationItem[] = [
+  { id: 'full_access', name: 'Full Access', path: '*', description: 'Grants complete access to all dashboard features', isParent: true },
+  { id: 'dashboard', name: 'Dashboard Overview', path: '/dashboard', description: 'Main dashboard overview page', isParent: true },
+
+  // Inventory Management section
+  { id: 'inventory', name: 'Inventory Management', path: '/dashboard/inventory', description: 'Inventory management section', isParent: true },
+  { id: 'inventory_packages', name: 'Packages', path: '/dashboard/inventory/packages', description: 'Manage inventory packages', parentId: 'inventory' },
+  { id: 'inventory_products', name: 'Products', path: '/dashboard/inventory/products', description: 'Manage inventory products', parentId: 'inventory' },
+
+  // Consumer Management section
+  { id: 'consumer', name: 'Consumer Management', path: '/dashboard/consumer', description: 'Consumer management section', isParent: true },
+  { id: 'consumer_programs', name: 'Programs', path: '/dashboard/consumer/programs', description: 'Manage consumer programs', parentId: 'consumer' },
+  { id: 'consumer_participants', name: 'Participants', path: '/dashboard/consumer/participants', description: 'Manage consumer participants', parentId: 'consumer' },
+  { id: 'consumer_staff', name: 'Staff', path: '/dashboard/consumer/staff', description: 'Manage consumer staff', parentId: 'consumer' },
+
+  // Billing Management section
+  { id: 'billing', name: 'Billing Management', path: '/dashboard/billing', description: 'Billing management section', isParent: true },
+  { id: 'billing_entries', name: 'Entries', path: '/dashboard/billing/entries', description: 'Manage billing entries', parentId: 'billing' },
+  { id: 'billing_invoice', name: 'Invoice', path: '/dashboard/billing/invoice', description: 'Manage billing invoices', parentId: 'billing' },
+  { id: 'billing_reports', name: 'Reports', path: '/dashboard/billing/reports', description: 'View billing reports', parentId: 'billing' },
+
+  // Users Management section
+  { id: 'users', name: 'Users Management', path: '/dashboard/users', description: 'User management section', isParent: true },
+  { id: 'users_manage', name: 'Manage Users', path: '/dashboard/users/manage', description: 'Manage system users', parentId: 'users' },
+  { id: 'users_roles', name: 'Roles Management', path: '/dashboard/users/roles', description: 'Role management section', parentId: 'users' },
+  { id: 'users_permissions', name: 'Permissions Management', path: '/dashboard/users/permissions', description: 'Permission management section', parentId: 'users' },
+
+  // Configuration section
+  { id: 'config', name: 'Configuration', path: '/dashboard/config', description: 'System configuration section', isParent: true },
 ];
 
 export default function PermissionsPage() {
@@ -37,7 +66,18 @@ export default function PermissionsPage() {
   const [selectedRole, setSelectedRole] = useState<string>("");
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [expandedSections, setExpandedSections] = useState<string[]>([]);
   const supabase = createClient();
+
+  // Get all parent IDs for initial expansion
+  const parentIds = NAVIGATION_STRUCTURE
+    .filter(item => item.isParent && item.id !== 'full_access' && item.id !== 'dashboard')
+    .map(item => item.id);
+
+  // Initialize expanded sections with all parent IDs
+  useEffect(() => {
+    setExpandedSections(parentIds);
+  }, []);
 
   // Fetch roles and permissions
   useEffect(() => {
@@ -52,7 +92,7 @@ export default function PermissionsPage() {
         if (rolesError) throw rolesError;
 
         setRoles(rolesData || []);
-        
+
         if (rolesData?.length > 0) {
           setSelectedRole(rolesData[0].id);
         }
@@ -85,7 +125,7 @@ export default function PermissionsPage() {
         if (error) throw error;
 
         // Initialize permissions for all pages
-        const initializedPermissions = AVAILABLE_PAGES.map(page => {
+        const initializedPermissions = NAVIGATION_STRUCTURE.map(page => {
           const existingPermission = data?.find(p => p.page_name === page.path);
           return existingPermission || {
             role_id: selectedRole,
@@ -109,11 +149,19 @@ export default function PermissionsPage() {
     fetchPermissions();
   }, [selectedRole]);
 
+  const toggleSection = (sectionId: string) => {
+    setExpandedSections(prev =>
+      prev.includes(sectionId)
+        ? prev.filter(id => id !== sectionId)
+        : [...prev, sectionId]
+    );
+  };
+
   const handlePermissionChange = (pagePath: string, field: 'can_view' | 'can_edit', value: boolean) => {
     setPermissions(prevPermissions => {
       const newPermissions = [...prevPermissions];
       const index = newPermissions.findIndex(p => p.page_name === pagePath);
-      
+
       if (index !== -1) {
         newPermissions[index] = {
           ...newPermissions[index],
@@ -126,12 +174,82 @@ export default function PermissionsPage() {
       }
 
       // If this is full access being turned on
-      if (pagePath === '*' && value) {
+      if (pagePath === '*' && field === 'can_view' && value) {
         return newPermissions.map(p => ({
           ...p,
           can_view: true,
           can_edit: true
         }));
+      }
+
+      // Handle parent-child relationships
+      const changedItem = NAVIGATION_STRUCTURE.find(item => item.path === pagePath);
+
+      if (changedItem) {
+        // If a parent item's permission is changed
+        if (changedItem.isParent) {
+          const childItems = NAVIGATION_STRUCTURE.filter(item => item.parentId === changedItem.id);
+
+          // Apply the same permission to all children
+          childItems.forEach(childItem => {
+            const childIndex = newPermissions.findIndex(p => p.page_name === childItem.path);
+            if (childIndex !== -1) {
+              newPermissions[childIndex] = {
+                ...newPermissions[childIndex],
+                [field]: value,
+                // If turning off view access, also turn off edit access
+                ...(field === 'can_view' && !value ? { can_edit: false } : {}),
+                // If turning on edit access, also turn on view access
+                ...(field === 'can_edit' && value ? { can_view: true } : {})
+              };
+            }
+          });
+        }
+        // If a child item's permission is changed
+        else if (changedItem.parentId) {
+          // If turning on a child, make sure the parent is also turned on
+          if (value) {
+            const parentItem = NAVIGATION_STRUCTURE.find(item => item.id === changedItem.parentId);
+            if (parentItem) {
+              const parentIndex = newPermissions.findIndex(p => p.page_name === parentItem.path);
+              if (parentIndex !== -1) {
+                newPermissions[parentIndex] = {
+                  ...newPermissions[parentIndex],
+                  [field]: true,
+                  // If turning on edit access, also turn on view access
+                  ...(field === 'can_edit' ? { can_view: true } : {})
+                };
+              }
+            }
+          }
+          // If turning off a child, check if all siblings are off to turn off parent
+          else if (!value && field === 'can_view') {
+            const parentItem = NAVIGATION_STRUCTURE.find(item => item.id === changedItem.parentId);
+            if (parentItem) {
+              const siblingItems = NAVIGATION_STRUCTURE.filter(item =>
+                item.parentId === changedItem.parentId && item.id !== changedItem.id
+              );
+
+              // Check if all siblings are turned off
+              const allSiblingsOff = siblingItems.every(sibling => {
+                const siblingPerm = newPermissions.find(p => p.page_name === sibling.path);
+                return !siblingPerm?.can_view;
+              });
+
+              // If all siblings are off, turn off the parent
+              if (allSiblingsOff) {
+                const parentIndex = newPermissions.findIndex(p => p.page_name === parentItem.path);
+                if (parentIndex !== -1) {
+                  newPermissions[parentIndex] = {
+                    ...newPermissions[parentIndex],
+                    can_view: false,
+                    can_edit: false
+                  };
+                }
+              }
+            }
+          }
+        }
       }
 
       return newPermissions;
@@ -175,7 +293,7 @@ export default function PermissionsPage() {
         .eq('role_id', selectedRole);
 
       if (newPermissions) {
-        const updatedPermissions = AVAILABLE_PAGES.map(page => {
+        const updatedPermissions = NAVIGATION_STRUCTURE.map(page => {
           const existingPermission = newPermissions.find(p => p.page_name === page.path);
           return existingPermission || {
             role_id: selectedRole,
@@ -219,6 +337,15 @@ export default function PermissionsPage() {
     }
   };
 
+  // Toggle all sections expanded/collapsed
+  const toggleAllSections = () => {
+    if (expandedSections.length === parentIds.length) {
+      setExpandedSections([]);
+    } else {
+      setExpandedSections([...parentIds]);
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="min-h-[60vh] flex items-center justify-center">
@@ -226,6 +353,9 @@ export default function PermissionsPage() {
       </div>
     );
   }
+
+  // Group navigation items by parent
+  const parentItems = NAVIGATION_STRUCTURE.filter(item => item.isParent);
 
   return (
     <div className="space-y-6">
@@ -249,56 +379,142 @@ export default function PermissionsPage() {
 
       {/* Permissions Table */}
       <div className="bg-white rounded-lg shadow overflow-hidden">
-        <table className="min-w-full divide-y divide-gray-200">
-          <thead className="bg-gray-50">
-            <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Page
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Description
-              </th>
-              <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                View Access
-              </th>
-              <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Edit Access
-              </th>
-            </tr>
-          </thead>
-          <tbody className="bg-white divide-y divide-gray-200">
-            {AVAILABLE_PAGES.map((page) => {
-              const permission = permissions.find(p => p.page_name === page.path);
-              return (
-                <tr key={page.path}>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                    {page.name}
-                  </td>
-                  <td className="px-6 py-4 text-sm text-gray-500">
-                    {page.description}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-center">
-                    <input
-                      type="checkbox"
-                      checked={permission?.can_view || false}
-                      onChange={(e) => handlePermissionChange(page.path, 'can_view', e.target.checked)}
-                      className="h-4 w-4 text-amber-600 focus:ring-amber-500 border-gray-300 rounded"
-                    />
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-center">
-                    <input
-                      type="checkbox"
-                      checked={permission?.can_edit || false}
-                      onChange={(e) => handlePermissionChange(page.path, 'can_edit', e.target.checked)}
-                      className="h-4 w-4 text-amber-600 focus:ring-amber-500 border-gray-300 rounded"
-                      disabled={!permission?.can_view}
-                    />
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+        <div className="p-4 border-b flex justify-between items-center">
+          <div>
+            <h3 className="text-lg font-medium text-gray-900">Manage Permissions</h3>
+            <p className="text-sm text-gray-500">Configure access rights for each role in your system</p>
+          </div>
+          <button
+            onClick={toggleAllSections}
+            className="px-3 py-1.5 text-sm bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-md flex items-center gap-1.5 transition-colors"
+          >
+            {expandedSections.length === parentIds.length ? (
+              <>
+                <RiArrowUpSLine className="w-4 h-4" />
+                Collapse All
+              </>
+            ) : (
+              <>
+                <RiArrowDownSLine className="w-4 h-4" />
+                Expand All
+              </>
+            )}
+          </button>
+        </div>
+
+        <div className="divide-y divide-gray-200">
+          {parentItems.map((parent) => {
+            const parentPermission = permissions.find(p => p.page_name === parent.path);
+            const isExpanded = expandedSections.includes(parent.id);
+            const childItems = NAVIGATION_STRUCTURE.filter(item => item.parentId === parent.id);
+            const hasChildren = childItems.length > 0;
+
+            return (
+              <div key={parent.id} className="bg-white">
+                {/* Parent Item */}
+                <div
+                  className={`px-6 py-4 flex items-center justify-between cursor-pointer hover:bg-gray-50 ${isExpanded ? 'bg-gray-50' : ''
+                    }`}
+                  onClick={() => hasChildren && toggleSection(parent.id)}
+                >
+                  <div className="flex items-center space-x-4">
+                    {hasChildren && (
+                      <span className="text-gray-400">
+                        {isExpanded ? <RiArrowDownSLine className="w-5 h-5" /> : <RiArrowRightSLine className="w-5 h-5" />}
+                      </span>
+                    )}
+                    <div>
+                      <h4 className="text-sm font-medium text-gray-900">{parent.name}</h4>
+                      <p className="text-xs text-gray-500">{parent.description}</p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center space-x-6">
+                    <div className="flex items-center space-x-2">
+                      <input
+                        type="checkbox"
+                        id={`view-${parent.id}`}
+                        checked={parentPermission?.can_view || false}
+                        onChange={(e) => handlePermissionChange(parent.path, 'can_view', e.target.checked)}
+                        className="h-4 w-4 text-amber-600 focus:ring-amber-500 border-gray-300 rounded"
+                        onClick={(e) => e.stopPropagation()}
+                      />
+                      <label htmlFor={`view-${parent.id}`} className="text-sm text-gray-700" onClick={(e) => e.stopPropagation()}>
+                        View
+                      </label>
+                    </div>
+
+                    <div className="flex items-center space-x-2">
+                      <input
+                        type="checkbox"
+                        id={`edit-${parent.id}`}
+                        checked={parentPermission?.can_edit || false}
+                        onChange={(e) => handlePermissionChange(parent.path, 'can_edit', e.target.checked)}
+                        className="h-4 w-4 text-amber-600 focus:ring-amber-500 border-gray-300 rounded"
+                        disabled={!parentPermission?.can_view}
+                        onClick={(e) => e.stopPropagation()}
+                      />
+                      <label htmlFor={`edit-${parent.id}`} className="text-sm text-gray-700" onClick={(e) => e.stopPropagation()}>
+                        Edit
+                      </label>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Child Items */}
+                {hasChildren && isExpanded && (
+                  <div className="bg-gray-50 border-t border-gray-100">
+                    {childItems.map((child) => {
+                      const childPermission = permissions.find(p => p.page_name === child.path);
+                      return (
+                        <div key={child.id} className="px-6 py-3 ml-8 flex items-center justify-between border-b border-gray-100 last:border-b-0">
+                          <div className="flex items-center">
+                            <div className="w-5 h-5 mr-3 flex items-center justify-center">
+                              <div className="h-6 border-l-2 border-gray-300"></div>
+                            </div>
+                            <div>
+                              <h5 className="text-sm font-medium text-gray-800">{child.name}</h5>
+                              <p className="text-xs text-gray-500">{child.description}</p>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center space-x-6">
+                            <div className="flex items-center space-x-2">
+                              <input
+                                type="checkbox"
+                                id={`view-${child.id}`}
+                                checked={childPermission?.can_view || false}
+                                onChange={(e) => handlePermissionChange(child.path, 'can_view', e.target.checked)}
+                                className="h-4 w-4 text-amber-600 focus:ring-amber-500 border-gray-300 rounded"
+                              />
+                              <label htmlFor={`view-${child.id}`} className="text-sm text-gray-700">
+                                View
+                              </label>
+                            </div>
+
+                            <div className="flex items-center space-x-2">
+                              <input
+                                type="checkbox"
+                                id={`edit-${child.id}`}
+                                checked={childPermission?.can_edit || false}
+                                onChange={(e) => handlePermissionChange(child.path, 'can_edit', e.target.checked)}
+                                className="h-4 w-4 text-amber-600 focus:ring-amber-500 border-gray-300 rounded"
+                                disabled={!childPermission?.can_view}
+                              />
+                              <label htmlFor={`edit-${child.id}`} className="text-sm text-gray-700">
+                                Edit
+                              </label>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
       </div>
 
       {/* Save Button */}
