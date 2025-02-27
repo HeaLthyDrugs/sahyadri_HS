@@ -40,14 +40,23 @@ import { createClientComponentClient } from "@supabase/auth-helpers-nextjs";
 import { toast } from "@/hooks/use-toast";
 import { format } from 'date-fns';
 
+interface StaffType {
+  id: string;
+  name: string;
+  description: string;
+  created_at: string;
+  updated_at: string;
+}
+
 interface Staff {
   id: number;
   name: string;
-  type: "full_time" | "part_time" | "contractor" | "volunteer";
+  type_id: string;
   organisation: string;
   created_at: string;
   updated_at: string;
   comments?: StaffComment[];
+  staff_type: StaffType;
 }
 
 interface StaffComment {
@@ -58,8 +67,20 @@ interface StaffComment {
   created_by: string;
 }
 
+interface SupabaseStaffResponse {
+  id: number;
+  name: string;
+  type_id: string;
+  organisation: string;
+  created_at: string;
+  updated_at: string;
+  staff_type: StaffType[];
+  comments: StaffComment[];
+}
+
 export default function StaffPage() {
   const [staff, setStaff] = useState<Staff[]>([]);
+  const [staffTypes, setStaffTypes] = useState<StaffType[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isAddingStaff, setIsAddingStaff] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
@@ -68,10 +89,10 @@ export default function StaffPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10);
   const entriesOptions = [10, 25, 50, 100];
-  const [selectedType, setSelectedType] = useState<'all' | Staff['type']>('all');
+  const [selectedType, setSelectedType] = useState<'all' | string>('all');
   const [newStaff, setNewStaff] = useState({
     name: "",
-    type: "full_time" as "full_time" | "part_time" | "contractor" | "volunteer",
+    type_id: "",
     organisation: "",
   });
   const [selectedStaff, setSelectedStaff] = useState<Staff | null>(null);
@@ -80,29 +101,71 @@ export default function StaffPage() {
 
   const supabase = createClientComponentClient();
 
-  // Fetch staff data
+  // Fetch staff types with proper error handling
+  const fetchStaffTypes = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('staff_types')
+        .select('*')
+        .order('name');
+
+      if (error) throw error;
+      
+      if (!data || data.length === 0) {
+        toast({
+          title: "Warning",
+          description: "No staff types found. Please add staff types first.",
+          variant: "destructive",
+        });
+        return;
+      }
+      
+      setStaffTypes(data);
+      
+      // If no type_id is selected and we have staff types, select the first one
+      if (!newStaff.type_id && data.length > 0) {
+        setNewStaff(prev => ({ ...prev, type_id: data[0].id }));
+      }
+    } catch (error) {
+      console.error('Error fetching staff types:', error);
+      toast({
+        title: "Error",
+        description: "Failed to fetch staff types. Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  // Fetch staff with proper error handling and type checking
   const fetchStaff = async () => {
     try {
       const { data, error } = await supabase
         .from("staff")
         .select(`
           *,
-          comments:staff_comments(
-            id,
-            comment,
-            created_at,
-            created_by
-          )
+          staff_type:staff_types!inner(*)
         `)
         .order("name");
 
       if (error) throw error;
-      setStaff(data || []);
+
+      if (!data) {
+        setStaff([]);
+        return;
+      }
+
+      // Transform the response data to match our Staff interface
+      const transformedData: Staff[] = data.map(item => ({
+        ...item,
+        staff_type: item.staff_type
+      }));
+
+      setStaff(transformedData);
     } catch (error) {
       console.error("Error fetching staff:", error);
       toast({
         title: "Error",
-        description: "Failed to fetch staff data",
+        description: "Failed to fetch staff data. Please try again.",
         variant: "destructive",
       });
     } finally {
@@ -110,33 +173,52 @@ export default function StaffPage() {
     }
   };
 
-  // Add new staff member or update existing one
+  // Modify useEffect to fetch staff types as well
+  useEffect(() => {
+    fetchStaffTypes();
+    fetchStaff();
+  }, []);
+
+  // Update the getTypeCount function
+  const getTypeCount = (typeId: string) => {
+    return staff.filter(s => s.type_id === typeId).length;
+  };
+
+  // Add/Update staff with proper validation
   const handleAddStaff = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // Validate required fields
+    if (!newStaff.name.trim() || !newStaff.type_id || !newStaff.organisation.trim()) {
+      toast({
+        title: "Error",
+        description: "Please fill in all required fields",
+        variant: "destructive",
+      });
+      return;
+    }
+
     try {
       if (selectedStaff) {
         // Update existing staff
         const { data, error } = await supabase
           .from("staff")
-          .update(newStaff)
+          .update({
+            name: newStaff.name.trim(),
+            type_id: newStaff.type_id,
+            organisation: newStaff.organisation.trim(),
+          })
           .eq('id', selectedStaff.id)
           .select(`
-            id,
-            name,
-            type,
-            organisation,
-            created_at,
-            updated_at,
-            comments:staff_comments(*)
+            *,
+            staff_type:staff_types!inner(*)
           `)
           .single();
 
         if (error) throw error;
 
         setStaff((prev) => prev.map(s => 
-          s.id === selectedStaff.id 
-            ? { ...data, comments: s.comments } 
-            : s
+          s.id === selectedStaff.id ? data : s
         ));
         toast({
           title: "Success",
@@ -146,21 +228,20 @@ export default function StaffPage() {
         // Add new staff
         const { data, error } = await supabase
           .from("staff")
-          .insert([newStaff])
+          .insert([{
+            name: newStaff.name.trim(),
+            type_id: newStaff.type_id,
+            organisation: newStaff.organisation.trim(),
+          }])
           .select(`
-            id,
-            name,
-            type,
-            organisation,
-            created_at,
-            updated_at,
-            comments:staff_comments(*)
+            *,
+            staff_type:staff_types!inner(*)
           `)
           .single();
 
         if (error) throw error;
 
-        setStaff((prev) => [...prev, { ...data, comments: [] }]);
+        setStaff((prev) => [...prev, data]);
         toast({
           title: "Success",
           description: "Staff member added successfully",
@@ -171,14 +252,14 @@ export default function StaffPage() {
       setSelectedStaff(null);
       setNewStaff({ 
         name: "", 
-        type: "full_time", 
+        type_id: staffTypes[0]?.id || "",
         organisation: "" 
       });
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error saving staff:", error);
       toast({
         title: "Error",
-        description: "Failed to save staff member",
+        description: error?.message || "Failed to save staff member",
         variant: "destructive",
       });
     }
@@ -187,43 +268,61 @@ export default function StaffPage() {
   // Add comment to staff member
   const handleAddComment = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedStaff) return;
+    if (!selectedStaff || !newComment.trim()) {
+      toast({
+        title: "Error",
+        description: "Please enter a comment",
+        variant: "destructive",
+      });
+      return;
+    }
 
     try {
-      const { data, error } = await supabase
+      const { data: commentData, error: commentError } = await supabase
         .from("staff_comments")
         .insert([
           {
             staff_id: selectedStaff.id,
-            comment: newComment,
+            comment: newComment.trim(),
           },
         ])
-        .select()
+        .select(`
+          id,
+          staff_id,
+          comment,
+          created_at,
+          created_by
+        `)
         .single();
 
-      if (error) throw error;
+      if (commentError) throw commentError;
+
+      if (!commentData) {
+        throw new Error("No data returned from comment insertion");
+      }
 
       setStaff((prev) =>
         prev.map((s) =>
           s.id === selectedStaff.id
             ? {
                 ...s,
-                comments: [...(s.comments || []), data],
+                comments: [...(s.comments || []), commentData],
               }
             : s
         )
       );
+      
       setNewComment("");
       setIsCommentModalOpen(false);
       toast({
         title: "Success",
         description: "Comment added successfully",
       });
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error adding comment:", error);
       toast({
         title: "Error",
-        description: "Failed to add comment",
+        description: error?.message || "Failed to add comment",
         variant: "destructive",
       });
     }
@@ -316,16 +415,11 @@ export default function StaffPage() {
     }
   };
 
-  // Initialize data on component mount
-  useEffect(() => {
-    fetchStaff();
-  }, []);
-
   // Filter and pagination logic
   const filteredStaff = staff.filter(member => {
     const matchesSearch = member.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
                          member.organisation.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesType = selectedType === 'all' || member.type === selectedType;
+    const matchesType = selectedType === 'all' || member.type_id === selectedType;
     return matchesSearch && matchesType;
   });
 
@@ -334,11 +428,6 @@ export default function StaffPage() {
     (currentPage - 1) * itemsPerPage,
     currentPage * itemsPerPage
   );
-
-  // Get count by type
-  const getTypeCount = (type: Staff['type']) => {
-    return staff.filter(s => s.type === type).length;
-  };
 
   const handleEntriesChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     setItemsPerPage(Number(e.target.value));
@@ -374,16 +463,17 @@ export default function StaffPage() {
             <select
               value={selectedType}
               onChange={(e) => {
-                setSelectedType(e.target.value as 'all' | Staff['type']);
-                setCurrentPage(1); // Reset to first page when filtering
+                setSelectedType(e.target.value);
+                setCurrentPage(1);
               }}
               className="w-full border-none focus:ring-0 text-sm"
             >
               <option value="all">All Types ({staff.length})</option>
-              <option value="full_time">Full Time ({getTypeCount('full_time')})</option>
-              <option value="part_time">Part Time ({getTypeCount('part_time')})</option>
-              <option value="contractor">Contractor ({getTypeCount('contractor')})</option>
-              <option value="volunteer">Volunteer ({getTypeCount('volunteer')})</option>
+              {staffTypes.map(type => (
+                <option key={type.id} value={type.id}>
+                  {type.name.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')} ({getTypeCount(type.id)})
+                </option>
+              ))}
             </select>
           </div>
         </div>
@@ -472,12 +562,8 @@ export default function StaffPage() {
                         </div>
                       </TableCell>
                       <TableCell className="px-6 py-4 whitespace-nowrap">
-                        <span className={`inline-flex px-2 py-0.5 rounded-md text-xs font-medium
-                          ${member.type === 'full_time' ? 'bg-blue-100 text-blue-800' :
-                            member.type === 'part_time' ? 'bg-green-100 text-green-800' :
-                            member.type === 'contractor' ? 'bg-purple-100 text-purple-800' :
-                            'bg-amber-100 text-amber-800'}`}>
-                          {member.type.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')}
+                        <span className="inline-flex px-2 py-0.5 rounded-md text-xs font-medium bg-gray-100 text-gray-800">
+                          {member.staff_type?.name.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')}
                         </span>
                       </TableCell>
                       <TableCell className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
@@ -507,7 +593,7 @@ export default function StaffPage() {
                               setSelectedStaff(member);
                               setNewStaff({
                                 name: member.name,
-                                type: member.type,
+                                type_id: member.type_id,
                                 organisation: member.organisation,
                               });
                               setIsAddingStaff(true);
@@ -543,12 +629,8 @@ export default function StaffPage() {
                       <h3 className="font-medium text-gray-900">{member.name}</h3>
                       <p className="text-sm text-gray-500">{member.organisation}</p>
                     </div>
-                    <span className={`inline-flex px-2 py-0.5 rounded-md text-xs font-medium
-                      ${member.type === 'full_time' ? 'bg-blue-100 text-blue-800' :
-                        member.type === 'part_time' ? 'bg-green-100 text-green-800' :
-                        member.type === 'contractor' ? 'bg-purple-100 text-purple-800' :
-                        'bg-amber-100 text-amber-800'}`}>
-                      {member.type.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')}
+                    <span className="inline-flex px-2 py-0.5 rounded-md text-xs font-medium bg-gray-100 text-gray-800">
+                      {member.staff_type?.name.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')}
                     </span>
                   </div>
                   <div className="flex items-center justify-between mt-4">
@@ -573,7 +655,7 @@ export default function StaffPage() {
                           setSelectedStaff(member);
                           setNewStaff({
                             name: member.name,
-                            type: member.type,
+                            type_id: member.type_id,
                             organisation: member.organisation,
                           });
                           setIsAddingStaff(true);
@@ -655,7 +737,7 @@ export default function StaffPage() {
             setSelectedStaff(null);
             setNewStaff({
               name: "",
-              type: "full_time",
+              type_id: staffTypes[0]?.id || "",
               organisation: "",
             });
           }
@@ -668,7 +750,7 @@ export default function StaffPage() {
             </DialogHeader>
             <form onSubmit={handleAddStaff} className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="name">Name</Label>
+                <Label htmlFor="name">Name *</Label>
                 <Input
                   id="name"
                   value={newStaff.name}
@@ -680,26 +762,36 @@ export default function StaffPage() {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="type">Type</Label>
+                <Label htmlFor="type">Type *</Label>
                 <Select
-                  value={newStaff.type}
-                  onValueChange={(value: Staff['type']) =>
-                    setNewStaff({ ...newStaff, type: value })
+                  value={newStaff.type_id}
+                  onValueChange={(value) =>
+                    setNewStaff({ ...newStaff, type_id: value })
                   }
+                  required
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="Select staff type" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="full_time">Full Time</SelectItem>
-                    <SelectItem value="part_time">Part Time</SelectItem>
-                    <SelectItem value="contractor">Contractor</SelectItem>
-                    <SelectItem value="volunteer">Volunteer</SelectItem>
+                    {staffTypes.length === 0 ? (
+                      <SelectItem value="" disabled>
+                        No staff types available
+                      </SelectItem>
+                    ) : (
+                      staffTypes.map(type => (
+                        <SelectItem key={type.id} value={type.id}>
+                          {type.name.split('_').map(word => 
+                            word.charAt(0).toUpperCase() + word.slice(1)
+                          ).join(' ')}
+                        </SelectItem>
+                      ))
+                    )}
                   </SelectContent>
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="organisation">Organisation</Label>
+                <Label htmlFor="organisation">Organisation *</Label>
                 <Input
                   id="organisation"
                   value={newStaff.organisation}
@@ -719,14 +811,18 @@ export default function StaffPage() {
                     setSelectedStaff(null);
                     setNewStaff({
                       name: "",
-                      type: "full_time",
+                      type_id: staffTypes[0]?.id || "",
                       organisation: "",
                     });
                   }}
                 >
                   Cancel
                 </Button>
-                <Button type="submit" className="bg-amber-600 hover:bg-amber-700">
+                <Button 
+                  type="submit" 
+                  className="bg-amber-600 hover:bg-amber-700"
+                  disabled={staffTypes.length === 0}
+                >
                   {selectedStaff ? 'Update Staff' : 'Add Staff'}
                 </Button>
               </div>
