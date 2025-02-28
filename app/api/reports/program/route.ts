@@ -103,28 +103,28 @@ export async function POST(req: NextRequest) {
               body { 
                 font-family: Arial, sans-serif; 
                 margin: 0;
-                padding: 12px;
-                font-size: 11px;
+                padding: 8px;
+                font-size: 9px;
               }
               .report-header {
                 text-align: center;
-                margin-bottom: 20px;
-                padding: 12px;
-                background-color: #f8f9fa;
+                margin-bottom: 16px;
+                padding: 8px;
+                background-color: #fff;
                 border-bottom: 1px solid #dee2e6;
               }
               .report-header h2 {
                 margin: 0;
                 color: #1a1a1a;
-                font-size: 16px;
+                font-size: 14px;
               }
               .program-details {
                 display: grid;
                 grid-template-columns: repeat(4, 1fr);
-                gap: 16px;
-                margin-bottom: 24px;
-                padding: 16px;
-                background-color: #f8f9fa;
+                gap: 12px;
+                margin-bottom: 16px;
+                padding: 12px;
+                background-color: #fff;
                 border: 1px solid #dee2e6;
                 border-radius: 4px;
               }
@@ -132,61 +132,80 @@ export async function POST(req: NextRequest) {
                 text-align: center;
               }
               .program-details p {
-                margin: 4px 0;
+                margin: 2px 0;
               }
               .program-details .label {
                 color: #6b7280;
-                font-size: 10px;
+                font-size: 8px;
               }
               .program-details .value {
                 color: #1f2937;
                 font-weight: 500;
+                font-size: 9px;
               }
               table { 
                 width: 100%; 
                 border-collapse: collapse; 
-                margin-bottom: 16px;
+                margin-bottom: 12px;
                 border: 1px solid #dee2e6;
+                table-layout: fixed;
               }
               th, td { 
                 border: 1px solid #dee2e6; 
-                padding: 6px 8px;
-                font-size: 11px;
+                padding: 4px;
+                font-size: 9px;
                 text-align: center;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                white-space: nowrap;
+              }
+              th:first-child, td:first-child {
+                width: 120px;
+                text-align: left;
+              }
+              th:not(:first-child), td:not(:first-child) {
+                width: 45px;
+              }
+              th:nth-last-child(-n+3), td:nth-last-child(-n+3) {
+                width: 60px;
               }
               th { 
-                background-color: #f8f9fa;
+                background-color: #fff;
                 font-weight: 600;
                 color: #1a1a1a;
               }
               .package-header {
                 text-align: center;
-                margin: 16px 0;
-                padding: 8px;
-                background-color: #f8f9fa;
+                margin: 12px 0;
+                padding: 6px;
+                background-color: #fff;
                 border: 1px solid #dee2e6;
                 border-radius: 4px;
+              }
+              .package-header h3 {
+                font-size: 12px;
+                margin: 0;
               }
               .package-total {
                 text-align: right;
-                margin: 8px 0 16px;
-                padding: 8px;
-                background-color: #f8f9fa;
-                border: 1px solid #dee2e6;
-                border-radius: 4px;
+                margin: 6px 0 12px;
+                padding: 6px;
+                background-color: #fff;
+                font-size: 10px;
               }
               .grand-total {
                 text-align: right;
-                margin-top: 16px;
-                padding: 12px;
-                background-color: #fff8e1;
-                border: 1px solid #ffe57f;
+                margin-top: 12px;
+                padding: 8px;
+                background-color: #fff;
+                border: 1px solid #dee2e6;
                 border-radius: 4px;
                 font-weight: 600;
+                font-size: 11px;
               }
               @page { 
-                margin: 15mm;
-                size: A4 portrait;
+                margin: 10mm;
+                size: A4 landscape;
               }
               @media print {
                 .page-break-before {
@@ -200,7 +219,7 @@ export async function POST(req: NextRequest) {
               /* Modified styles for better table continuity */
               .table-container {
                 page-break-inside: avoid;
-                margin-bottom: 16px;
+                margin-bottom: 12px;
               }
               
               .table-container table {
@@ -208,17 +227,47 @@ export async function POST(req: NextRequest) {
               }
               
               .package-section {
-                page-break-inside: avoid;
+                break-inside: avoid;
+                margin-bottom: 16px;
               }
               
               .package-header {
                 margin: 8px 0;
                 padding: 6px;
+                break-inside: avoid;
               }
               
               .package-total {
-                margin: 8px 0 16px;
+                margin: 4px 0 8px;
                 padding: 6px;
+                break-inside: avoid;
+              }
+
+              /* Container for all packages */
+              .packages-container {
+                display: flex;
+                flex-direction: column;
+                gap: 16px;
+              }
+
+              /* Adjust spacing between packages */
+              .package-section + .package-section {
+                margin-top: 0;
+                padding-top: 8px;
+              }
+
+              /* Ensure tables stay together */
+              table {
+                break-inside: avoid;
+              }
+
+              /* Keep headers with their content */
+              thead {
+                display: table-header-group;
+              }
+
+              tbody {
+                display: table-row-group;
               }
             </style>
           </head>
@@ -246,71 +295,68 @@ export async function POST(req: NextRequest) {
               </div>
             </div>
 
-            ${PACKAGE_ORDER
-              .filter(pkgType => filteredPackages[pkgType])
-              .map((packageType) => {
-                const packageData = filteredPackages[packageType];
-                const products = packageData.products || [];
-                const productChunks = [];
-                for (let i = 0; i < products.length; i += PRODUCTS_PER_TABLE) {
-                  productChunks.push(products.slice(i, i + PRODUCTS_PER_TABLE));
-                }
+            <div class="packages-container">
+              ${PACKAGE_ORDER
+                .filter(pkgType => filteredPackages[pkgType])
+                .map((packageType) => {
+                  const packageData = filteredPackages[packageType];
+                  const products = packageData.products || [];
+                  const productChunks = [];
+                  for (let i = 0; i < products.length; i += PRODUCTS_PER_TABLE) {
+                    productChunks.push(products.slice(i, i + PRODUCTS_PER_TABLE));
+                  }
 
-                return `
-                  <div class="package-section">
-                    <div class="package-header">
-                      <h3 style="margin: 0;">${PACKAGE_NAMES[packageType].toUpperCase()}</h3>
-                    </div>
-                    ${productChunks.map((chunk: Product[], chunkIndex) => `
-                      <div class="table-container">
-                        <table>
-                          <thead>
-                            <tr>
-                              <th>Date</th>
-                              ${chunk.map((product: Product) => `
-                                <th>${product.name}</th>
-                              `).join('')}
-                            </tr>
-                          </thead>
-                          <tbody>
-                            ${datesWithConsumption.map(date => `
-                              <tr>
-                                <td>${format(new Date(date), 'dd/MM/yyyy')}</td>
-                                ${chunk.map((product: Product) => {
-                                  const entry = packageData.entries.find((e: Entry) => e.date === date);
-                                  const quantity = entry ? entry.quantities[product.id] || 0 : 0;
-                                  return `<td>${quantity}</td>`;
-                                }).join('')}
-                              </tr>
-                            `).join('')}
-                            <tr>
-                              <td style="font-weight: 600;">Total</td>
-                              ${chunk.map((product: Product) => `
-                                <td>${packageData.totals[product.id] || 0}</td>
-                              `).join('')}
-                            </tr>
-                            <tr>
-                              <td style="font-weight: 600;">Rate</td>
-                              ${chunk.map((product: Product) => `
-                                <td>₹${(packageData.rates[product.id] || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-                              `).join('')}
-                            </tr>
-                            <tr>
-                              <td style="font-weight: 600;">Amount</td>
-                              ${chunk.map((product: Product) => `
-                                <td>₹${(packageData.totalAmounts[product.id] || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-                              `).join('')}
-                            </tr>
-                          </tbody>
-                        </table>
+                  return `
+                    <div class="package-section">
+                      <div class="package-header">
+                        <h3 style="margin: 0;">${PACKAGE_NAMES[packageType as keyof typeof PACKAGE_NAMES]?.toUpperCase() || packageType.toUpperCase()}</h3>
                       </div>
-                    `).join('')}
-                    <div class="package-total">
-                      Package Total: ₹${Object.values(packageData.totalAmounts as Record<string, number>).reduce((sum: number, amount: number) => sum + amount, 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      ${productChunks.map((chunk: Product[], chunkIndex) => `
+                        <div class="table-container">
+                          <table>
+                            <thead>
+                              <tr>
+                                <th>Product Name</th>
+                                ${datesWithConsumption.map(date => `
+                                  <th>${format(new Date(date), 'dd/MM/yyyy')}</th>
+                                `).join('')}
+                                <th>Total</th>
+                                <th>Rate</th>
+                                <th>Amount</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              ${chunk.map((product: Product) => {
+                                const total = packageData.totals[product.id] || 0;
+                                const rate = packageData.rates[product.id] || 0;
+                                const amount = packageData.totalAmounts[product.id] || 0;
+                                
+                                return `
+                                  <tr>
+                                    <td>${product.name}</td>
+                                    ${datesWithConsumption.map(date => {
+                                      const entry = packageData.entries.find((e: Entry) => e.date === date);
+                                      const quantity = entry ? entry.quantities[product.id] || 0 : 0;
+                                      return `<td>${quantity}</td>`;
+                                    }).join('')}
+                                    <td style="font-weight: 500;">${total}</td>
+                                    <td>₹${rate.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                                    <td>₹${amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                                  </tr>
+                                `;
+                              }).join('')}
+                            </tbody>
+                          </table>
+                        </div>
+                      `).join('')}
+                      <div class="package-total">
+                        Package Total: ₹${Object.values(packageData.totalAmounts as Record<string, number>).reduce((sum: number, amount: number) => sum + amount, 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      </div>
                     </div>
-                  </div>
-                `;
-              }).join('')}
+                  `;
+                }).join('')}
+            </div>
+
             <div class="grand-total">
               Grand Total: ₹${PACKAGE_ORDER
                 .filter(pkgType => filteredPackages[pkgType])
@@ -329,13 +375,13 @@ export async function POST(req: NextRequest) {
 
       const pdf = await page.pdf({
         format: 'A4',
-        landscape: false,
+        landscape: true,
         printBackground: true,
         margin: {
-          top: '20mm',
-          right: '20mm',
-          bottom: '20mm',
-          left: '20mm'
+          top: '10mm',
+          right: '10mm',
+          bottom: '10mm',
+          left: '10mm'
         }
       });
 

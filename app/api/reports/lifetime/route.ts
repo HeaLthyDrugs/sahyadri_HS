@@ -87,7 +87,7 @@ const generatePDF = async (
               text-align: center;
               margin-bottom: 20px;
               padding: 12px;
-              background-color: #f8f9fa;
+              background-color: #fff;
               border-bottom: 1px solid #dee2e6;
             }
             .report-header h2 {
@@ -108,7 +108,7 @@ const generatePDF = async (
               text-align: center;
             }
             th { 
-              background-color: #f8f9fa;
+              background-color: #fff;
               font-weight: 600;
               color: #1a1a1a;
             }
@@ -117,12 +117,12 @@ const generatePDF = async (
               font-weight: 500;
             }
             .total-row {
-              background-color: #f8f9fa;
+              background-color: #fff;
               font-weight: 600;
             }
             @page { 
               margin: 15mm;
-              size: A4 landscape;
+              size: A4 portrait;
             }
             @media print {
               .page-break-before {

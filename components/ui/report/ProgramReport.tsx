@@ -289,73 +289,66 @@ const ProgramReport: React.FC<ProgramReportProps> = ({
 
           return (
             <div key={`${packageType}-${packageIndex}`} className="w-full">
-              <div className="mb-4 bg-white">
-                <div className="flex justify-center items-center bg-gray-50 p-6 border border-gray-200 rounded-t-lg">
-                  <h3 className="text-lg font-semibold text-gray-900">
+              <div className="mb-1 bg-white">
+                <div className="flex justify-center items-center bg-gray-50 py-2 border border-gray-200">
+                  <h3 className="text-sm font-medium text-gray-900">
                     {PACKAGE_TYPE_DISPLAY[packageType as keyof typeof PACKAGE_TYPE_DISPLAY] || packageType.toUpperCase()}
                   </h3>
                 </div>
               </div>
 
               {itemChunks.map((chunk, chunkIndex) => (
-                <div key={chunkIndex} className="relative overflow-x-auto shadow-sm rounded-lg mb-4">
+                <div key={chunkIndex} className="relative overflow-x-auto mb-2">
                   <div className="border border-gray-200">
-                    <table className="w-full text-sm border-collapse">
+                    <table className="w-full text-[11px] border-collapse">
                       <thead>
                         <tr className="bg-gray-50">
-                          <th className="px-4 py-3 border-b border-r border-gray-200 text-left font-medium text-gray-700">
-                            Date
+                          <th className="px-1.5 py-1 border-b border-r border-gray-200 text-left font-normal text-gray-900 w-[100px]">
+                            Product Name
                           </th>
-                          {chunk.map(item => (
-                            <th key={item.productName} className="px-4 py-3 border-b border-r border-gray-200 text-center font-medium text-gray-700">
-                              {item.productName}
+                          {datesWithConsumption.map(date => (
+                            <th key={date} className="px-1 py-1 border-b border-r border-gray-200 text-center font-normal text-gray-900 w-[30px]">
+                              {format(new Date(date), 'dd/MM').split('/').map((part, i) => (
+                                <React.Fragment key={i}>
+                                  {i > 0 && <br />}
+                                  {part}
+                                </React.Fragment>
+                              ))}
                             </th>
                           ))}
+                          <th className="px-1.5 py-1 border-b border-r border-gray-200 text-center font-normal text-gray-900 w-[40px]">
+                            Total
+                          </th>
+                          <th className="px-1.5 py-1 border-b border-r border-gray-200 text-center font-normal text-gray-900 w-[45px]">
+                            Rate
+                          </th>
+                          <th className="px-1.5 py-1 border-b border-gray-200 text-center font-normal text-gray-900 w-[50px]">
+                            Amount
+                          </th>
                         </tr>
                       </thead>
-                      <tbody className="bg-white">
-                        {datesWithConsumption.map(date => (
-                          <tr key={date} className="border-b border-gray-200 hover:bg-gray-50">
-                            <td className="px-4 py-3 border-r border-gray-200 text-gray-900">
-                              {format(new Date(date), 'dd/MM/yyyy')}
+                      <tbody>
+                        {chunk.map(item => (
+                          <tr key={item.productName} className="border-b border-gray-200">
+                            <td className="px-1.5 py-1 border-r border-gray-200 text-gray-900">
+                              {item.productName}
                             </td>
-                            {chunk.map(item => (
-                              <td key={item.productName} className="px-4 py-3 border-r border-gray-200 text-center text-gray-700">
+                            {datesWithConsumption.map(date => (
+                              <td key={date} className="px-1 py-1 border-r border-gray-200 text-center text-gray-900">
                                 {item.dates?.[date] || 0}
                               </td>
                             ))}
-                          </tr>
-                        ))}
-                        <tr className="bg-gray-50 font-medium">
-                          <td className="px-4 py-3 border-r border-gray-200 text-gray-900">
-                            Total
-                          </td>
-                          {chunk.map(item => (
-                            <td key={item.productName} className="px-4 py-3 border-r border-gray-200 text-center text-gray-900">
+                            <td className="px-1.5 py-1 border-r border-gray-200 text-center text-gray-900">
                               {item.quantity}
                             </td>
-                          ))}
-                        </tr>
-                        <tr className="bg-gray-50 font-medium">
-                          <td className="px-4 py-3 border-r border-gray-200 text-gray-900">
-                            Rate
-                          </td>
-                          {chunk.map(item => (
-                            <td key={item.productName} className="px-4 py-3 border-r border-gray-200 text-center text-gray-900">
+                            <td className="px-1.5 py-1 border-r border-gray-200 text-center text-gray-900">
                               ₹{item.rate.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                             </td>
-                          ))}
-                        </tr>
-                        <tr className="bg-gray-50 font-medium">
-                          <td className="px-4 py-3 border-r border-gray-200 text-gray-900">
-                            Amount
-                          </td>
-                          {chunk.map(item => (
-                            <td key={item.productName} className="px-4 py-3 border-r border-gray-200 text-center text-gray-900">
+                            <td className="px-1.5 py-1 text-center text-gray-900">
                               ₹{item.total.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                             </td>
-                          ))}
-                        </tr>
+                          </tr>
+                        ))}
                       </tbody>
                     </table>
                   </div>
@@ -363,13 +356,9 @@ const ProgramReport: React.FC<ProgramReportProps> = ({
               ))}
 
               {/* Package Total */}
-              <div className="mb-6 p-4 bg-gray-50 border border-gray-200 rounded-lg">
-                <div className="flex justify-end">
-                  <div className="text-right">
-                    <span className="font-semibold mr-4">Package Total:</span>
-                    <span className="text-gray-900">₹{packageData.packageTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
-                  </div>
-                </div>
+              <div className="mb-2 py-1 px-2 text-right text-[11px]">
+                <span className="font-normal mr-2">Package Total:</span>
+                <span className="text-gray-900">₹{packageData.packageTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
               </div>
             </div>
           );

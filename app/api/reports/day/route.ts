@@ -30,41 +30,54 @@ interface RequestBody {
 // Update package type order and display names
 const PACKAGE_TYPE_ORDER: Record<string, number> = {
   'Normal': 1,
-  'normal': 1,
-  'catering': 1,
   'Extra': 2,
-  'extra': 2,
-  'Cold Drink': 3,
-  'cold': 3,
-  'cold drink': 3
+  'Cold Drink': 3
 };
 
-type PackageTypeKey = 'normal' | 'Normal' | 'catering' | 'extra' | 'Extra' | 'cold drink' | 'Cold Drink' | 'cold';
+// Define product order for catering package with full names
+const CATERING_PRODUCT_ORDER = [
+  { code: 'MT', name: 'Morning Tea' },
+  { code: 'BF', name: 'Breakfast' },
+  { code: 'M-CRT', name: 'Morning CRT' },
+  { code: 'LUNCH', name: 'Afternoon Lunch' },
+  { code: 'A-CRT', name: 'Afternoon CRT' },
+  { code: 'HI TEA', name: 'Hi Tea' },
+  { code: 'DINNER', name: 'Dinner' }
+];
 
-const PACKAGE_TYPE_DISPLAY: Record<PackageTypeKey, string> = {
-  'normal': 'CATERING',
-  'Normal': 'CATERING',
-  'catering': 'CATERING',
-  'extra': 'EXTRA CATERING',
-  'Extra': 'EXTRA CATERING',
-  'cold drink': 'COLD DRINKS',
-  'Cold Drink': 'COLD DRINKS',
-  'cold': 'COLD DRINKS'
+// Helper function to get product order index
+const getProductOrderIndex = (productName: string, packageType: string): number => {
+  if (normalizePackageType(packageType) === 'Normal') {
+    // Check both code and full name
+    const index = CATERING_PRODUCT_ORDER.findIndex(
+      product => productName === product.code || productName === product.name
+    );
+    return index === -1 ? CATERING_PRODUCT_ORDER.length : index;
+  }
+  return -1;
+};
+
+type PackageTypeKey = 'Normal' | 'Extra' | 'Cold Drink';
+
+const PACKAGE_NAMES: Record<PackageTypeKey, string> = {
+  'Normal': 'Catering Package',
+  'Extra': 'Extra Catering Package',
+  'Cold Drink': 'Cold Drink Package'
 };
 
 const normalizePackageType = (type: string): string => {
   const normalized = type.toLowerCase();
-  if (normalized === 'extra' || normalized === 'Extra') return 'extra';
-  if (normalized === 'cold drink' || normalized === 'cold') return 'cold drink';
-  if (normalized === 'normal' || normalized === 'catering') return 'normal';
-  return normalized;
+  if (normalized === 'extra') return 'Extra';
+  if (normalized === 'cold drink' || normalized === 'cold') return 'Cold Drink';
+  if (normalized === 'normal' || normalized === 'catering') return 'Normal';
+  return type;
 };
 
-const PACKAGE_NAMES = {
-  'Normal': 'Catering Package',
-  'Extra': 'Extra Catering Package',
-  'Cold Drink': 'Cold Drink Package'
-} as const;
+const PACKAGE_TYPE_DISPLAY: Record<PackageTypeKey, string> = {
+  'Normal': 'CATERING',
+  'Extra': 'EXTRA CATERING',
+  'Cold Drink': 'COLD DRINKS'
+};
 
 const PACKAGE_ORDER = ['Normal', 'Extra', 'Cold Drink'];
 
@@ -134,18 +147,20 @@ const generatePDF = async (data: DayReportEntry[], date: string, packageType?: s
             .package-header h4 {
               margin: 0;
               color: #1a1a1a;
-              font-size: 13px;
-              text-decoration: underline;
+              font-size: 14px;
+              border: 1px solid #dee2e6;
+              border-radius: 3px;
+              padding: 4px;
             }
             .total-row { 
-              background-color: #f8f9fa;
+              background-color: #fff ;
               font-weight: 600;
             }
             .grand-total {
               margin-top: 20px;
               padding: 10px;
               text-align: right;
-              background-color: #f8f9fa;
+              background-color: #fff ;
               border: 1px solid #dee2e6;
               border-radius: 3px;
               page-break-inside: avoid;
@@ -399,25 +414,53 @@ export async function POST(request: Request) {
         return isValid;
       })
       .map((entry: any): DayReportEntry => {
-        const processed = {
-          packageType: entry.packages.type,
+        const normalizedType = normalizePackageType(entry.packages.type);
+        return {
+          packageType: normalizedType,
           productName: entry.products.name,
           quantity: entry.quantity,
           rate: entry.products.rate,
           total: entry.quantity * entry.products.rate
         };
-        console.log('Processed entry:', processed);
-        return processed;
       });
 
-    console.log('Total processed entries:', processedEntries.length);
+    // Group entries by package type to prevent duplicates
+    const groupedEntries = processedEntries.reduce((acc, entry) => {
+      const key = `${entry.packageType}-${entry.productName}`;
+      if (!acc[key]) {
+        acc[key] = { ...entry, quantity: 0 };
+      }
+      acc[key].quantity += entry.quantity;
+      acc[key].total = acc[key].quantity * acc[key].rate;
+      return acc;
+    }, {} as Record<string, DayReportEntry>);
 
-    // Calculate grand total
-    const grandTotal = processedEntries.reduce((sum, entry) => sum + entry.total, 0);
+    // Convert back to array and sort by package type and product name
+    const finalEntries = Object.values(groupedEntries).sort((a, b) => {
+      // First sort by package type
+      const packageOrderDiff = 
+        (PACKAGE_TYPE_ORDER[a.packageType as PackageTypeKey] || 999) - 
+        (PACKAGE_TYPE_ORDER[b.packageType as PackageTypeKey] || 999);
+      
+      if (packageOrderDiff !== 0) return packageOrderDiff;
+      
+      // For catering package, use the defined order
+      if (normalizePackageType(a.packageType) === 'Normal') {
+        const orderA = getProductOrderIndex(a.productName, a.packageType);
+        const orderB = getProductOrderIndex(b.productName, b.packageType);
+        return orderA - orderB;
+      }
+      
+      // For other packages, sort alphabetically
+      return a.productName.localeCompare(b.productName);
+    });
+
+    // Calculate grand total from final entries
+    const grandTotal = finalEntries.reduce((sum, entry) => sum + entry.total, 0);
 
     // Generate PDF if requested
     if (action === 'print' || action === 'download') {
-      const pdf = await generatePDF(processedEntries, formattedDate, packageType);
+      const pdf = await generatePDF(finalEntries, formattedDate, packageType);
       
       return new NextResponse(pdf, {
         headers: {
@@ -433,12 +476,12 @@ export async function POST(request: Request) {
     const response = {
       data: {
         date: formattedDate,
-        entries: processedEntries,
+        entries: finalEntries,
         grandTotal
       },
       meta: {
         date: formattedDate,
-        entriesFound: processedEntries.length,
+        entriesFound: finalEntries.length,
         totalAmount: grandTotal
       }
     };

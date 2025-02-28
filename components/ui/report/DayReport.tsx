@@ -25,17 +25,46 @@ interface DayReportProps {
 
 // Package type mapping and order
 const PACKAGE_TYPE_DISPLAY = {
-  'normal': 'CATERING',
   'Normal': 'CATERING',
+  'normal': 'CATERING',
   'catering': 'CATERING',
-  'extra': 'EXTRA CATERING',
   'Extra': 'EXTRA CATERING',
-  'cold drink': 'COLD DRINKS',
+  'extra': 'EXTRA CATERING',
   'Cold Drink': 'COLD DRINKS',
+  'cold drink': 'COLD DRINKS',
   'cold': 'COLD DRINKS'
 } as const;
 
-const PACKAGE_TYPE_ORDER = ['normal', 'Normal', 'extra', 'Extra', 'cold drink', 'Cold Drink'];
+const PACKAGE_TYPE_ORDER = ['Normal', 'Extra', 'Cold Drink'];
+
+// Define product order for catering package
+const CATERING_PRODUCT_ORDER = [
+  'MT',
+  'BF',
+  'M-CRT',
+  'LUNCH',
+  'A-CRT',
+  'HI TEA',
+  'DINNER'
+];
+
+// Helper function to get product order index
+const getProductOrderIndex = (productName: string, packageType: string): number => {
+  if (normalizePackageType(packageType) === 'Normal') {
+    const index = CATERING_PRODUCT_ORDER.indexOf(productName);
+    return index === -1 ? CATERING_PRODUCT_ORDER.length : index;
+  }
+  return -1;
+};
+
+// Normalize package type to prevent duplicates
+const normalizePackageType = (type: string): string => {
+  const normalized = type.toLowerCase();
+  if (normalized === 'extra' || normalized === 'Extra') return 'Extra';
+  if (normalized === 'cold drink' || normalized === 'cold') return 'Cold Drink';
+  if (normalized === 'normal' || normalized === 'catering') return 'Normal';
+  return type;
+};
 
 const DayReport = ({ data, selectedDay, selectedPackage = 'all' }: DayReportProps) => {
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
@@ -164,54 +193,48 @@ const DayReport = ({ data, selectedDay, selectedPackage = 'all' }: DayReportProp
       return null;
     }
 
-    console.log('Rendering entries:', data.entries); // Debug log
-
-    // Group entries by package type
+    // Group entries by package type with normalization
     const packageGroups = data.entries.reduce((groups, entry) => {
-      const normalizedType = entry.packageType.toLowerCase();
-      const groupKey = normalizedType === 'extra' ? 'Extra' : 
-                      normalizedType === 'cold drink' || normalizedType === 'cold' ? 'Cold Drink' :
-                      normalizedType === 'normal' || normalizedType === 'catering' ? 'Normal' : 
-                      entry.packageType;
+      const normalizedType = normalizePackageType(entry.packageType);
       
-      if (!groups[groupKey]) {
-        groups[groupKey] = [];
+      if (!groups[normalizedType]) {
+        groups[normalizedType] = [];
       }
-      groups[groupKey].push(entry);
+      groups[normalizedType].push(entry);
       return groups;
     }, {} as { [key: string]: DayReportEntry[] });
-
-    console.log('Package groups:', packageGroups); // Debug log
 
     // Filter package groups based on selected package
     const filteredPackageTypes = Object.keys(packageGroups).filter(type => {
       if (!selectedPackage || selectedPackage === 'all') return true;
-      const normalizedSelected = selectedPackage.toLowerCase();
-      const normalizedType = type.toLowerCase();
-      return normalizedType === normalizedSelected || 
-             (normalizedSelected === 'cold drink' && normalizedType === 'cold') ||
-             (normalizedType === 'normal' && normalizedSelected === 'catering');
+      const normalizedSelected = normalizePackageType(selectedPackage);
+      const normalizedType = normalizePackageType(type);
+      return normalizedType === normalizedSelected;
     });
-
-    console.log('Filtered package types:', filteredPackageTypes); // Debug log
 
     if (filteredPackageTypes.length === 0) return null;
 
     // Sort package types according to defined order
     const sortedPackageTypes = filteredPackageTypes.sort((a, b) => {
-      const orderA = PACKAGE_TYPE_ORDER.indexOf(a) !== -1 ? PACKAGE_TYPE_ORDER.indexOf(a) : 999;
-      const orderB = PACKAGE_TYPE_ORDER.indexOf(b) !== -1 ? PACKAGE_TYPE_ORDER.indexOf(b) : 999;
+      const orderA = PACKAGE_TYPE_ORDER.indexOf(normalizePackageType(a));
+      const orderB = PACKAGE_TYPE_ORDER.indexOf(normalizePackageType(b));
       return orderA - orderB;
     });
-
-    console.log('Sorted package types:', sortedPackageTypes); // Debug log
 
     return (
       <div className="flex flex-col gap-6">
         {sortedPackageTypes.map((packageType, packageIndex) => {
-          const sortedEntries = [...packageGroups[packageType]].sort((a, b) => 
-            a.productName.localeCompare(b.productName)
-          );
+          // Sort entries by product order for catering package, otherwise by name
+          const sortedEntries = [...packageGroups[packageType]].sort((a, b) => {
+            const orderA = getProductOrderIndex(a.productName, packageType);
+            const orderB = getProductOrderIndex(b.productName, packageType);
+            
+            if (orderA !== -1 && orderB !== -1) {
+              return orderA - orderB;
+            }
+            
+            return a.productName.localeCompare(b.productName);
+          });
 
           const packageTotal = sortedEntries.reduce((sum, entry) => sum + entry.total, 0);
 
@@ -220,58 +243,58 @@ const DayReport = ({ data, selectedDay, selectedPackage = 'all' }: DayReportProp
               key={`${packageType}-${packageIndex}`}
               className="w-full"
             >
-              <div className="mb-2 p-3 bg-white border-b">
-                <div className="flex justify-center items-center bg-gray-50 p-4">
-                  <h3 className="text-base font-semibold text-gray-900">
+              <div className="mb-2 p-3 bg-white">
+                <div className="flex justify-center items-center bg-gray-50 p-6 border border-gray-200 rounded-t-lg">
+                  <h3 className="text-lg font-semibold text-gray-900">
                     {PACKAGE_TYPE_DISPLAY[packageType as keyof typeof PACKAGE_TYPE_DISPLAY] || packageType.toUpperCase()}
                   </h3>
                 </div>
               </div>
 
-              <div className="relative overflow-x-auto">
-                <div className="border border-gray-900 w-full">
+              <div className="relative overflow-x-auto shadow-sm rounded-lg">
+                <div className="border border-gray-200">
                   <table className="w-full text-sm border-collapse">
                     <thead>
-                      <tr className="bg-gray-100">
-                        <th className="p-2 font-normal text-gray-900 text-left border-r border-b border-gray-900 w-[40%]">
+                      <tr className="bg-gray-50">
+                        <th className="px-4 py-3 font-medium text-gray-700 text-left border-r border-b border-gray-200 w-[40%]">
                           Product Name
                         </th>
-                        <th className="p-2 font-normal text-gray-900 text-center border-r border-b border-gray-900 w-[20%]">
+                        <th className="px-4 py-3 font-medium text-gray-700 text-center border-r border-b border-gray-200 w-[20%]">
                           Total Quantity
                         </th>
-                        <th className="p-2 font-normal text-gray-900 text-right border-r border-b border-gray-900 w-[20%]">
+                        <th className="px-4 py-3 font-medium text-gray-700 text-right border-r border-b border-gray-200 w-[20%]">
                           Rate
                         </th>
-                        <th className="p-2 font-normal text-gray-900 text-right border-b border-gray-900 w-[20%]">
+                        <th className="px-4 py-3 font-medium text-gray-700 text-right border-b border-gray-200 w-[20%]">
                           Total Amount
                         </th>
                       </tr>
                     </thead>
-                    <tbody>
+                    <tbody className="bg-white">
                       {sortedEntries.map((entry, entryIndex) => (
                         <tr 
                           key={`${entry.productName}-${entryIndex}`}
-                          className="border-b border-gray-900"
+                          className="border-b border-gray-200 hover:bg-gray-50"
                         >
-                          <td className="p-2 text-gray-900 border-r border-gray-900">
+                          <td className="px-4 py-3 text-gray-900 border-r border-gray-200">
                             {entry.productName}
                           </td>
-                          <td className="p-2 text-gray-900 text-center border-r border-gray-900">
+                          <td className="px-4 py-3 text-gray-900 text-center border-r border-gray-200">
                             {entry.quantity}
                           </td>
-                          <td className="p-2 text-gray-900 text-right border-r border-gray-900">
+                          <td className="px-4 py-3 text-gray-900 text-right border-r border-gray-200">
                             ₹{entry.rate.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                           </td>
-                          <td className="p-2 text-gray-900 text-right">
+                          <td className="px-4 py-3 text-gray-900 text-right">
                             ₹{entry.total.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                           </td>
                         </tr>
                       ))}
-                      <tr className="bg-gray-50">
-                        <td colSpan={3} className="p-2 text-gray-900 text-right border-r border-gray-900 font-semibold">
+                      <tr className="bg-gray-50 font-medium">
+                        <td colSpan={3} className="px-4 py-3 text-gray-900 text-right border-r border-gray-200">
                           Package Total
                         </td>
-                        <td className="p-2 text-gray-900 text-right font-semibold">
+                        <td className="px-4 py-3 text-gray-900 text-right">
                           ₹{packageTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                         </td>
                       </tr>
@@ -284,12 +307,14 @@ const DayReport = ({ data, selectedDay, selectedPackage = 'all' }: DayReportProp
         })}
 
         {/* Grand Total */}
-        <div className="w-full mt-4 p-4 bg-gray-100 border border-gray-900">
-          <div className="flex justify-between items-center">
-            <span className="font-semibold text-gray-900">Grand Total</span>
-            <span className="font-semibold text-gray-900">
-              ₹{data.grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-            </span>
+        <div className="w-full mt-6 p-4 bg-amber-50 border border-amber-200 rounded-lg">
+          <div className="flex justify-end">
+            <div className="text-right">
+              <span className="font-semibold mr-4">Grand Total:</span>
+              <span className="text-amber-900">
+                ₹{data.grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+              </span>
+            </div>
           </div>
         </div>
       </div>
