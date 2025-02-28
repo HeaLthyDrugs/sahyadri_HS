@@ -29,6 +29,27 @@ interface PackageData {
 
 const MONTHS_PER_TABLE = 6;
 
+// Define product order for catering package
+const CATERING_PRODUCT_ORDER = [
+  'MT',
+  'BF',
+  'M-CRT',
+  'LUNCH',
+  'A-CRT',
+  'HI TEA',
+  'DINNER'
+];
+
+// Helper function to get product order index
+const getProductOrderIndex = (productName: string, packageType: string): number => {
+  // Check for both 'catering' and 'normal' package types
+  if (packageType.toLowerCase() === 'catering' || packageType.toLowerCase() === 'normal' || packageType.toLowerCase().includes('catering package')) {
+    const index = CATERING_PRODUCT_ORDER.indexOf(productName);
+    return index === -1 ? CATERING_PRODUCT_ORDER.length : index;
+  }
+  return -1;
+};
+
 const generatePDF = async (
   packageData: PackageData,
   startMonth: string,
@@ -62,7 +83,22 @@ const generatePDF = async (
     ).sort();
 
     // Filter products with consumption
-    const productsWithConsumption = packageData.products.filter(product => product.total > 0);
+    const productsWithConsumption = packageData.products
+      .filter(product => product.total > 0)
+      .sort((a, b) => {
+        const orderA = getProductOrderIndex(a.name, packageData.type);
+        const orderB = getProductOrderIndex(b.name, packageData.type);
+        
+        // If both products are in the catering order list
+        if (orderA !== -1 && orderB !== -1) {
+          return orderA - orderB;
+        }
+        // If only one product is in the list, prioritize it
+        if (orderA !== -1) return -1;
+        if (orderB !== -1) return 1;
+        // For products not in the list, maintain original order
+        return 0;
+      });
 
     // Split months into chunks for table pagination
     const monthChunks = [];

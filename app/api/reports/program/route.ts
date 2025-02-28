@@ -375,7 +375,7 @@ export async function POST(req: NextRequest) {
 
       const pdf = await page.pdf({
         format: 'A4',
-        landscape: true,
+        landscape: false,
         printBackground: true,
         margin: {
           top: '10mm',

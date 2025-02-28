@@ -2,6 +2,7 @@ import { format } from "date-fns";
 import React, { useState } from "react";
 import { RiDownloadLine, RiPrinterLine } from "react-icons/ri";
 import { toast } from "react-hot-toast";
+import LoadingSpinner from '../LoadingSpinner';
 
 interface DayReportEntry {
   packageType: string;
@@ -25,9 +26,9 @@ interface DayReportProps {
 
 // Package type mapping and order
 const PACKAGE_TYPE_DISPLAY = {
-  'Normal': 'CATERING',
-  'normal': 'CATERING',
-  'catering': 'CATERING',
+  'Normal': 'CATERING PACKAGE',
+  'normal': 'CATERING PACKAGE',
+  'catering': 'CATERING PACKAGE',
   'Extra': 'EXTRA CATERING',
   'extra': 'EXTRA CATERING',
   'Cold Drink': 'COLD DRINKS',
@@ -68,11 +69,13 @@ const normalizePackageType = (type: string): string => {
 
 const DayReport = ({ data, selectedDay, selectedPackage = 'all' }: DayReportProps) => {
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
+  const [actionType, setActionType] = useState<'print' | 'download' | null>(null);
 
   const handlePrint = async () => {
     try {
-      toast.loading('Preparing document for print...');
+      setActionType('print');
       setIsGeneratingPDF(true);
+      const toastId = toast.loading('Preparing document for print...');
 
       const formattedDate = format(new Date(selectedDay), 'yyyy-MM-dd');
       
@@ -122,21 +125,28 @@ const DayReport = ({ data, selectedDay, selectedPackage = 'all' }: DayReportProp
         };
       }
 
-      toast.dismiss();
-      toast.success('Document ready for printing');
+      toast.dismiss(toastId);
+      toast.success('Document ready for printing', {
+        duration: 3000,
+        icon: '🖨️'
+      });
     } catch (error) {
       console.error('Error preparing print:', error);
-      toast.dismiss();
-      toast.error('Failed to prepare document for printing');
+      toast.error('Failed to prepare document for printing', {
+        duration: 4000,
+        icon: '❌'
+      });
     } finally {
       setIsGeneratingPDF(false);
+      setActionType(null);
     }
   };
 
   const handleDownloadPDF = async () => {
     try {
-      toast.loading('Generating PDF...');
+      setActionType('download');
       setIsGeneratingPDF(true);
+      const toastId = toast.loading('Generating PDF...');
 
       // Ensure we're using the correct date format (YYYY-MM-DD)
       const formattedDate = format(new Date(selectedDay), 'yyyy-MM-dd');
@@ -177,14 +187,20 @@ const DayReport = ({ data, selectedDay, selectedPackage = 'all' }: DayReportProp
       window.URL.revokeObjectURL(url);
       document.body.removeChild(a);
 
-      toast.dismiss();
-      toast.success('PDF downloaded successfully');
+      toast.dismiss(toastId);
+      toast.success('PDF downloaded successfully', {
+        duration: 3000,
+        icon: '📥'
+      });
     } catch (error) {
       console.error('Error generating PDF:', error);
-      toast.dismiss();
-      toast.error('Failed to generate PDF');
+      toast.error('Failed to generate PDF', {
+        duration: 4000,
+        icon: '❌'
+      });
     } finally {
       setIsGeneratingPDF(false);
+      setActionType(null);
     }
   };
 
@@ -246,7 +262,7 @@ const DayReport = ({ data, selectedDay, selectedPackage = 'all' }: DayReportProp
               <div className="mb-2 p-3 bg-white">
                 <div className="flex justify-center items-center bg-gray-50 p-6 border border-gray-200 rounded-t-lg">
                   <h3 className="text-lg font-semibold text-gray-900">
-                    {PACKAGE_TYPE_DISPLAY[packageType as keyof typeof PACKAGE_TYPE_DISPLAY] || packageType.toUpperCase()}
+                    {PACKAGE_TYPE_DISPLAY[packageType as keyof typeof PACKAGE_TYPE_DISPLAY] || packageType.toUpperCase()} 
                   </h3>
                 </div>
               </div>
@@ -330,23 +346,42 @@ const DayReport = ({ data, selectedDay, selectedPackage = 'all' }: DayReportProp
         <button
           onClick={handlePrint}
           disabled={isGeneratingPDF || !hasEntries}
-          className="inline-flex items-center px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-800 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          className="inline-flex items-center px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-800 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed min-w-[100px] justify-center"
         >
-          <RiPrinterLine className="w-5 h-5 mr-2" />
-          Print
+          {isGeneratingPDF && actionType === 'print' ? (
+            <LoadingSpinner size="sm" className="text-gray-600 mr-2" />
+          ) : (
+            <RiPrinterLine className="w-5 h-5 mr-2" />
+          )}
+          {isGeneratingPDF && actionType === 'print' ? 'Preparing...' : 'Print'}
         </button>
         <button
           onClick={handleDownloadPDF}
           disabled={isGeneratingPDF || !hasEntries}
-          className="inline-flex items-center px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-800 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          className="inline-flex items-center px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-800 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed min-w-[120px] justify-center"
         >
-          <RiDownloadLine className="w-5 h-5 mr-2" />
-          Download PDF
+          {isGeneratingPDF && actionType === 'download' ? (
+            <LoadingSpinner size="sm" className="text-gray-600 mr-2" />
+          ) : (
+            <RiDownloadLine className="w-5 h-5 mr-2" />
+          )}
+          {isGeneratingPDF && actionType === 'download' ? 'Generating...' : 'Download PDF'}
         </button>
       </div>
 
       {/* Report Content */}
       <div className="bg-white max-w-5xl mx-auto px-4">
+        {isGeneratingPDF && (
+          <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50">
+            <div className="bg-white p-6 rounded-lg shadow-xl flex items-center space-x-4">
+              <LoadingSpinner size="lg" className="text-gray-600" />
+              <div className="text-gray-700">
+                {actionType === 'print' ? 'Preparing document...' : 'Generating PDF...'}
+              </div>
+            </div>
+          </div>
+        )}
+
         {hasEntries ? (
           <>
             {/* Report Header */}

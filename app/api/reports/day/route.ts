@@ -61,8 +61,8 @@ type PackageTypeKey = 'Normal' | 'Extra' | 'Cold Drink';
 
 const PACKAGE_NAMES: Record<PackageTypeKey, string> = {
   'Normal': 'Catering Package',
-  'Extra': 'Extra Catering Package',
-  'Cold Drink': 'Cold Drink Package'
+  'Extra': 'Extra Catering',
+  'Cold Drink': 'Cold Drinks'
 };
 
 const normalizePackageType = (type: string): string => {
