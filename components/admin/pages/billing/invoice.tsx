@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
-import { format } from "date-fns";
+import { format, startOfMonth, endOfMonth } from "date-fns";
 import { toast } from "react-hot-toast";
 import {
   RiPrinterLine,
@@ -42,6 +42,14 @@ interface BillingEntry {
   products: Product;
 }
 
+interface StaffBillingEntry {
+  id: string;
+  entry_date: string;
+  quantity: number;
+  staff_id: number;
+  products: Product;
+}
+
 interface DatabaseBillingEntry {
   id: string;
   entry_date: string;
@@ -53,8 +61,9 @@ interface DatabaseBillingEntry {
 interface InvoiceData {
   packageDetails: Package;
   month: string;
-  entries: BillingEntry[];
+  entries: BillingEntry[] | StaffBillingEntry[];
   totalAmount: number;
+  isStaffInvoice?: boolean;
 }
 
 interface InvoiceConfig {
@@ -73,6 +82,7 @@ interface InvoicePageProps {
   searchParams: {
     packageId?: string;
     month?: string;
+    type?: string;
   };
 }
 
@@ -83,7 +93,13 @@ export default function InvoicePage({ searchParams }: InvoicePageProps) {
   const [packages, setPackages] = useState<Package[]>([]);
   const [invoiceConfig, setInvoiceConfig] = useState<InvoiceConfig | null>(null);
   const [invoiceData, setInvoiceData] = useState<InvoiceData | null>(null);
+  const [isStaffMode, setIsStaffMode] = useState(false);
   const currentMonth = format(new Date(), 'yyyy-MM');
+
+  useEffect(() => {
+    const isStaff = searchParams.type === 'staff';
+    setIsStaffMode(isStaff);
+  }, [searchParams.type]);
 
   useEffect(() => {
     fetchPackages();
@@ -92,9 +108,11 @@ export default function InvoicePage({ searchParams }: InvoicePageProps) {
 
   useEffect(() => {
     if (searchParams.packageId && searchParams.month) {
-      generateInvoiceData(searchParams.packageId, searchParams.month);
+      generateInvoiceData(searchParams.packageId, searchParams.month, isStaffMode);
+    } else {
+      setInvoiceData(null);
     }
-  }, [searchParams.packageId, searchParams.month]);
+  }, [searchParams.packageId, searchParams.month, isStaffMode]);
 
   const fetchPackages = async () => {
     try {
@@ -137,7 +155,7 @@ export default function InvoicePage({ searchParams }: InvoicePageProps) {
     }
   };
 
-  const generateInvoiceData = async (packageId: string, month: string) => {
+  const generateInvoiceData = async (packageId: string, month: string, isStaff: boolean) => {
     setIsLoading(true);
     const loadingToast = toast.loading('Generating invoice...');
     
@@ -152,106 +170,174 @@ export default function InvoicePage({ searchParams }: InvoicePageProps) {
       if (packageError) throw packageError;
       if (!packageData) throw new Error('Package not found');
 
-      // Get programs that belong to this billing month
-      const { data: programsData, error: programsError } = await supabase
-        .from('program_month_mappings')
-        .select(`
-          program_id,
-          programs:program_id (
+      if (isStaff) {
+        // Get staff billing entries for the month
+        const startDate = format(startOfMonth(new Date(month + '-01')), 'yyyy-MM-dd');
+        const endDate = format(endOfMonth(new Date(month + '-01')), 'yyyy-MM-dd');
+
+        const { data: staffEntries, error: staffError } = await supabase
+          .from('staff_billing_entries')
+          .select(`
             id,
-            name,
-            customer_name,
-            start_date,
-            end_date
-          )
-        `)
-        .eq('billing_month', month);
+            entry_date,
+            quantity,
+            staff_id,
+            products:product_id (
+              id,
+              name,
+              rate,
+              index
+            )
+          `)
+          .eq('package_id', packageId)
+          .gte('entry_date', startDate)
+          .lte('entry_date', endDate)
+          .order('products(index)', { ascending: true });
 
-      if (programsError) throw programsError;
-      
-      // If no programs found for this month, show an error
-      if (!programsData || programsData.length === 0) {
-        throw new Error(`No programs found for billing month ${format(new Date(month + '-01'), 'MMMM yyyy')}`);
-      }
-      
-      // Extract program IDs and date ranges
-      const programIds = programsData.map(p => p.program_id);
-      
-      // Get all billing entries for these programs, regardless of entry date
-      const { data: entriesData, error: entriesError } = await supabase
-        .from('billing_entries')
-        .select(`
-          id,
-          entry_date,
-          quantity,
-          program_id,
-          programs:program_id (
-            id,
-            name,
-            customer_name
-          ),
-          products:product_id (
-            id,
-            name,
-            rate,
-            index
-          )
-        `)
-        .eq('package_id', packageId)
-        .in('program_id', programIds)
-        .order('products(index)', { ascending: true });
+        if (staffError) throw staffError;
 
-      if (entriesError) throw entriesError;
-
-      if (!entriesData || entriesData.length === 0) {
-        throw new Error(`No entries found for package ${packageData.name} in billing month ${format(new Date(month + '-01'), 'MMMM yyyy')}`);
-      }
-
-      // Transform and aggregate entries
-      const transformedEntries = entriesData.reduce((acc: BillingEntry[], entry: any) => {
-        if (!entry.products || !entry.programs) return acc;
-
-        const existingEntry = acc.find(e => e.products.id === entry.products.id);
-        if (existingEntry) {
-          existingEntry.quantity += entry.quantity || 0;
-        } else {
-          const newEntry: BillingEntry = {
-            id: entry.id,
-            entry_date: entry.entry_date,
-            quantity: entry.quantity || 0,
-            programs: {
-              id: entry.programs.id,
-              name: entry.programs.name,
-              customer_name: entry.programs.customer_name
-            },
-            products: {
-              id: entry.products.id,
-              name: entry.products.name,
-              rate: entry.products.rate,
-              index: entry.products.index
-            }
-          };
-          acc.push(newEntry);
+        if (!staffEntries || staffEntries.length === 0) {
+          throw new Error(`No staff entries found for package ${packageData.name} in month ${format(new Date(month + '-01'), 'MMMM yyyy')}`);
         }
-        return acc;
-      }, []);
 
-      // Sort entries by product index
-      transformedEntries.sort((a, b) => (a.products.index || 0) - (b.products.index || 0));
+        // Transform and aggregate staff entries
+        const transformedEntries = staffEntries.reduce((acc: StaffBillingEntry[], entry: any) => {
+          if (!entry.products) return acc;
 
-      // Calculate total
-      const totalAmount = transformedEntries.reduce((sum, entry) => {
-        const rate = entry.products.rate || 0;
-        const quantity = entry.quantity || 0;
-        return sum + (rate * quantity);
-      }, 0);
+          const existingEntry = acc.find(e => e.products.id === entry.products.id);
+          if (existingEntry) {
+            existingEntry.quantity += entry.quantity || 0;
+          } else {
+            acc.push({
+              id: entry.id,
+              entry_date: entry.entry_date,
+              quantity: entry.quantity || 0,
+              staff_id: entry.staff_id,
+              products: entry.products
+            });
+          }
+          return acc;
+        }, []);
 
-      setInvoiceData({
-        packageDetails: packageData,
-        month,
-        entries: transformedEntries,
-        totalAmount
-      });
+        // Sort entries by product index
+        transformedEntries.sort((a, b) => (a.products.index || 0) - (b.products.index || 0));
+
+        // Calculate total
+        const totalAmount = transformedEntries.reduce((sum, entry) => {
+          const rate = entry.products.rate || 0;
+          const quantity = entry.quantity || 0;
+          return sum + (rate * quantity);
+        }, 0);
+
+        setInvoiceData({
+          packageDetails: packageData,
+          month,
+          entries: transformedEntries,
+          totalAmount,
+          isStaffInvoice: true
+        });
+      } else {
+        // Get programs that belong to this billing month
+        const { data: programsData, error: programsError } = await supabase
+          .from('program_month_mappings')
+          .select(`
+            program_id,
+            programs:program_id (
+              id,
+              name,
+              customer_name,
+              start_date,
+              end_date
+            )
+          `)
+          .eq('billing_month', month);
+
+        if (programsError) throw programsError;
+        
+        // If no programs found for this month, show an error
+        if (!programsData || programsData.length === 0) {
+          throw new Error(`No programs found for billing month ${format(new Date(month + '-01'), 'MMMM yyyy')}`);
+        }
+        
+        // Extract program IDs and date ranges
+        const programIds = programsData.map(p => p.program_id);
+        
+        // Get all billing entries for these programs, regardless of entry date
+        const { data: entriesData, error: entriesError } = await supabase
+          .from('billing_entries')
+          .select(`
+            id,
+            entry_date,
+            quantity,
+            program_id,
+            programs:program_id (
+              id,
+              name,
+              customer_name
+            ),
+            products:product_id (
+              id,
+              name,
+              rate,
+              index
+            )
+          `)
+          .eq('package_id', packageId)
+          .in('program_id', programIds)
+          .order('products(index)', { ascending: true });
+
+        if (entriesError) throw entriesError;
+
+        if (!entriesData || entriesData.length === 0) {
+          throw new Error(`No entries found for package ${packageData.name} in billing month ${format(new Date(month + '-01'), 'MMMM yyyy')}`);
+        }
+
+        // Transform and aggregate entries
+        const transformedEntries = entriesData.reduce((acc: BillingEntry[], entry: any) => {
+          if (!entry.products || !entry.programs) return acc;
+
+          const existingEntry = acc.find(e => e.products.id === entry.products.id);
+          if (existingEntry) {
+            existingEntry.quantity += entry.quantity || 0;
+          } else {
+            const newEntry: BillingEntry = {
+              id: entry.id,
+              entry_date: entry.entry_date,
+              quantity: entry.quantity || 0,
+              programs: {
+                id: entry.programs.id,
+                name: entry.programs.name,
+                customer_name: entry.programs.customer_name
+              },
+              products: {
+                id: entry.products.id,
+                name: entry.products.name,
+                rate: entry.products.rate,
+                index: entry.products.index
+              }
+            };
+            acc.push(newEntry);
+          }
+          return acc;
+        }, []);
+
+        // Sort entries by product index
+        transformedEntries.sort((a, b) => (a.products.index || 0) - (b.products.index || 0));
+
+        // Calculate total
+        const totalAmount = transformedEntries.reduce((sum, entry) => {
+          const rate = entry.products.rate || 0;
+          const quantity = entry.quantity || 0;
+          return sum + (rate * quantity);
+        }, 0);
+
+        setInvoiceData({
+          packageDetails: packageData,
+          month,
+          entries: transformedEntries,
+          totalAmount
+        });
+      }
       
       toast.dismiss(loadingToast);
       toast.success('Invoice generated successfully');
@@ -282,6 +368,7 @@ export default function InvoicePage({ searchParams }: InvoicePageProps) {
         body: JSON.stringify({
           packageId: searchParams.packageId,
           month: searchParams.month,
+          type: isStaffMode ? 'staff' : 'program'
         }),
       });
       
@@ -329,6 +416,7 @@ export default function InvoicePage({ searchParams }: InvoicePageProps) {
         body: JSON.stringify({
           packageId: searchParams.packageId,
           month: searchParams.month,
+          type: isStaffMode ? 'staff' : 'program'
         }),
       });
       
@@ -357,6 +445,11 @@ export default function InvoicePage({ searchParams }: InvoicePageProps) {
     }
   };
 
+  const handleStaffModeChange = (isStaff: boolean) => {
+    setIsStaffMode(isStaff);
+    setInvoiceData(null);
+  };
+
   return (
     <div className="space-y-6">
       {/* Controls Section */}
@@ -365,6 +458,8 @@ export default function InvoicePage({ searchParams }: InvoicePageProps) {
         currentMonth={currentMonth}
         selectedPackage={searchParams.packageId}
         selectedMonth={searchParams.month || currentMonth}
+        isStaffMode={isStaffMode}
+        onStaffModeChange={handleStaffModeChange}
       />
 
       {/* Loading indicator */}

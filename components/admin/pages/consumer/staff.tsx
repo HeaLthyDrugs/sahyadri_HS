@@ -143,7 +143,8 @@ export default function StaffPage() {
         .from("staff")
         .select(`
           *,
-          staff_type:staff_types!inner(*)
+          staff_type:staff_types!inner(*),
+          comments:staff_comments(*)
         `)
         .order("name");
 
@@ -157,7 +158,8 @@ export default function StaffPage() {
       // Transform the response data to match our Staff interface
       const transformedData: Staff[] = data.map(item => ({
         ...item,
-        staff_type: item.staff_type
+        staff_type: item.staff_type,
+        comments: item.comments || []
       }));
 
       setStaff(transformedData);

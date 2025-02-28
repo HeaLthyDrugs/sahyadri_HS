@@ -110,6 +110,16 @@ interface ParticipantConsumption {
   type: 'participant' | 'guest' | 'other' | 'driver';
 }
 
+// Add these interfaces at the top with other interfaces
+interface StaffEntry {
+  id: string;
+  staff_id: number;
+  package_id: string;
+  product_id: string;
+  entry_date: string;
+  quantity: number;
+}
+
 const ProgramSelect = ({
   value,
   onChange,
@@ -121,6 +131,7 @@ const ProgramSelect = ({
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const selectedProgram = programs.find(p => p.id === value);
+  const STAFF_ID = 'staff'; // Fixed ID for staff option
 
   return (
     <div className="relative min-w-[300px]">
@@ -129,7 +140,11 @@ const ProgramSelect = ({
         onClick={() => setIsOpen(!isOpen)}
         className="w-full flex items-center justify-between border rounded px-3 py-2 bg-white hover:bg-gray-50"
       >
-        {selectedProgram ? (
+        {value === STAFF_ID ? (
+          <div className="flex flex-col items-start">
+            <span className="font-bold text-amber-700">STAFF</span>
+          </div>
+        ) : selectedProgram ? (
           <div className="flex flex-col items-start">
             <span className="font-medium">{selectedProgram.name}</span>
             <span className="text-sm text-gray-500">
@@ -145,6 +160,24 @@ const ProgramSelect = ({
 
       {isOpen && (
         <div className="absolute z-[100] w-full mt-1 bg-white border rounded-md shadow-lg max-h-60 overflow-auto">
+          {/* Fixed Staff Option */}
+          <button
+            type="button"
+            onClick={() => {
+              onChange(STAFF_ID);
+              setIsOpen(false);
+            }}
+            className={`w-full px-3 py-2 text-left hover:bg-gray-50 ${STAFF_ID === value ? 'bg-amber-50' : ''}`}
+          >
+            <div className="flex flex-col">
+              <span className="font-bold text-amber-700">STAFF</span>
+            </div>
+          </button>
+          
+          {/* Divider */}
+          <div className="border-t border-gray-200 my-1"></div>
+
+          {/* Regular Programs */}
           {programs.map(program => (
             <button
               key={program.id}
@@ -153,8 +186,7 @@ const ProgramSelect = ({
                 onChange(program.id);
                 setIsOpen(false);
               }}
-              className={`w-full px-3 py-2 text-left hover:bg-gray-50 ${program.id === value ? 'bg-amber-50' : ''
-                }`}
+              className={`w-full px-3 py-2 text-left hover:bg-gray-50 ${program.id === value ? 'bg-amber-50' : ''}`}
             >
               <div className="flex flex-col">
                 <span className="font-medium">{program.name}</span>
@@ -311,6 +343,14 @@ export function BillingEntriesPage() {
   // Add ref for managing focus
   const tableRef = useRef<HTMLDivElement>(null);
   const [focusedCell, setFocusedCell] = useState<{ row: number; col: number } | null>(null);
+
+  // Add these state variables inside BillingEntriesPage component
+  const [startDate, setStartDate] = useState<string>('');
+  const [endDate, setEndDate] = useState<string>('');
+  const [isStaffMode, setIsStaffMode] = useState(false);
+
+  // Add this state for save status
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'success' | 'error'>('idle');
 
   // Add this function to handle keyboard navigation
   const handleKeyDown = async (e: React.KeyboardEvent<HTMLInputElement>, rowIndex: number, colIndex: number) => {
@@ -664,56 +704,93 @@ export function BillingEntriesPage() {
     return () => window.removeEventListener('keydown', handleKeyboardShortcuts);
   }, [isFullScreenMode]);
 
-  // Make handleSave return a promise
+  // Modify the handleSave function
   const handleSave = async () => {
+    setSaveStatus('saving');
     setIsLoading(true);
     try {
-      // Get the full date range for the program
-      const startDate = format(dateRange[0], 'yyyy-MM-dd');
-      const endDate = format(dateRange[dateRange.length - 1], 'yyyy-MM-dd');
-
-      // Create entries array with only the fields that exist in the table
+      // Create entries array with different structures for staff and program entries
       const entries = Object.entries(entryData).flatMap(([date, products]) =>
         Object.entries(products)
           .filter(([_, quantity]) => quantity > 0)
-          .map(([productId, quantity]) => ({
-            id: crypto.randomUUID(),
-            program_id: selectedProgram,
-            package_id: selectedPackage,
-            product_id: productId,
-            entry_date: date,
-            quantity: quantity
-          }))
+          .map(([productId, quantity]) => {
+            if (isStaffMode) {
+              // Staff entry structure
+              return {
+                id: crypto.randomUUID(),
+                staff_id: 1, // Default staff ID or get from context
+                package_id: selectedPackage,
+                product_id: productId,
+                entry_date: date,
+                quantity: quantity
+              };
+            } else {
+              // Program entry structure
+              return {
+                id: crypto.randomUUID(),
+                program_id: selectedProgram,
+                package_id: selectedPackage,
+                product_id: productId,
+                entry_date: date,
+                quantity: quantity
+              };
+            }
+          })
       );
 
       if (entries.length === 0) {
         toast.error('No entries to save');
+        setSaveStatus('error');
         return;
       }
 
-      const { error: deleteError } = await supabase
-        .from('billing_entries')
-        .delete()
-        .eq('program_id', selectedProgram)
-        .eq('package_id', selectedPackage)
-        .gte('entry_date', startDate)
-        .lte('entry_date', endDate);
+      // Delete existing entries
+      if (isStaffMode) {
+        const { error: deleteError } = await supabase
+          .from('staff_billing_entries')
+          .delete()
+          .eq('package_id', selectedPackage)
+          .gte('entry_date', startDate)
+          .lte('entry_date', endDate);
 
-      if (deleteError) throw deleteError;
+        if (deleteError) throw deleteError;
 
-      const { error: insertError } = await supabase
-        .from('billing_entries')
-        .insert(entries);
+        // Insert new staff entries
+        const { error: insertError } = await supabase
+          .from('staff_billing_entries')
+          .insert(entries);
 
-      if (insertError) throw insertError;
+        if (insertError) throw insertError;
+      } else {
+        // Handle regular program entries
+        const { error: deleteError } = await supabase
+          .from('billing_entries')
+          .delete()
+          .eq('program_id', selectedProgram)
+          .eq('package_id', selectedPackage)
+          .gte('entry_date', format(dateRange[0], 'yyyy-MM-dd'))
+          .lte('entry_date', format(dateRange[dateRange.length - 1], 'yyyy-MM-dd'));
 
+        if (deleteError) throw deleteError;
+
+        const { error: insertError } = await supabase
+          .from('billing_entries')
+          .insert(entries);
+
+        if (insertError) throw insertError;
+      }
+
+      setSaveStatus('success');
       toast.success('Entries saved successfully');
-
-      // Don't fetch entries here as it will reset the form
-      // await fetchEntries();
+      
+      // Reset save status after 3 seconds
+      setTimeout(() => {
+        setSaveStatus('idle');
+      }, 3000);
     } catch (error: any) {
       console.error('Error saving entries:', error);
       toast.error(error.message || 'Failed to save entries');
+      setSaveStatus('error');
     } finally {
       setIsLoading(false);
     }
@@ -918,6 +995,87 @@ export function BillingEntriesPage() {
     // Use consistent background color for all cells
     return 'bg-white';
   };
+
+  // Add this function inside BillingEntriesPage component
+  const fetchStaffEntries = async () => {
+    if (!startDate || !endDate || !selectedPackage) {
+      toast.error('Please select dates and package');
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const { data: staffEntries, error } = await supabase
+        .from('staff_billing_entries')
+        .select(`
+          id,
+          staff_id,
+          package_id,
+          product_id,
+          entry_date,
+          quantity
+        `)
+        .eq('package_id', selectedPackage)
+        .gte('entry_date', startDate)
+        .lte('entry_date', endDate);
+
+      if (error) throw error;
+
+      // Create date range from selected dates
+      const start = new Date(startDate);
+      const end = new Date(endDate);
+      const newDateRange = eachDayOfInterval({ start, end });
+      setDateRange(newDateRange);
+
+      // Initialize entry data structure
+      const newEntryData: EntryData = {};
+      newDateRange.forEach(date => {
+        const dateStr = format(date, 'yyyy-MM-dd');
+        newEntryData[dateStr] = {};
+        products.forEach(product => {
+          newEntryData[dateStr][product.id] = 0;
+        });
+      });
+
+      // Fill in the actual quantities from staff entries
+      staffEntries?.forEach(entry => {
+        const dateStr = format(new Date(entry.entry_date), 'yyyy-MM-dd');
+        if (newEntryData[dateStr] && entry.product_id) {
+          newEntryData[dateStr][entry.product_id] = entry.quantity;
+        }
+      });
+
+      setEntryData(newEntryData);
+    } catch (error) {
+      console.error('Error fetching staff entries:', error);
+      toast.error('Failed to fetch staff entries');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Modify the useEffect that handles program selection
+  useEffect(() => {
+    if (selectedProgram === 'staff') {
+      setIsStaffMode(true);
+      setStartDate('');
+      setEndDate('');
+      setDateRange([]);
+      setEntryData({});
+    } else {
+      setIsStaffMode(false);
+      if (selectedProgram) {
+        const program = programs.find(p => p.id === selectedProgram);
+        if (program) {
+          const dates = eachDayOfInterval({
+            start: new Date(program.start_date),
+            end: new Date(program.end_date)
+          });
+          setDateRange(dates);
+        }
+      }
+    }
+  }, [selectedProgram, programs]);
 
   return (
     <div className={`${isFullScreenMode ? 'fixed inset-0 bg-white z-50' : 'p-2 sm:p-4'}`}>
@@ -1130,17 +1288,79 @@ export function BillingEntriesPage() {
                 </table>
               </div>
             )}
+
+            {/* Add this JSX after the package selection dropdown and before the table */}
+            {isStaffMode && (
+              <div className="flex flex-wrap gap-4 items-end mb-4 bg-white p-4 rounded-lg shadow">
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">Start Date</label>
+                  <input
+                    type="date"
+                    value={startDate}
+                    onChange={(e) => setStartDate(e.target.value)}
+                    className="border rounded px-3 py-2"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">End Date</label>
+                  <input
+                    type="date"
+                    value={endDate}
+                    onChange={(e) => setEndDate(e.target.value)}
+                    className="border rounded px-3 py-2"
+                  />
+                </div>
+                <button
+                  onClick={fetchStaffEntries}
+                  disabled={!startDate || !endDate || !selectedPackage}
+                  className="bg-amber-500 text-white px-4 py-2 rounded-lg shadow-lg hover:bg-amber-600 disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center gap-2"
+                >
+                  <RiCalculatorLine className="w-5 h-5" />
+                  Generate Table
+                </button>
+              </div>
+            )}
           </div>
         )}
 
         {/* Loading indicator - Adjusted position */}
-        {isLoading && (
-          <div className="fixed bottom-2 sm:bottom-4 right-2 sm:right-4 bg-white rounded-lg shadow-lg px-3 py-2 sm:px-4 sm:py-3 flex items-center gap-2 sm:gap-3 z-[1000] border border-amber-100">
+        {saveStatus !== 'idle' && (
+          <div className={`fixed bottom-2 sm:bottom-4 right-2 sm:right-4 bg-white rounded-lg shadow-lg px-3 py-2 sm:px-4 sm:py-3 flex items-center gap-2 sm:gap-3 z-[1000] border ${
+            saveStatus === 'saving' ? 'border-amber-100' :
+            saveStatus === 'success' ? 'border-green-100' :
+            'border-red-100'
+          }`}>
             <div className="relative">
-              <div className="w-4 h-4 sm:w-6 sm:h-6 border-3 sm:border-4 border-amber-200 border-t-amber-500 rounded-full animate-spin"></div>
-              <div className="absolute inset-0 border-2 border-amber-100 rounded-full animate-pulse"></div>
+              {saveStatus === 'saving' && (
+                <>
+                  <div className="w-4 h-4 sm:w-6 sm:h-6 border-3 sm:border-4 border-amber-200 border-t-amber-500 rounded-full animate-spin"></div>
+                  <div className="absolute inset-0 border-2 border-amber-100 rounded-full animate-pulse"></div>
+                </>
+              )}
+              {saveStatus === 'success' && (
+                <div className="w-4 h-4 sm:w-6 sm:h-6 text-green-500">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M20 6L9 17l-5-5" strokeLinecap="round" strokeLinejoin="round"/>
+                  </svg>
+                </div>
+              )}
+              {saveStatus === 'error' && (
+                <div className="w-4 h-4 sm:w-6 sm:h-6 text-red-500">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M6 18L18 6M6 6l12 12" strokeLinecap="round" strokeLinejoin="round"/>
+                  </svg>
+                </div>
+              )}
             </div>
-            <span className="text-xs sm:text-sm font-medium text-amber-700">Saving entries...</span>
+            <span className={`text-xs sm:text-sm font-medium ${
+              saveStatus === 'saving' ? 'text-amber-700' :
+              saveStatus === 'success' ? 'text-green-700' :
+              'text-red-700'
+            }`}>
+              {saveStatus === 'saving' ? 'Saving entries...' :
+               saveStatus === 'success' ? 'Entries saved successfully!' :
+               'Failed to save entries'}
+            </span>
           </div>
         )}
       </div>

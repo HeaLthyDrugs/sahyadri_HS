@@ -34,6 +34,14 @@ interface BillingEntry {
   products: Product;
 }
 
+interface StaffBillingEntry {
+  id: string;
+  entry_date: string;
+  quantity: number;
+  staff_id: number;
+  products: Product;
+}
+
 interface InvoiceData {
   packageDetails: {
     id: string;
@@ -41,8 +49,9 @@ interface InvoiceData {
     type: string;
   };
   month: string;
-  entries: BillingEntry[];
+  entries: BillingEntry[] | StaffBillingEntry[];
   totalAmount: number;
+  isStaffInvoice?: boolean;
 }
 
 interface InvoiceConfig {
@@ -256,7 +265,7 @@ export default function InvoicePreview({ invoiceData, invoiceConfig }: InvoicePr
         <div className="bg-gray-50 p-4 rounded-lg mb-6">
           <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
             <RiFileTextLine className="w-4 h-4 text-amber-600" />
-            INVOICE for {format(new Date(invoiceData.month), 'MMMM yyyy')} - {invoiceData.packageDetails.name}
+            {invoiceData.isStaffInvoice ? 'STAFF ' : ''}INVOICE for {format(new Date(invoiceData.month), 'MMMM yyyy')} - {invoiceData.packageDetails.name}
           </h3>
         </div>
 

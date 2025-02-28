@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server';
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { packageId, month } = body;
+    const { packageId, month, type } = body;
 
     // Forward the request to the main invoice API with download action
     const response = await fetch(new URL('/api/invoice', request.url), {
@@ -14,6 +14,7 @@ export async function POST(request: Request) {
       body: JSON.stringify({
         packageId,
         month,
+        type,
         action: 'download'
       }),
     });

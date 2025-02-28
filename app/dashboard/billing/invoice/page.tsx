@@ -29,6 +29,7 @@ interface PageProps {
   searchParams: {
     packageId?: string;
     month?: string;
+    type?: string;
   };
 }
 
@@ -214,7 +215,8 @@ export default async function InvoicePage({ searchParams }: PageProps) {
     packageDetails: packageData,
     month: searchParams.month,
     entries: transformedEntries,
-    totalAmount
+    totalAmount,
+    isStaffInvoice: searchParams.type === 'staff'
   };
 
   return (

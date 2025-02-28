@@ -17,7 +17,20 @@ interface Program {
   customer_name: string;
 }
 
-interface BillingEntry {
+interface Staff {
+  id: number;
+  name: string;
+}
+
+interface StaffBillingEntry {
+  id: string;
+  entry_date: string;
+  quantity: number;
+  staff: Staff;
+  products: Product;
+}
+
+interface ProgramBillingEntry {
   id: string;
   entry_date: string;
   quantity: number;
@@ -25,30 +38,28 @@ interface BillingEntry {
   products: Product;
 }
 
-interface DatabaseBillingEntry {
+type BillingEntry = StaffBillingEntry | ProgramBillingEntry;
+
+interface StaffBillingResponse {
   id: string;
   entry_date: string;
   quantity: number;
-  program_id: string;
-  package_id: string;
-  product_id: string;
-  programs: {
-    id: string;
-    name: string;
-    customer_name: string;
-  };
-  products: {
-    id: string;
-    name: string;
-    rate: number;
-    index: number;
-  };
+  staff: Staff;
+  products: Product;
+}
+
+interface ProgramBillingResponse {
+  id: string;
+  entry_date: string;
+  quantity: number;
+  programs: Program;
+  products: Product;
 }
 
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { packageId, month, action = 'view' } = body;
+    const { packageId, month, type = 'program', action = 'view' } = body;
     
     if (!packageId || !month) {
       return NextResponse.json({ 
@@ -58,8 +69,8 @@ export async function POST(request: Request) {
 
     const supabase = createServerComponentClient({ cookies });
 
-    // Get all required data in parallel
-    const [packageResponse, configResponse, programMappingsResponse] = await Promise.all([
+    // Get package and config data
+    const [packageResponse, configResponse] = await Promise.all([
       supabase
         .from('packages')
         .select('*')
@@ -68,16 +79,11 @@ export async function POST(request: Request) {
       supabase
         .from('invoice_config')
         .select('*')
-        .single(),
-      supabase
-        .from('program_month_mappings')
-        .select('program_id')
-        .eq('billing_month', month)
+        .single()
     ]);
 
     const packageData = packageResponse.data;
     const invoiceConfig = configResponse.data;
-    const programMappings = programMappingsResponse.data || [];
 
     if (!packageData || !invoiceConfig) {
       return NextResponse.json({ 
@@ -85,65 +91,128 @@ export async function POST(request: Request) {
       }, { status: 500 });
     }
 
-    if (programMappings.length === 0) {
-      return NextResponse.json({ 
-        error: `No programs found for billing month ${format(new Date(month + '-01'), 'MMMM yyyy')}` 
-      }, { status: 404 });
-    }
+    let entries: BillingEntry[] = [];
+    const startDate = new Date(month + '-01');
+    const endDate = new Date(startDate.getFullYear(), startDate.getMonth() + 1, 0);
 
-    // Extract program IDs
-    const programIds = programMappings.map(p => p.program_id);
-
-    // Get all billing entries for these programs, regardless of entry date
-    const { data: entriesData, error: entriesError } = await supabase
-      .from('billing_entries')
-      .select(`
-        id,
-        entry_date,
-        quantity,
-        programs:program_id (
+    if (type === 'staff') {
+      // Fetch staff billing entries
+      const { data: staffEntries, error: staffError } = await supabase
+        .from('staff_billing_entries')
+        .select(`
           id,
-          name,
-          customer_name
-        ),
-        products:product_id (
+          entry_date,
+          quantity,
+          staff:staff_id (
+            id,
+            name
+          ),
+          products:product_id (
+            id,
+            name,
+            rate,
+            index
+          )
+        `)
+        .eq('package_id', packageId)
+        .gte('entry_date', startDate.toISOString())
+        .lte('entry_date', endDate.toISOString())
+        .order('products(index)', { ascending: true });
+
+      if (staffError) {
+        return NextResponse.json({ 
+          error: 'Failed to fetch staff billing entries' 
+        }, { status: 500 });
+      }
+
+      if (!staffEntries || staffEntries.length === 0) {
+        return NextResponse.json({ 
+          error: `No staff entries found for package ${packageData.name} in month ${format(startDate, 'MMMM yyyy')}` 
+        }, { status: 404 });
+      }
+
+      entries = (staffEntries as unknown as StaffBillingResponse[]).map(entry => ({
+        id: entry.id,
+        entry_date: entry.entry_date,
+        quantity: entry.quantity || 0,
+        staff: entry.staff,
+        products: entry.products
+      }));
+    } else {
+      // Fetch program mappings for the month
+      const { data: programMappings, error: mappingsError } = await supabase
+        .from('program_month_mappings')
+        .select('program_id')
+        .eq('billing_month', month);
+
+      if (mappingsError) {
+        return NextResponse.json({ 
+          error: 'Failed to fetch program mappings' 
+        }, { status: 500 });
+      }
+
+      if (!programMappings || programMappings.length === 0) {
+        return NextResponse.json({ 
+          error: `No programs found for billing month ${format(startDate, 'MMMM yyyy')}` 
+        }, { status: 404 });
+      }
+
+      // Extract program IDs
+      const programIds = programMappings.map(p => p.program_id);
+
+      // Get billing entries for these programs
+      const { data: programEntries, error: entriesError } = await supabase
+        .from('billing_entries')
+        .select(`
           id,
-          name,
-          rate,
-          index
-        )
-      `)
-      .eq('package_id', packageId)
-      .in('program_id', programIds)
-      .order('products(index)', { ascending: true });
+          entry_date,
+          quantity,
+          programs:program_id (
+            id,
+            name,
+            customer_name
+          ),
+          products:product_id (
+            id,
+            name,
+            rate,
+            index
+          )
+        `)
+        .eq('package_id', packageId)
+        .in('program_id', programIds)
+        .order('products(index)', { ascending: true });
 
-    if (entriesError) {
-      return NextResponse.json({ 
-        error: 'Failed to fetch billing entries' 
-      }, { status: 500 });
-    }
+      if (entriesError) {
+        return NextResponse.json({ 
+          error: 'Failed to fetch billing entries' 
+        }, { status: 500 });
+      }
 
-    if (!entriesData || entriesData.length === 0) {
-      return NextResponse.json({ 
-        error: `No entries found for package ${packageData.name} in billing month ${format(new Date(month + '-01'), 'MMMM yyyy')}` 
-      }, { status: 404 });
+      if (!programEntries || programEntries.length === 0) {
+        return NextResponse.json({ 
+          error: `No entries found for package ${packageData.name} in billing month ${format(startDate, 'MMMM yyyy')}` 
+        }, { status: 404 });
+      }
+
+      entries = (programEntries as unknown as ProgramBillingResponse[]).map(entry => ({
+        id: entry.id,
+        entry_date: entry.entry_date,
+        quantity: entry.quantity || 0,
+        programs: entry.programs,
+        products: entry.products
+      }));
     }
 
     // Transform and aggregate entries
-    const transformedEntries = entriesData.reduce((acc: BillingEntry[], entry: any) => {
-      if (!entry.products || !entry.programs) return acc;
+    const transformedEntries = entries.reduce((acc: BillingEntry[], entry) => {
+      if (!entry.products) return acc;
 
       const existingEntry = acc.find(e => e.products.id === entry.products.id);
       if (existingEntry) {
         existingEntry.quantity += entry.quantity || 0;
       } else {
-        acc.push({
-          id: entry.id,
-          entry_date: entry.entry_date,
-          quantity: entry.quantity || 0,
-          programs: entry.programs,
-          products: entry.products
-        });
+        acc.push(entry);
       }
       return acc;
     }, []);
@@ -158,13 +227,28 @@ export async function POST(request: Request) {
       return sum + (rate * quantity);
     }, 0);
 
-    // Generate HTML content
+    // If action is view, return JSON data
+    if (action === 'view') {
+      return NextResponse.json({
+        entries: transformedEntries,
+        totalAmount,
+        packageDetails: {
+          ...packageData,
+          type
+        },
+        month,
+        isStaffInvoice: type === 'staff'
+      });
+    }
+
+    // Generate HTML content for PDF
     const invoiceHtml = generateInvoiceHTML({
       packageDetails: packageData,
       month,
       entries: transformedEntries,
       totalAmount,
-      config: invoiceConfig
+      config: invoiceConfig,
+      type
     });
 
     try {
@@ -200,7 +284,7 @@ export async function POST(request: Request) {
   }
 }
 
-function generateInvoiceHTML({ packageDetails, month, entries, totalAmount, config }: any) {
+function generateInvoiceHTML({ packageDetails, month, entries, totalAmount, config, type }: any) {
   const styles = `
     <style>
       @media print {
@@ -349,7 +433,7 @@ function generateInvoiceHTML({ packageDetails, month, entries, totalAmount, conf
 
         <div style="background-color: #ffffff; padding: 16px; border-radius: 8px; margin: 16px 0;">
           <h3 style="margin: 0; font-size: 14px;">
-           ● INVOICE for ${format(new Date(month), 'MMMM yyyy')} - ${packageDetails.name}
+            ● ${type === 'staff' ? 'STAFF ' : ''}INVOICE for ${format(new Date(month), 'MMMM yyyy')} - ${packageDetails.name}
           </h3>
         </div>
 
