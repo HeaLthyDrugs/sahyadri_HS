@@ -84,6 +84,7 @@ export function ParticipantsPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10);
   const [selectedType, setSelectedType] = useState<'all' | Participant['type']>('all');
+  const [selectedErrorFilter, setSelectedErrorFilter] = useState<'all' | 'missing' | 'incorrect'>('all');
   const [formData, setFormData] = useState<FormData>({
     attendee_name: "",
     program_id: "all",
@@ -204,45 +205,40 @@ export function ParticipantsPage() {
           program: participant.program
         };
 
-        if (!transformed.reception_checkin || !transformed.reception_checkout) {
-          transformed.has_date_error = true;
-          transformed.date_error_message = !transformed.reception_checkin && !transformed.reception_checkout
-            ? "Missing both Check-In and Check-Out"
-            : !transformed.reception_checkin
-              ? "Missing Check-In"
-              : "Missing Check-Out";
-          return transformed;
-        }
-
         try {
-          const checkinDate = new Date(transformed.reception_checkin);
-          const checkoutDate = new Date(transformed.reception_checkout);
+          if (transformed.reception_checkin && transformed.reception_checkout) {
+            const checkinDate = new Date(transformed.reception_checkin);
+            const checkoutDate = new Date(transformed.reception_checkout);
 
-          if (isNaN(checkinDate.getTime()) || isNaN(checkoutDate.getTime())) {
-            transformed.has_date_error = true;
-            transformed.date_error_message = "Invalid date format";
-            return transformed;
-          }
-
-          if (checkoutDate < checkinDate) {
-            transformed.has_date_error = true;
-            transformed.date_error_message = `Check-out date (${format(checkoutDate, 'dd MMM yyyy')}) is before check-in date (${format(checkinDate, 'dd MMM yyyy')})`;
-            return transformed;
-          }
-
-          transformed.has_date_error = false;
-          transformed.date_error_message = undefined;
-
-          if (transformed.program) {
-            const attendanceStatus = getAttendanceStatus(transformed, transformed.program);
-            if (attendanceStatus && attendanceStatus.length > 0) {
-              transformed.date_error_message = attendanceStatus.map(status => status.message).join(', ');
+            if (isNaN(checkinDate.getTime()) || isNaN(checkoutDate.getTime())) {
+              transformed.has_date_error = false;
+              transformed.date_error_message = undefined;
+              return transformed;
             }
+
+            if (checkoutDate < checkinDate) {
+              transformed.has_date_error = true;
+              transformed.date_error_message = `Check-out date (${format(checkoutDate, 'dd MMM yyyy')}) is before check-in date (${format(checkinDate, 'dd MMM yyyy')})`;
+              return transformed;
+            }
+
+            transformed.has_date_error = false;
+            transformed.date_error_message = undefined;
+
+            if (transformed.program) {
+              const attendanceStatus = getAttendanceStatus(transformed, transformed.program);
+              if (attendanceStatus && attendanceStatus.length > 0) {
+                transformed.date_error_message = attendanceStatus.map(status => status.message).join(', ');
+              }
+            }
+          } else {
+            transformed.has_date_error = false;
+            transformed.date_error_message = undefined;
           }
         } catch (error) {
           console.error('Error processing dates:', error);
-          transformed.has_date_error = true;
-          transformed.date_error_message = "Error processing dates";
+          transformed.has_date_error = false;
+          transformed.date_error_message = undefined;
         }
 
         return transformed;
@@ -257,7 +253,7 @@ export function ParticipantsPage() {
 
           const filteredData = transformedData.filter(participant => {
             if (!participant.reception_checkin || !participant.reception_checkout) {
-              return true; // Keep participants with missing dates
+              return true;
             }
 
             try {
@@ -265,7 +261,7 @@ export function ParticipantsPage() {
               const checkoutDate = new Date(participant.reception_checkout);
 
               if (isNaN(checkinDate.getTime()) || isNaN(checkoutDate.getTime())) {
-                return true; // Keep participants with invalid dates
+                return true;
               }
 
               return (
@@ -275,7 +271,7 @@ export function ParticipantsPage() {
               );
             } catch (error) {
               console.error('Error filtering by date:', error);
-              return true; // Keep participants with date processing errors
+              return true;
             }
           });
 
@@ -284,7 +280,6 @@ export function ParticipantsPage() {
           setParticipants(transformedData);
         }
       } else {
-        // If no month is selected, use all transformed data
         setParticipants(transformedData);
       }
     } catch (error) {
@@ -662,12 +657,26 @@ export function ParticipantsPage() {
       const matchesSearch = participant.attendee_name.toLowerCase().includes(searchQuery.toLowerCase());
       const matchesProgram = selectedProgramId === 'all' || participant.program_id === selectedProgramId;
       const matchesType = selectedType === 'all' || participant.type === selectedType;
-      return matchesSearch && matchesProgram && matchesType;
+      
+      // Add error filter logic
+      const matchesError = selectedErrorFilter === 'all' || 
+        (selectedErrorFilter === 'missing' && (!participant.reception_checkin || !participant.reception_checkout)) ||
+        (selectedErrorFilter === 'incorrect' && participant.has_date_error);
+
+      return matchesSearch && matchesProgram && matchesType && matchesError;
     })
     .sort(sortParticipantsByType);
 
   const getTypeCount = (type: Participant['type']) => {
     return participants.filter(p => p.type === type).length;
+  };
+
+  const getErrorCount = (errorType: 'missing' | 'incorrect') => {
+    return participants.filter(p => 
+      errorType === 'missing' 
+        ? (!p.reception_checkin || !p.reception_checkout)
+        : p.has_date_error
+    ).length;
   };
 
   const totalPages = Math.ceil(filteredParticipants.length / itemsPerPage);
@@ -992,6 +1001,22 @@ export function ParticipantsPage() {
               <option value="other">Others ({getTypeCount('other')})</option>
             </select>
           </div>
+
+          <div className="flex items-center gap-2 bg-white rounded-lg shadow px-3 py-2 w-full sm:w-auto">
+            <RiFilterLine className="text-gray-500" />
+            <select
+              value={selectedErrorFilter}
+              onChange={(e) => {
+                setSelectedErrorFilter(e.target.value as 'all' | 'missing' | 'incorrect');
+                setCurrentPage(1);
+              }}
+              className="w-full border-none focus:ring-0 text-sm"
+            >
+              <option value="all">All Records ({participants.length})</option>
+              <option value="missing">Missing Check In/Out ({getErrorCount('missing')})</option>
+              <option value="incorrect">Incorrect Check In/Out ({getErrorCount('incorrect')})</option>
+            </select>
+          </div>
         </div>
       </div>
 
@@ -1262,28 +1287,10 @@ export function ParticipantsPage() {
                   )}
 
                   <div className="flex flex-wrap gap-1 mt-2">
-                    {!participant.reception_checkin && !participant.reception_checkout ? (
-                      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800">
-                        Missing both Check-In and Check-Out
+                    {participant.has_date_error && participant.date_error_message && (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800 text-wrap">
+                        {participant.date_error_message}
                       </span>
-                    ) : (
-                      <>
-                        {participant.has_date_error && (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800 text-wrap">
-                            {participant.date_error_message}
-                          </span>
-                        )}
-                        {!participant.reception_checkin && (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800">
-                            Missing Check-In
-                          </span>
-                        )}
-                        {!participant.reception_checkout && (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800">
-                            Missing Check-Out
-                          </span>
-                        )}
-                      </>
                     )}
                     {!participant.has_date_error && participant.date_error_message && (
                       <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800">

@@ -36,6 +36,7 @@ const PACKAGE_TYPE_DISPLAY = {
   'cold': 'COLD DRINKS'
 } as const;
 
+
 const PACKAGE_TYPE_ORDER = ['Normal', 'Extra', 'Cold Drink'];
 
 // Define product order for catering package

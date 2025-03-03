@@ -28,14 +28,12 @@ interface Program {
   name: string;
   customer_name: string;
   start_date: string;
-  start_time: string;
   end_date: string;
-  end_time: string;
   days: number;
   total_participants: number;
   status: 'Upcoming' | 'Ongoing' | 'Completed';
   created_at: string;
-  billing_month?: string;
+  billing_month: string;
 }
 
 interface PaginationProps {
@@ -130,10 +128,9 @@ export function ProgramsPage() {
     name: "",
     customer_name: "",
     start_date: "",
-    start_time: "09:00",
     end_date: "",
-    end_time: "17:00",
-    total_participants: ""
+    total_participants: "",
+    billing_month: ""
   });
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<Program['status'] | 'all'>('all');
@@ -142,32 +139,168 @@ export function ProgramsPage() {
   const [monthFilter, setMonthFilter] = useState<string>('all');
   const entriesOptions = [10, 25, 50, 100];
 
+  // Add this useEffect to ensure modal is closed when loading is complete
   useEffect(() => {
-    fetchPrograms();
+    if (!isLoading && isModalOpen) {
+      // If we're not loading and the form was submitted (handleSubmit sets isLoading to true)
+      // then we can safely close the modal
+      const timer = setTimeout(() => {
+        if (!isLoading) {
+          setIsModalOpen(false);
+          setEditingProgram(null);
+          setFormData({
+            name: "",
+            customer_name: "",
+            start_date: "",
+            end_date: "",
+            total_participants: "",
+            billing_month: ""
+          });
+        }
+      }, 500); // Small delay to ensure any success/error messages are seen
+      
+      return () => clearTimeout(timer);
+    }
+  }, [isLoading]);
+
+  // Add a new useEffect hook for initialization
+  useEffect(() => {
+    // Initialize the component
+    const initializeComponent = async () => {
+      // First fetch programs
+      await fetchPrograms();
+      
+      // Then check for and fix duplicate mappings
+      await checkForDuplicateMappings();
+    };
+    
+    initializeComponent();
   }, []);
+
+  // Add this new function to fix programs without mappings
+  const fixProgramsWithoutMappings = async (programsWithoutMappings: Program[]) => {
+    if (!programsWithoutMappings || programsWithoutMappings.length === 0) return;
+    
+    console.log(`Attempting to fix ${programsWithoutMappings.length} programs without mappings`);
+    
+    let successCount = 0;
+    let errorCount = 0;
+    
+    for (const program of programsWithoutMappings) {
+      try {
+        // Check if mapping already exists (double-check)
+        const hasMapping = await checkProgramMapping(program.id);
+        
+        if (hasMapping === true) {
+          // Mapping exists, no need to create
+          console.log(`Program ${program.id} already has a mapping`);
+          continue;
+        }
+        
+        if (hasMapping === null) {
+          // Error checking, skip this program
+          console.error(`Error checking mapping for program ${program.id}`);
+          errorCount++;
+          continue;
+        }
+        
+        // Create mapping
+        const billingMonth = calculateBillingMonth(program.end_date);
+        const { error } = await supabase
+          .from('program_month_mappings')
+          .insert({
+            program_id: program.id,
+            billing_month: billingMonth
+          });
+        
+        if (error) {
+          if (error.code === '23505') { // Duplicate key error
+            console.log(`Program ${program.id} already has a mapping (detected during insert)`);
+          } else {
+            console.error(`Error creating mapping for program ${program.id}:`, error);
+            errorCount++;
+          }
+        } else {
+          console.log(`Created mapping for program ${program.id} with billing month ${billingMonth}`);
+          successCount++;
+        }
+      } catch (err) {
+        console.error(`Error fixing mapping for program ${program.id}:`, err);
+        errorCount++;
+      }
+    }
+    
+    console.log(`Fixed ${successCount} programs, ${errorCount} errors`);
+    return { successCount, errorCount };
+  };
 
   const fetchPrograms = async () => {
     try {
-      const { data, error } = await supabase
+      // First, get all programs
+      const { data: programsData, error: programsError } = await supabase
         .from('programs')
-        .select(`
-          *,
-          program_month_mappings (
-            billing_month
-          )
-        `)
+        .select('*')
         .order('program_number', { ascending: true });
 
-      if (error) throw error;
+      if (programsError) {
+        console.error('Error fetching programs:', programsError);
+        toast.error('Failed to fetch programs');
+        return;
+      }
+      
+      if (!programsData || programsData.length === 0) {
+        setPrograms([]);
+        return;
+      }
+
+      // Then, get all program_month_mappings
+      const { data: mappingsData, error: mappingsError } = await supabase
+        .from('program_month_mappings')
+        .select('*');
+
+      if (mappingsError) {
+        console.error('Error fetching program mappings:', mappingsError);
+        // Continue with programs but without mappings
+        const transformedData = programsData.map(program => ({
+          ...program,
+          billing_month: calculateBillingMonth(program.end_date)
+        }));
+        
+        setPrograms(transformedData);
+        return;
+      }
+
+      // Create a mapping of program_id to billing_month for quick lookup
+      const mappingsMap = (mappingsData || []).reduce((acc, mapping) => {
+        acc[mapping.program_id] = mapping.billing_month;
+        return acc;
+      }, {} as Record<string, string>);
       
       // Transform the data to include billing_month directly in the program object
-      const transformedData = (data || []).map(program => ({
-        ...program,
-        billing_month: program.program_month_mappings?.billing_month || 
-                      calculateBillingMonth(program.end_date)
-      }));
+      const transformedData = programsData.map(program => {
+        // Check if this program has a mapping
+        const billingMonth = mappingsMap[program.id];
+        
+        // If not, calculate it based on end date
+        const calculatedBillingMonth = billingMonth || calculateBillingMonth(program.end_date);
+        
+        return {
+          ...program,
+          billing_month: calculatedBillingMonth
+        };
+      });
       
       setPrograms(transformedData);
+      
+      // Check for programs without mappings and try to fix them
+      const programsWithoutMappings = programsData.filter(program => !mappingsMap[program.id]);
+      if (programsWithoutMappings.length > 0) {
+        console.log(`Found ${programsWithoutMappings.length} programs without mappings:`, 
+          programsWithoutMappings.map(p => ({ id: p.id, name: p.name })));
+        
+        // Try to fix programs without mappings
+        fixProgramsWithoutMappings(programsWithoutMappings);
+      }
     } catch (error) {
       console.error('Error fetching programs:', error);
       toast.error('Failed to fetch programs');
@@ -191,14 +324,6 @@ export function ProgramsPage() {
     return 'Ongoing';
   };
 
-  const formatTime = (time: string) => {
-    const [hours, minutes] = time.split(':');
-    const hour = parseInt(hours);
-    const ampm = hour >= 12 ? 'PM' : 'AM';
-    const formattedHour = hour % 12 || 12;
-    return `${formattedHour}:${minutes} ${ampm}`;
-  };
-
   const calculateBillingMonth = (endDate: string): string => {
     const date = new Date(endDate);
     const day = date.getDate();
@@ -219,59 +344,201 @@ export function ProgramsPage() {
     return format(new Date(billingMonth + '-01'), 'MMMM yyyy');
   };
 
+  // Improve the checkProgramMapping function to be more reliable
+  const checkProgramMapping = async (programId: string) => {
+    try {
+      // Use count instead of select to be more efficient
+      const { count, error } = await supabase
+        .from('program_month_mappings')
+        .select('*', { count: 'exact', head: true })
+        .eq('program_id', programId);
+      
+      if (error) {
+        console.error('Error checking program mapping:', error);
+        return null;
+      }
+      
+      return count && count > 0;
+    } catch (error) {
+      console.error('Error in checkProgramMapping:', error);
+      return null; // Return null to indicate an error occurred
+    }
+  };
+
+  // Update the handleSubmit function to better handle existing mappings
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // Validate form data
+    if (!formData.name.trim()) {
+      toast.error('Program name is required');
+      return;
+    }
+    
+    if (!formData.customer_name.trim()) {
+      toast.error('Customer name is required');
+      return;
+    }
+    
+    if (!formData.start_date) {
+      toast.error('Start date is required');
+      return;
+    }
+    
+    if (!formData.end_date) {
+      toast.error('End date is required');
+      return;
+    }
+    
+    if (new Date(formData.start_date) > new Date(formData.end_date)) {
+      toast.error('Start date cannot be after end date');
+      return;
+    }
+    
+    if (!formData.total_participants || parseInt(formData.total_participants) <= 0) {
+      toast.error('Total participants must be greater than 0');
+      return;
+    }
+    
     setIsLoading(true);
 
     try {
       const days = calculateDays(formData.start_date, formData.end_date);
       const status = getStatus(formData.start_date, formData.end_date);
-      const billingMonth = calculateBillingMonth(formData.end_date);
+      const defaultBillingMonth = calculateBillingMonth(formData.end_date);
+      const finalBillingMonth = formData.billing_month || defaultBillingMonth;
 
+      // Prepare program data without billing_month
       const programData = {
         name: formData.name,
         customer_name: formData.customer_name,
         start_date: formData.start_date,
-        start_time: formData.start_time,
         end_date: formData.end_date,
-        end_time: formData.end_time,
         days,
         total_participants: parseInt(formData.total_participants),
         status
       };
 
+      let updatedProgram;
+
       if (editingProgram) {
-        const { error } = await supabase
+        // Update program
+        const { data: updated, error: programError } = await supabase
           .from('programs')
           .update(programData)
-          .eq('id', editingProgram.id);
+          .eq('id', editingProgram.id)
+          .select()
+          .single();
 
-        if (error) throw error;
+        if (programError) throw programError;
+        updatedProgram = updated;
+
+        // Check if mapping exists
+        const hasMapping = await checkProgramMapping(editingProgram.id);
+        
+        if (hasMapping === true) {
+          // Update existing mapping
+          const { error: updateError } = await supabase
+            .from('program_month_mappings')
+            .update({ billing_month: finalBillingMonth })
+            .eq('program_id', editingProgram.id);
+          
+          if (updateError) {
+            console.error('Error updating program mapping:', updateError);
+            toast.error('Program updated but billing month could not be updated');
+          }
+        } else if (hasMapping === false) {
+          // Create new mapping
+          const { error: insertError } = await supabase
+            .from('program_month_mappings')
+            .insert({ program_id: editingProgram.id, billing_month: finalBillingMonth });
+          
+          if (insertError) {
+            console.error('Error creating program mapping:', insertError);
+            toast.error('Program updated but billing month could not be set');
+          }
+        } else {
+          // Error occurred during check
+          toast.error('Program updated but there was an issue with the billing month');
+        }
+        
         toast.success('Program updated successfully');
       } else {
-        const { error } = await supabase
+        // Insert new program
+        const { data: newProgram, error: programError } = await supabase
           .from('programs')
-          .insert([programData]);
+          .insert([programData])
+          .select()
+          .single();
 
-        if (error) throw error;
+        if (programError) throw programError;
+        if (!newProgram) throw new Error('Failed to create program');
+        
+        updatedProgram = newProgram;
+
+        // First check if a mapping already exists (this should not happen for new programs, but just in case)
+        const hasMapping = await checkProgramMapping(newProgram.id);
+        
+        if (hasMapping === true) {
+          // Update existing mapping instead of creating a new one
+          const { error: updateError } = await supabase
+            .from('program_month_mappings')
+            .update({ billing_month: finalBillingMonth })
+            .eq('program_id', newProgram.id);
+          
+          if (updateError) {
+            console.error('Error updating program mapping:', updateError);
+            toast.error('Program created but billing month could not be updated');
+          }
+        } else if (hasMapping === false) {
+          // Create new mapping
+          const { error: insertError } = await supabase
+            .from('program_month_mappings')
+            .insert({
+              program_id: newProgram.id,
+              billing_month: finalBillingMonth
+            });
+          
+          if (insertError) {
+            console.error('Error creating program mapping:', insertError);
+            toast.error('Program created but billing month could not be set');
+          }
+        } else {
+          // Error occurred during check
+          toast.error('Program created but there was an issue with the billing month');
+        }
+
         toast.success('Program created successfully');
       }
 
+      // Update local state with the new/updated program
+      setPrograms(prevPrograms => {
+        const newPrograms = editingProgram
+          ? prevPrograms.map(p => p.id === editingProgram.id ? { ...updatedProgram, billing_month: finalBillingMonth } : p)
+          : [...prevPrograms, { ...updatedProgram, billing_month: finalBillingMonth }];
+        return newPrograms;
+      });
+
+      // Reset form and close modal
       setFormData({
         name: "",
         customer_name: "",
         start_date: "",
-        start_time: "09:00",
         end_date: "",
-        end_time: "17:00",
-        total_participants: ""
+        total_participants: "",
+        billing_month: ""
       });
       setEditingProgram(null);
       setIsModalOpen(false);
-      fetchPrograms();
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error saving program:', error);
-      toast.error('Failed to save program');
+      let errorMessage = 'Failed to save program';
+      
+      if (error.message) {
+        errorMessage = error.message;
+      }
+      
+      toast.error(errorMessage);
     } finally {
       setIsLoading(false);
     }
@@ -280,33 +547,52 @@ export function ProgramsPage() {
   const handleDelete = async (id: string) => {
     try {
       setIsLoading(true);
+      
+      // Delete the program (this will cascade to delete the mapping due to the foreign key constraint)
       const { error } = await supabase
         .from('programs')
         .delete()
         .eq('id', id);
 
-      if (error) throw error;
+      if (error) {
+        console.error('Error deleting program:', error);
+        throw error;
+      }
 
       // Check if this was the last program
       const { data: remainingPrograms, error: countError } = await supabase
         .from('programs')
         .select('id');
 
-      if (countError) throw countError;
+      if (countError) {
+        console.error('Error checking remaining programs:', countError);
+        throw countError;
+      }
 
       // If no programs left, reset the sequence
       if (remainingPrograms.length === 0) {
         const { error: resetError } = await supabase.rpc('reset_program_number_sequence');
-        if (resetError) throw resetError;
+        if (resetError) {
+          console.error('Error resetting program number sequence:', resetError);
+          throw resetError;
+        }
       }
 
+      // Update local state
+      setPrograms(prevPrograms => prevPrograms.filter(program => program.id !== id));
+      
       toast.success('Program deleted successfully');
-      fetchPrograms();
       setIsDeleteModalOpen(false);
       setProgramToDelete(null);
-    } catch (error) {
-      console.error('Error deleting program:', error);
-      toast.error('Failed to delete program');
+    } catch (error: any) {
+      console.error('Error in handleDelete:', error);
+      let errorMessage = 'Failed to delete program';
+      
+      if (error.message) {
+        errorMessage = error.message;
+      }
+      
+      toast.error(errorMessage);
     } finally {
       setIsLoading(false);
     }
@@ -370,9 +656,7 @@ export function ProgramsPage() {
         'Program No.': program.program_number || 0,
         Name: program.name,
         'Start Date': program.start_date,
-        'Start Time': program.start_time,
         'End Date': program.end_date,
-        'End Time': program.end_time,
         Days: program.days,
         'Total Participants': program.total_participants,
         Status: program.status
@@ -405,6 +689,7 @@ export function ProgramsPage() {
     }
   };
 
+  // Update the handleImportCSV function to better handle existing mappings
   const handleImportCSV = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -424,10 +709,9 @@ export function ProgramsPage() {
 
             return {
               name: row.Name,
+              customer_name: row.Customer || '',
               start_date: startDate,
-              start_time: row['Start Time'],
               end_date: endDate,
-              end_time: row['End Time'],
               days,
               total_participants: parseInt(row['Total Participants']),
               status
@@ -435,9 +719,7 @@ export function ProgramsPage() {
           }).filter(item => 
             item.name && 
             item.start_date && 
-            item.start_time && 
             item.end_date && 
-            item.end_time && 
             !isNaN(item.total_participants)
           );
 
@@ -445,13 +727,69 @@ export function ProgramsPage() {
             throw new Error('No valid data found in CSV');
           }
 
-          const { error } = await supabase
+          // Insert programs and get the inserted records
+          const { data: newPrograms, error } = await supabase
             .from('programs')
-            .insert(importData);
+            .insert(importData)
+            .select();
 
           if (error) throw error;
+          if (!newPrograms || newPrograms.length === 0) throw new Error('Failed to create programs');
 
-          toast.success(`Successfully imported ${importData.length} programs`);
+          // Process each program individually to handle potential errors better
+          let successCount = 0;
+          let mappingErrorCount = 0;
+
+          for (const program of newPrograms) {
+            try {
+              // Check if mapping already exists
+              const hasMapping = await checkProgramMapping(program.id);
+              const billingMonth = calculateBillingMonth(program.end_date);
+              
+              if (hasMapping === true) {
+                // Update existing mapping
+                const { error: updateError } = await supabase
+                  .from('program_month_mappings')
+                  .update({ billing_month: billingMonth })
+                  .eq('program_id', program.id);
+                
+                if (updateError) {
+                  console.error(`Error updating mapping for program ${program.id}:`, updateError);
+                  mappingErrorCount++;
+                } else {
+                  successCount++;
+                }
+              } else if (hasMapping === false) {
+                // Create new mapping
+                const { error: insertError } = await supabase
+                  .from('program_month_mappings')
+                  .insert({ 
+                    program_id: program.id, 
+                    billing_month: billingMonth 
+                  });
+                
+                if (insertError) {
+                  console.error(`Error creating mapping for program ${program.id}:`, insertError);
+                  mappingErrorCount++;
+                } else {
+                  successCount++;
+                }
+              } else {
+                // Error occurred during check
+                console.error(`Error checking mapping for program ${program.id}`);
+                mappingErrorCount++;
+              }
+            } catch (err) {
+              console.error(`Error processing program ${program.id}:`, err);
+              mappingErrorCount++;
+            }
+          }
+
+          if (mappingErrorCount > 0) {
+            toast.error(`${mappingErrorCount} program mappings could not be created/updated`);
+          }
+
+          toast.success(`Successfully imported ${newPrograms.length} programs (${successCount} with billing months)`);
           fetchPrograms();
         } catch (error) {
           console.error('Error importing CSV:', error);
@@ -470,6 +808,79 @@ export function ProgramsPage() {
   const handleEntriesChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     setItemsPerPage(Number(e.target.value));
     setCurrentPage(1); // Reset to first page when changing entries per page
+  };
+
+  // Add this new function to check for duplicate mappings
+  const checkForDuplicateMappings = async () => {
+    try {
+      // Get all program_month_mappings
+      const { data: mappingsData, error: mappingsError } = await supabase
+        .from('program_month_mappings')
+        .select('*');
+
+      if (mappingsError) {
+        console.error('Error fetching program mappings:', mappingsError);
+        return;
+      }
+
+      if (!mappingsData || mappingsData.length === 0) {
+        console.log('No mappings found');
+        return;
+      }
+
+      // Check for duplicate program_id values
+      const programIdCounts: Record<string, number> = {};
+      const duplicateProgramIds: string[] = [];
+
+      mappingsData.forEach(mapping => {
+        programIdCounts[mapping.program_id] = (programIdCounts[mapping.program_id] || 0) + 1;
+        if (programIdCounts[mapping.program_id] > 1) {
+          duplicateProgramIds.push(mapping.program_id);
+        }
+      });
+
+      // Remove duplicates from the array
+      const uniqueDuplicateProgramIds = [...new Set(duplicateProgramIds)];
+
+      if (uniqueDuplicateProgramIds.length === 0) {
+        console.log('No duplicate mappings found');
+        return;
+      }
+
+      console.log(`Found ${uniqueDuplicateProgramIds.length} programs with duplicate mappings:`, uniqueDuplicateProgramIds);
+
+      // For each program with duplicate mappings, keep only the most recent one
+      for (const programId of uniqueDuplicateProgramIds) {
+        // Get all mappings for this program
+        const programMappings = mappingsData.filter(mapping => mapping.program_id === programId);
+        
+        // Sort by created_at in descending order (most recent first)
+        programMappings.sort((a, b) => {
+          return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+        });
+        
+        // Keep the most recent one and delete the rest
+        const [mostRecent, ...duplicates] = programMappings;
+        
+        console.log(`For program ${programId}, keeping mapping ${mostRecent.id} and deleting ${duplicates.length} duplicates`);
+        
+        // Delete duplicates
+        for (const duplicate of duplicates) {
+          const { error } = await supabase
+            .from('program_month_mappings')
+            .delete()
+            .eq('id', duplicate.id);
+          
+          if (error) {
+            console.error(`Error deleting duplicate mapping ${duplicate.id}:`, error);
+          } else {
+            console.log(`Deleted duplicate mapping ${duplicate.id}`);
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Error checking for duplicate mappings:', error);
+    }
   };
 
   return (
@@ -618,9 +1029,6 @@ export function ProgramsPage() {
                 <th className="w-1/4 min-w-[200px] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Days
                 </th>
-                <th className="w-1/4 min-w-[200px] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Time
-                </th>
                 <th className="w-1/4 min-w-[150px] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Participants
                 </th>
@@ -656,9 +1064,6 @@ export function ProgramsPage() {
                     {program.days} days
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {formatTime(program.start_time)} - {formatTime(program.end_time)}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                     {program.total_participants}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
@@ -677,10 +1082,9 @@ export function ProgramsPage() {
                           name: program.name,
                           customer_name: program.customer_name,
                           start_date: program.start_date,
-                          start_time: program.start_time,
                           end_date: program.end_date,
-                          end_time: program.end_time,
-                          total_participants: program.total_participants.toString()
+                          total_participants: program.total_participants.toString(),
+                          billing_month: program.billing_month
                         });
                         setIsModalOpen(true);
                       }}
@@ -728,10 +1132,9 @@ export function ProgramsPage() {
                     name: "",
                     customer_name: "",
                     start_date: "",
-                    start_time: "09:00",
                     end_date: "",
-                    end_time: "17:00",
-                    total_participants: ""
+                    total_participants: "",
+                    billing_month: ""
                   });
                 }}
                 className="text-gray-500 hover:text-gray-700"
@@ -782,21 +1185,6 @@ export function ProgramsPage() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700">
-                    Start Time
-                  </label>
-                  <input
-                    type="time"
-                    value={formData.start_time}
-                    onChange={(e) => setFormData({ ...formData, start_time: e.target.value })}
-                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-amber-500 focus:outline-none focus:ring-amber-500"
-                    required
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">
                     End Date
                   </label>
                   <input
@@ -807,18 +1195,21 @@ export function ProgramsPage() {
                     required
                   />
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">
-                    End Time
-                  </label>
-                  <input
-                    type="time"
-                    value={formData.end_time}
-                    onChange={(e) => setFormData({ ...formData, end_time: e.target.value })}
-                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-amber-500 focus:outline-none focus:ring-amber-500"
-                    required
-                  />
-                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700">
+                  Billing Month
+                </label>
+                <input
+                  type="month"
+                  value={formData.billing_month}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFormData({ ...formData, billing_month: e.target.value })}
+                  className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-amber-500 focus:outline-none focus:ring-amber-500"
+                />
+                <p className="mt-1 text-sm text-gray-500">
+                  Leave empty to automatically set based on end date
+                </p>
               </div>
 
               <div>
@@ -845,10 +1236,9 @@ export function ProgramsPage() {
                       name: "",
                       customer_name: "",
                       start_date: "",
-                      start_time: "09:00",
                       end_date: "",
-                      end_time: "17:00",
-                      total_participants: ""
+                      total_participants: "",
+                      billing_month: ""
                     });
                   }}
                   className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
