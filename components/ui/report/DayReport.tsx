@@ -421,6 +421,20 @@ const DayReport: React.FC<DayReportProps> = ({ selectedMonth, selectedPackage })
       setIsGeneratingPDF(true);
       const toastId = toast.loading('Preparing document for print...');
 
+      // Transform the data for the API
+      const transformedPackages = processedPackageGroups.reduce((acc, group) => {
+        if (group.activeProducts && group.activeProducts.length > 0) {
+          acc[group.type] = {
+            type: group.type,
+            name: group.name,
+            products: group.activeProducts,
+            reportData,
+            dates: activeDates
+          };
+        }
+        return acc;
+      }, {} as Record<string, any>);
+
       const response = await fetch('/api/reports/day', {
         method: 'POST',
         headers: {
@@ -428,7 +442,8 @@ const DayReport: React.FC<DayReportProps> = ({ selectedMonth, selectedPackage })
         },
         body: JSON.stringify({
           date: selectedMonth,
-          packageType: selectedPackage === 'all' ? undefined : selectedPackage,
+          packageType: selectedPackage,
+          packages: transformedPackages,
           action: 'print'
         }),
       });
@@ -471,6 +486,20 @@ const DayReport: React.FC<DayReportProps> = ({ selectedMonth, selectedPackage })
       setIsGeneratingPDF(true);
       const toastId = toast.loading('Generating PDF...');
 
+      // Transform the data for the API
+      const transformedPackages = processedPackageGroups.reduce((acc, group) => {
+        if (group.activeProducts && group.activeProducts.length > 0) {
+          acc[group.type] = {
+            type: group.type,
+            name: group.name,
+            products: group.activeProducts,
+            reportData,
+            dates: activeDates
+          };
+        }
+        return acc;
+      }, {} as Record<string, any>);
+
       const response = await fetch('/api/reports/day', {
         method: 'POST',
         headers: {
@@ -478,7 +507,8 @@ const DayReport: React.FC<DayReportProps> = ({ selectedMonth, selectedPackage })
         },
         body: JSON.stringify({
           date: selectedMonth,
-          packageType: selectedPackage === 'all' ? undefined : selectedPackage,
+          packageType: selectedPackage,
+          packages: transformedPackages,
           action: 'download'
         }),
       });
