@@ -37,6 +37,8 @@ interface Program {
 interface ReportData {
   date: string;
   program: string;
+  start_date: string;
+  end_date: string;
   cateringTotal: number;
   extraTotal: number;
   coldDrinkTotal: number;
@@ -146,6 +148,11 @@ interface ProductConsumption {
   name: string;
   monthlyQuantities: { [month: string]: number };
   total: number;
+}
+
+interface PackageType {
+  id: string;
+  type: string;
 }
 
 const pdfStyles = `
@@ -293,6 +300,7 @@ export default function ReportPage() {
   const [cateringData, setCateringData] = useState<CateringData[]>([]);
   const [monthlyData, setMonthlyData] = useState<MonthlyData[]>([]);
   const [cateringProducts, setCateringProducts] = useState<CateringProduct[]>([]);
+  const [packageTypes, setPackageTypes] = useState<PackageType[]>([]);
   const [reportComments, setReportComments] = useState<{ [key: string]: string }>({});
   const [programFilterDate, setProgramFilterDate] = useState(format(new Date(), 'yyyy-MM'));
   const [error, setError] = useState<string | null>(null);
@@ -498,6 +506,7 @@ export default function ReportPage() {
       setReportData(data.reportData || []);
       setCateringData(data.cateringData || []);
       setCateringProducts(data.products || []);
+      setPackageTypes(data.packageTypes || []);
 
       toast.success('Report generated successfully');
     } catch (error) {
@@ -507,6 +516,7 @@ export default function ReportPage() {
       setReportData([]);
       setCateringData([]);
       setCateringProducts([]);
+      setPackageTypes([]);
     } finally {
       setIsLoading(false);
     }
@@ -627,6 +637,8 @@ export default function ReportPage() {
       setReportData([{
         date: format(new Date(), 'yyyy-MM-dd'),
         program: programData.name,
+        start_date: programData.start_date,
+        end_date: programData.end_date,
         cateringTotal: packageGroups['Normal']?.packageTotal || 0,
         extraTotal: packageGroups['Extra']?.packageTotal || 0,
         coldDrinkTotal: packageGroups['Cold Drink']?.packageTotal || 0,
@@ -773,6 +785,8 @@ export default function ReportPage() {
       setReportData([{
         date: selectedMonth,
         program: 'Day Report',
+        start_date: startDate,
+        end_date: endDateStr,
         cateringTotal: 0,
         extraTotal: 0,
         coldDrinkTotal: 0,
@@ -1340,7 +1354,7 @@ export default function ReportPage() {
                     onChange={(e) => {
                       setSelectedPackage(e.target.value);
                       // Don't clear report data when package changes
-                      if (reportType === 'program') {
+                      if (reportType === 'program' as ReportType) {
                         generateProgramReport();
                       }
                     }}
@@ -1504,6 +1518,7 @@ export default function ReportPage() {
               type={selectedPackage as 'all' | 'normal' | 'extra' | 'cold drink'}
               cateringData={selectedPackage !== 'all' ? cateringData : undefined}
               products={selectedPackage !== 'all' ? cateringProducts : undefined}
+              packageTypes={packageTypes}
             />
           )}
           {reportType === 'program' && programReport && (

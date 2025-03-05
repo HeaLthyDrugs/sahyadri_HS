@@ -28,36 +28,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
-
-interface ProductRule {
-  [x: string]: any;
-  id: string;
-  package_id: string;
-  product_id: string;
-  allocation_type: 'per_day' | 'per_stay' | 'per_hour';
-  quantity: number;
-  created_at?: string;
-  updated_at?: string;
-}
-
-interface Package {
-  id: string;
-  name: string;
-}
-
-interface Product {
-  id: string;
-  name: string;
-}
 
 interface InvoiceConfig {
   id: string;
@@ -82,19 +53,6 @@ interface StaffType {
 const Config = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [productRules, setProductRules] = useState<ProductRule[]>([]);
-  const [packages, setPackages] = useState<Package[]>([]);
-  const [products, setProducts] = useState<Product[]>([]);
-  const [selectedPackage, setSelectedPackage] = useState("");
-  const [ruleFormData, setRuleFormData] = useState<{
-    product_id: string;
-    allocation_type: 'per_day' | 'per_stay' | 'per_hour';
-    quantity: number;
-  }>({
-    product_id: "",
-    allocation_type: "per_day",
-    quantity: 1
-  });
   const [invoiceConfig, setInvoiceConfig] = useState<InvoiceConfig>({
     id: '',
     company_name: '',
@@ -116,73 +74,12 @@ const Config = () => {
   const [staffTypeToDelete, setStaffTypeToDelete] = useState<StaffType | null>(null);
 
   useEffect(() => {
-    fetchPackages();
-    fetchProducts();
-  }, []);
-
-  useEffect(() => {
-    if (selectedPackage) {
-      fetchProductRules(selectedPackage);
-    }
-  }, [selectedPackage]);
-
-  useEffect(() => {
     fetchInvoiceConfig();
   }, []);
 
   useEffect(() => {
     fetchStaffTypes();
   }, []);
-
-  const fetchPackages = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('packages')
-        .select('*')
-        .order('name');
-
-      if (error) throw error;
-      setPackages(data || []);
-    } catch (error) {
-      console.error('Error fetching packages:', error);
-      toast.error('Failed to fetch packages');
-    }
-  };
-
-  const fetchProducts = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('products')
-        .select('*')
-        .order('name');
-
-      if (error) throw error;
-      setProducts(data || []);
-    } catch (error) {
-      console.error('Error fetching products:', error);
-      toast.error('Failed to fetch products');
-    }
-  };
-
-  const fetchProductRules = async (packageId: string) => {
-    try {
-      const { data, error } = await supabase
-        .from('product_rules')
-        .select(`
-          *,
-          products (
-            name
-          )
-        `)
-        .eq('package_id', packageId);
-
-      if (error) throw error;
-      setProductRules(data || []);
-    } catch (error) {
-      console.error('Error fetching product rules:', error);
-      toast.error('Failed to fetch product rules');
-    }
-  };
 
   const fetchInvoiceConfig = async () => {
     try {
@@ -259,6 +156,7 @@ const Config = () => {
         });
 
       if (error) throw error;
+
       toast.success('Invoice configuration saved successfully');
       
       // Refresh the data
@@ -268,58 +166,6 @@ const Config = () => {
       toast.error('Failed to save invoice configuration');
     } finally {
       setIsLoading(false);
-    }
-  };
-
-  const saveProductRule = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsLoading(true);
-
-    try {
-      const ruleData = {
-        package_id: selectedPackage,
-        ...ruleFormData
-      };
-
-      const { error } = await supabase
-        .from('product_rules')
-        .insert([ruleData]);
-
-      if (error) throw error;
-      
-      toast.success('Product rule saved successfully');
-      fetchProductRules(selectedPackage);
-      setRuleFormData({
-        product_id: "",
-        allocation_type: "per_day",
-        quantity: 1
-      });
-    } catch (error) {
-      console.error('Error saving product rule:', error);
-      toast.error('Failed to save product rule');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleDelete = async (id: string) => {
-    if (!id) return;
-
-    if (window.confirm("Are you sure you want to delete this rule?")) {
-      try {
-        const { error } = await supabase
-          .from('product_rules')
-          .delete()
-          .eq('id', id);
-
-        if (error) throw error;
-
-        toast.success('Rule deleted successfully');
-        fetchProductRules(selectedPackage);
-      } catch (error) {
-        console.error('Error deleting rule:', error);
-        toast.error('Failed to delete rule');
-      }
     }
   };
 
@@ -392,10 +238,9 @@ const Config = () => {
   return (
     <div className="p-6">
       <Tabs defaultValue="staff-types" className="w-full">
-        <TabsList className="grid w-full grid-cols-3 mb-6">
+        <TabsList className="grid w-full grid-cols-2 mb-6">
           <TabsTrigger value="staff-types">Staff Types</TabsTrigger>
           <TabsTrigger value="invoice">Invoice Settings</TabsTrigger>
-          <TabsTrigger value="package-rules">Package Rules</TabsTrigger>
         </TabsList>
 
         {/* Staff Types Tab */}
@@ -570,146 +415,6 @@ const Config = () => {
                   placeholder="e.g., This is a computer-generated invoice"
                 />
               </div>
-            </div>
-          </div>
-        </TabsContent>
-
-        {/* Package Rules Tab */}
-        <TabsContent value="package-rules" className="mt-0">
-          <div className="bg-white rounded-lg shadow p-6">
-            <div className="flex justify-between items-center mb-6">
-              <div>
-                <h2 className="text-lg font-medium text-gray-900">Package Rules</h2>
-                <p className="text-sm text-gray-500">Configure product allocation rules for packages</p>
-              </div>
-            </div>
-
-            <div className="space-y-6">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Select Package
-                </label>
-                <Select
-                  value={selectedPackage}
-                  onValueChange={setSelectedPackage}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select a package" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {packages.map((pkg) => (
-                      <SelectItem key={pkg.id} value={pkg.id}>
-                        {pkg.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {selectedPackage && (
-                <div className="space-y-4">
-                  <form onSubmit={saveProductRule} className="space-y-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Product
-                      </label>
-                      <Select
-                        value={ruleFormData.product_id}
-                        onValueChange={(value) => setRuleFormData({ ...ruleFormData, product_id: value })}
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select a product" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {products.map((product) => (
-                            <SelectItem key={product.id} value={product.id}>
-                              {product.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Allocation Type
-                      </label>
-                      <Select
-                        value={ruleFormData.allocation_type}
-                        onValueChange={(value: 'per_day' | 'per_stay' | 'per_hour') => 
-                          setRuleFormData({ ...ruleFormData, allocation_type: value })}
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select allocation type" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="per_day">Per Day</SelectItem>
-                          <SelectItem value="per_stay">Per Stay</SelectItem>
-                          <SelectItem value="per_hour">Per Hour</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Quantity
-                      </label>
-                      <Input
-                        type="number"
-                        min="1"
-                        value={ruleFormData.quantity}
-                        onChange={(e) => setRuleFormData({ 
-                          ...ruleFormData, 
-                          quantity: parseInt(e.target.value) || 1 
-                        })}
-                      />
-                    </div>
-
-                    <Button 
-                      type="submit"
-                      disabled={isLoading}
-                      className="bg-amber-600 hover:bg-amber-700"
-                    >
-                      Add Rule
-                    </Button>
-                  </form>
-
-                  <div className="mt-6">
-                    <h3 className="text-lg font-medium text-gray-900 mb-4">Existing Rules</h3>
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Product</TableHead>
-                          <TableHead>Allocation Type</TableHead>
-                          <TableHead>Quantity</TableHead>
-                          <TableHead className="text-right">Actions</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {productRules.map((rule) => (
-                          <TableRow key={rule.id}>
-                            <TableCell>{rule.products.name}</TableCell>
-                            <TableCell className="capitalize">
-                              {rule.allocation_type.replace(/_/g, ' ')}
-                            </TableCell>
-                            <TableCell>{rule.quantity}</TableCell>
-                            <TableCell className="text-right">
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="h-8 w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
-                                onClick={() => handleDelete(rule.id)}
-                              >
-                                <RiDeleteBinLine className="w-4 h-4" />
-                              </Button>
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </div>
-                </div>
-              )}
             </div>
           </div>
         </TabsContent>
