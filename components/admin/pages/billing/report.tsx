@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
 import { format } from "date-fns";
 import { toast } from "react-hot-toast";
@@ -269,9 +269,11 @@ const pdfStyles = `
 export default function ReportPage() {
   const [packages, setPackages] = useState<Package[]>([]);
   const [programs, setPrograms] = useState<Program[]>([]);
-  const [selectedPackage, setSelectedPackage] = useState("");
+  const [selectedPackage, setSelectedPackage] = useState<string>('');
   const [selectedProgram, setSelectedProgram] = useState("");
-  const [selectedMonth, setSelectedMonth] = useState(format(new Date(), 'yyyy-MM'));
+  const [selectedMonth, setSelectedMonth] = useState<string>(
+    new Date().toISOString().slice(0, 7) // Current month in YYYY-MM format
+  );
   const [selectedDay, setSelectedDay] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [dateRange, setDateRange] = useState({
     start: format(new Date(), 'yyyy-MM'),
@@ -293,18 +295,12 @@ export default function ReportPage() {
   const [cateringProducts, setCateringProducts] = useState<CateringProduct[]>([]);
   const [reportComments, setReportComments] = useState<{ [key: string]: string }>({});
   const [programFilterDate, setProgramFilterDate] = useState(format(new Date(), 'yyyy-MM'));
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
 
-  useEffect(() => {
-    fetchPackages();
-    if (reportType === 'program') {
-      fetchProgramsByDate();
-    } else {
-      fetchPrograms();
-    }
-    fetchCateringProducts();
-  }, [reportType, programFilterDate]);
-
-  const fetchPackages = async () => {
+  // Memoize the data fetching functions
+  const fetchPackages = useCallback(async () => {
     try {
       const { data, error } = await supabase
         .from('packages')
@@ -317,9 +313,9 @@ export default function ReportPage() {
       console.error('Error fetching packages:', error);
       toast.error('Failed to fetch packages');
     }
-  };
+  }, []);
 
-  const fetchPrograms = async () => {
+  const fetchPrograms = useCallback(async () => {
     try {
       const { data, error } = await supabase
         .from('programs')
@@ -332,9 +328,9 @@ export default function ReportPage() {
       console.error('Error fetching programs:', error);
       toast.error('Failed to fetch programs');
     }
-  };
+  }, []);
 
-  const fetchProgramsByDate = async () => {
+  const fetchProgramsByDate = useCallback(async () => {
     try {
       const startDate = `${programFilterDate}-01`;
       const endDate = new Date(programFilterDate + '-01');
@@ -350,19 +346,16 @@ export default function ReportPage() {
 
       if (error) throw error;
       setPrograms(data || []);
-
-      // Reset selected program when date changes
       setSelectedProgram("");
     } catch (error) {
       console.error('Error fetching programs by date:', error);
       toast.error('Failed to fetch programs');
       setPrograms([]);
     }
-  };
+  }, [programFilterDate]);
 
-  const fetchCateringProducts = async () => {
+  const fetchCateringProducts = useCallback(async () => {
     try {
-      // Get the package type based on selection
       const packageTypeMap = {
         'normal': 'Normal',
         'extra': 'Extra',
@@ -375,10 +368,7 @@ export default function ReportPage() {
       }
 
       const mappedType = packageTypeMap[selectedPackage.toLowerCase() as keyof typeof packageTypeMap];
-      
-      console.log('Fetching products for package type:', mappedType);
 
-      // Get the package ID for the selected type
       const { data: packagesData, error: packagesError } = await supabase
         .from('packages')
         .select('id')
@@ -386,14 +376,11 @@ export default function ReportPage() {
 
       if (packagesError) throw packagesError;
 
-      // If no packages found, return early
       if (!packagesData || packagesData.length === 0) {
-        console.log('No packages found for type:', mappedType);
         setCateringProducts([]);
         return;
       }
 
-      // Get all products for the selected package type
       const packageIds = packagesData.map(pkg => pkg.id);
       const { data: productsData, error: productsError } = await supabase
         .from('products')
@@ -404,31 +391,58 @@ export default function ReportPage() {
       if (productsError) throw productsError;
 
       if (!productsData || productsData.length === 0) {
-        console.log('No products found for package type:', mappedType);
         setCateringProducts([]);
         return;
       }
 
-      console.log('Fetched products:', productsData);
       setCateringProducts(productsData.map(p => ({ ...p, quantity: 0 })));
     } catch (error) {
       console.error('Error fetching products:', error);
       toast.error('Failed to fetch products');
       setCateringProducts([]);
     }
-  };
+  }, [selectedPackage]);
 
-  const generateReport = async () => {
-    if (reportType === 'day') {
-      await generateDayReport();
-    } else if (reportType === 'monthly') {
-      await generateMonthlyReport();
-    } else if (reportType === 'program') {
-      await generateProgramReport();
+  // Optimize useEffect dependencies
+  useEffect(() => {
+    fetchPackages();
+    if (reportType === 'program') {
+      fetchProgramsByDate();
     } else {
-      await generateLifetimeReport();
+      fetchPrograms();
     }
-  };
+    fetchCateringProducts();
+  }, [reportType, programFilterDate, fetchPackages, fetchPrograms, fetchProgramsByDate, fetchCateringProducts]);
+
+  // Optimize report generation functions
+  const generateReport = useCallback(async () => {
+    if (!selectedMonth) {
+      toast.error('Please select a month');
+      return;
+    }
+
+    if (!selectedPackage) {
+      toast.error('Please select a package');
+      return;
+    }
+
+    switch (reportType) {
+      case 'day':
+        await generateDayReport();
+        break;
+      case 'monthly':
+        await generateMonthlyReport();
+        break;
+      case 'program':
+        await generateProgramReport();
+        break;
+      case 'lifetime':
+        await generateLifetimeReport();
+        break;
+      default:
+        toast.error('Invalid report type');
+    }
+  }, [selectedMonth, selectedPackage, reportType]);
 
   const generateMonthlyReport = async () => {
     if (!selectedMonth) {
@@ -466,7 +480,7 @@ export default function ReportPage() {
       }
 
       const { data } = await response.json();
-      
+
       if (!data) {
         throw new Error('No data received from server');
       }
@@ -710,82 +724,68 @@ export default function ReportPage() {
   };
 
   const generateDayReport = async () => {
-    if (!selectedDay) {
-      toast.error('Please select a day');
-      return;
-    }
-
-    if (!selectedPackage) {
-      toast.error('Please select a package');
-      return;
-    }
-
-    setIsLoading(true);
     try {
-      // The date from the input is already in YYYY-MM-DD format
-      const formattedDate = selectedDay;
-
-      // Map the package type to the correct value
-      const packageTypeMap = {
-        'normal': 'Normal',
-        'extra': 'Extra',
-        'cold drink': 'Cold Drink',
-        'all': 'all'
-      };
-
-      const mappedPackageType = packageTypeMap[selectedPackage.toLowerCase() as keyof typeof packageTypeMap] || selectedPackage;
-
-      console.log('Generating report for:', {
-        selectedDay,
-        formattedDate,
-        selectedPackage,
-        mappedPackageType
-      });
-
-      const response = await fetch('/api/reports/day', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          date: formattedDate,
-          packageType: mappedPackageType
-        }),
-      });
-
-      const result = await response.json();
-      console.log('API Response:', {
-        status: response.status,
-        ok: response.ok,
-        result
-      });
-
-      if (!response.ok) {
-        throw new Error(result.error || 'Failed to generate report');
-      }
-
-      const { data, debug } = result;
-
-      if (!data || !data.entries || data.entries.length === 0) {
-        console.log('No data found:', debug); // Log debug info
-        setReportData([]);
-        setDayReportData(null);
-        toast.error(
-          `No entries found for ${format(new Date(selectedDay), 'dd/MM/yyyy')}` +
-          (selectedPackage !== 'all' ? ` in ${packageTypeMap[selectedPackage.toLowerCase() as keyof typeof packageTypeMap] || selectedPackage} package` : '')
-        );
+      if (!selectedMonth || !selectedPackage) {
+        toast.error('Please select both month and package');
         return;
       }
 
-      // Set the data directly from the API response
-      setDayReportData(data);
-      setReportData([data]); // Wrap in array for compatibility with other report types
+      setIsLoading(true);
+      setReportType('day');
+      
+      // Clear any existing data
+      setDayReportData(null);
+      setReportData([]);
+
+      const startDate = `${selectedMonth}-01`;
+      const endDate = new Date(selectedMonth + '-01');
+      endDate.setMonth(endDate.getMonth() + 1);
+      endDate.setDate(endDate.getDate() - 1);
+      const endDateStr = format(endDate, 'yyyy-MM-dd');
+
+      // Build query for billing entries
+      let query = supabase
+        .from('billing_entries')
+        .select(`
+          entry_date,
+          quantity,
+          packages:packages!inner (id, name, type),
+          products:products!inner (id, name, rate)
+        `)
+        .gte('entry_date', startDate)
+        .lte('entry_date', endDateStr)
+        .order('entry_date', { ascending: true });
+
+      // Add package filter if not 'all'
+      if (selectedPackage !== 'all') {
+        query = query.eq('package_id', selectedPackage);
+      }
+
+      const { data: billingData, error: billingError } = await query;
+
+      if (billingError) throw billingError;
+
+      if (!billingData || billingData.length === 0) {
+        toast.success('No data found for the selected period');
+        return;
+      }
+
+      // Process the data and set it
+      setReportData([{
+        date: selectedMonth,
+        program: 'Day Report',
+        cateringTotal: 0,
+        extraTotal: 0,
+        coldDrinkTotal: 0,
+        grandTotal: 0
+      }]);
+
+      // Success message
       toast.success('Day report generated successfully');
     } catch (error) {
       console.error('Error generating day report:', error);
-      toast.error(error instanceof Error ? error.message : 'Failed to generate report');
+      toast.error('Failed to generate report');
       setReportData([]);
-      setDayReportData(null);
     } finally {
       setIsLoading(false);
     }
@@ -831,7 +831,7 @@ export default function ReportPage() {
 
       // Get the response data
       const { data } = await response.json();
-      
+
       console.log('Received response data:', data);
 
       if (!data || !data.package) {
@@ -848,7 +848,7 @@ export default function ReportPage() {
 
       // Update the state with the processed data
       setAnnualReportData(processedData);
-      
+
       toast.success('Report generated successfully');
     } catch (error) {
       console.error('Error generating lifetime report:', error);
@@ -1091,16 +1091,92 @@ export default function ReportPage() {
     );
   };
 
-  const handlePrint = () => {
-    window.print();
+  const handlePrint = async () => {
+    try {
+      setIsGeneratingPDF(true);
+      
+      const response = await fetch(`/api/reports/${reportType}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          date: selectedMonth,
+          packageType: selectedPackage,
+          programId: selectedProgram,
+          startMonth: dateRange.start,
+          endMonth: dateRange.end,
+          action: 'print'
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to generate print version');
+      }
+
+      const pdfBlob = await response.blob();
+      const pdfUrl = URL.createObjectURL(pdfBlob);
+
+      const printWindow = window.open(pdfUrl);
+      if (printWindow) {
+        printWindow.onload = () => {
+          printWindow.print();
+          URL.revokeObjectURL(pdfUrl);
+        };
+      }
+
+    } catch (error) {
+      console.error('Error preparing print version:', error);
+      toast.error('Failed to prepare print version');
+      // Fallback to basic window.print()
+      window.print();
+    } finally {
+      setIsGeneratingPDF(false);
+    }
   };
 
   const handleDownloadPDF = async () => {
-    const fileName = reportType === 'monthly'
-      ? `Monthly-Report-${selectedMonth}.pdf`
-      : `Program-Report-${programReport?.programDetails.name}-${format(new Date(), 'yyyyMMdd')}.pdf`;
+    try {
+      setIsGeneratingPDF(true);
+      const toastId = toast.loading('Generating PDF...');
 
-    await generateEnhancedPDF('report-content', fileName);
+      const response = await fetch(`/api/reports/${reportType}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          date: selectedMonth,
+          packageType: selectedPackage,
+          programId: selectedProgram,
+          startMonth: dateRange.start,
+          endMonth: dateRange.end,
+          action: 'download'
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to generate PDF');
+      }
+
+      const pdfBlob = await response.blob();
+      const url = window.URL.createObjectURL(pdfBlob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${reportType}-report-${format(new Date(), 'yyyy-MM-dd')}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+
+      toast.dismiss(toastId);
+      toast.success('PDF downloaded successfully');
+    } catch (error) {
+      console.error('Error generating PDF:', error);
+      toast.error('Failed to generate PDF');
+    } finally {
+      setIsGeneratingPDF(false);
+    }
   };
 
   const handleCommentChange = (programName: string, comment: string) => {
@@ -1135,59 +1211,11 @@ export default function ReportPage() {
     }
   ];
 
-  // Add a function to download the PDF
-  const downloadPDF = async () => {
-    if (!selectedMonth) {
-      toast.error('Please select a month');
-      return;
-    }
-
-    try {
-      const response = await fetch('/api/reports/lifetime/pdf', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          month: selectedMonth,
-          packageType: selectedPackage
-        }),
-      });
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.message || 'Failed to generate PDF');
-      }
-
-      // Get the PDF blob from the response
-      const pdfBlob = await response.blob();
-
-      // Create a URL for the blob
-      const url = window.URL.createObjectURL(pdfBlob);
-
-      // Create a link element and trigger download
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `monthly-report-${selectedMonth}.pdf`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-
-      // Clean up the URL
-      window.URL.revokeObjectURL(url);
-
-      toast.success('Report downloaded successfully');
-    } catch (error) {
-      console.error('Error downloading PDF:', error);
-      toast.error(error instanceof Error ? error.message : 'Failed to download PDF');
-    }
-  };
-
-  // Update the render conditions check
+  // Update the shouldShowReport condition
   const shouldShowReport = (() => {
     switch (reportType) {
       case 'day':
-        return dayReportData !== null;
+        return selectedMonth && selectedPackage && !isLoading && reportData.length > 0;
       case 'monthly':
         return reportData.length > 0;
       case 'program':
@@ -1233,8 +1261,8 @@ export default function ReportPage() {
                   setReportData([]);
                 }}
                 className={`p-3 rounded-lg border transition-all duration-200 shadow-sm hover:shadow-md ${reportType === type.id
-                    ? 'border-amber-500 bg-gradient-to-br from-amber-50 to-amber-100 text-amber-900 shadow-inner'
-                    : 'border-gray-200 hover:border-amber-200 hover:bg-amber-50/30'
+                  ? 'border-amber-500 bg-gradient-to-br from-amber-50 to-amber-100 text-amber-900 shadow-inner'
+                  : 'border-gray-200 hover:border-amber-200 hover:bg-amber-50/30'
                   }`}
               >
                 <div className="flex flex-col items-center gap-2">
@@ -1261,13 +1289,17 @@ export default function ReportPage() {
               <>
                 <div className="space-y-2">
                   <label className="block text-sm font-medium text-gray-700">
-                    Select Day
+                    Select Month
                   </label>
                   <input
-                    type="date"
-                    value={selectedDay}
-                    onChange={(e) => setSelectedDay(e.target.value)}
-                    className="w-full rounded-md border-gray-300 shadow-sm focus:border-amber-500 focus:ring-amber-500"
+                    type="month"
+                    id="month"
+                    value={selectedMonth}
+                    onChange={(e) => {
+                      setSelectedMonth(e.target.value);
+                      setReportData([]); // Clear report data when month changes
+                    }}
+                    className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
                   />
                 </div>
                 <div className="space-y-2">
@@ -1275,15 +1307,21 @@ export default function ReportPage() {
                     Select Package
                   </label>
                   <select
+                    id="package"
                     value={selectedPackage}
-                    onChange={(e) => setSelectedPackage(e.target.value)}
-                    className="w-full rounded-md border-gray-300 shadow-sm focus:border-amber-500 focus:ring-amber-500 p-2 border-2"
+                    onChange={(e) => {
+                      setSelectedPackage(e.target.value);
+                      setReportData([]); // Clear report data when package changes
+                    }}
+                    className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
                   >
                     <option value="">Select Package</option>
                     <option value="all">All Packages</option>
-                    <option value="normal">Catering Package</option>
-                    <option value="extra">Extra catering</option>
-                    <option value="cold drink">Cold Drinks</option>
+                    {packages.map((pkg) => (
+                      <option key={pkg.id} value={pkg.id}>
+                        {pkg.name} ({pkg.type})
+                      </option>
+                    ))}
                   </select>
                 </div>
               </>
@@ -1435,15 +1473,13 @@ export default function ReportPage() {
       {/* Report Content */}
       {shouldShowReport && (
         <div className="bg-white rounded-lg shadow-md">
-          {/* Report Content based on type */}
-          {reportType === 'day' && dayReportData && (
+          {reportType === 'day' && selectedMonth && selectedPackage && (
             <DayReport
-              data={dayReportData}
-              selectedDay={selectedDay}
-              selectedPackage={selectedPackage || 'all'}
+              selectedMonth={selectedMonth}
+              selectedPackage={selectedPackage}
             />
           )}
-          {reportType === 'monthly' && (
+          {reportType === 'monthly' && reportData.length > 0 && (
             <MonthlyReport
               data={reportData}
               month={selectedMonth}
@@ -1481,7 +1517,7 @@ export default function ReportPage() {
               }}
               months={Array.from(
                 new Set(
-                  annualReportData.flatMap(product => 
+                  annualReportData.flatMap(product =>
                     Object.keys(product.monthlyQuantities || {})
                   )
                 )

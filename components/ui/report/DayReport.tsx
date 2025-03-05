@@ -1,76 +1,419 @@
 import { format } from "date-fns";
-import React, { useState } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { RiDownloadLine, RiPrinterLine } from "react-icons/ri";
 import { toast } from "react-hot-toast";
 import LoadingSpinner from '../LoadingSpinner';
-
-interface DayReportEntry {
-  packageType: string;
-  productName: string;
-  quantity: number;
-  rate: number;
-  total: number;
-}
-
-interface DayReportData {
-  date: string;
-  entries: DayReportEntry[];
-  grandTotal: number;
-}
+import { supabase } from "@/lib/supabase";
 
 interface DayReportProps {
-  data: DayReportData;
-  selectedDay: string;
-  selectedPackage?: string;
+  selectedMonth: string;
+  selectedPackage: string;
 }
 
-// Package type mapping and order
-const PACKAGE_TYPE_DISPLAY = {
-  'Normal': 'CATERING PACKAGE',
-  'normal': 'CATERING PACKAGE',
-  'catering': 'CATERING PACKAGE',
-  'Extra': 'EXTRA CATERING',
-  'extra': 'EXTRA CATERING',
-  'Cold Drink': 'COLD DRINKS',
-  'cold drink': 'COLD DRINKS',
-  'cold': 'COLD DRINKS'
-} as const;
+interface ProductEntry {
+  id: string;
+  name: string;
+  rate: number;
+  index?: number;
+}
 
+interface DailyEntry {
+  [productId: string]: number;
+}
 
-const PACKAGE_TYPE_ORDER = ['Normal', 'Extra', 'Cold Drink'];
+interface ReportData {
+  [date: string]: DailyEntry;
+}
 
-// Define product order for catering package
-const CATERING_PRODUCT_ORDER = [
-  'MT',
-  'BF',
-  'M-CRT',
-  'LUNCH',
-  'A-CRT',
-  'HI TEA',
-  'DINNER'
-];
+// Product order for catering package
+const PRODUCT_ORDER = ['MT', 'BF', 'M-CRT', 'LUNCH', 'A-CRT', 'HI TEA', 'DINNER'];
 
-// Helper function to get product order index
-const getProductOrderIndex = (productName: string, packageType: string): number => {
-  if (normalizePackageType(packageType) === 'Normal') {
-    const index = CATERING_PRODUCT_ORDER.indexOf(productName);
-    return index === -1 ? CATERING_PRODUCT_ORDER.length : index;
+const PRODUCTS_PER_TABLE = 7;
+
+// Add new interface for package types
+interface PackageGroup {
+  type: string;
+  name: string;
+  products: ProductEntry[];
+  activeProducts?: ProductEntry[];
+  productChunks?: ProductEntry[][];
+}
+
+// Function to get active products for a specific package group
+const getActiveProductsForGroup = (products: ProductEntry[], packageType: string, reportData: ReportData): ProductEntry[] => {
+  if (!products.length) return [];
+  
+  // Sort products based on package type
+  const sortedProducts = [...products].sort((a, b) => {
+    if (packageType.toLowerCase() === 'normal') {
+      const indexA = PRODUCT_ORDER.indexOf(a.name);
+      const indexB = PRODUCT_ORDER.indexOf(b.name);
+      if (indexA !== -1 && indexB !== -1) return indexA - indexB;
+      if (indexA !== -1) return -1;
+      if (indexB !== -1) return 1;
+    }
+    return (a.index || 0) - (b.index || 0);
+  });
+
+  // Filter out products with no consumption
+  return sortedProducts.filter(product => 
+    Object.values(reportData).some(dateData => (dateData[product.id] || 0) > 0)
+  );
+};
+
+// Function to get product chunks for a specific package group
+const getProductChunksForGroup = (activeProducts: ProductEntry[], packageType: string, reportData: ReportData, activeDates: string[]): ProductEntry[][] => {
+  if (!activeProducts.length) return [];
+  
+  // Adjust chunk size based on package type
+  let chunkSize = PRODUCTS_PER_TABLE;
+  if (packageType.toLowerCase() === 'extra' || packageType.toLowerCase() === 'cold drink') {
+    chunkSize = Math.min(PRODUCTS_PER_TABLE, 9);
   }
-  return -1;
+
+  const chunks: ProductEntry[][] = [];
+  for (let i = 0; i < activeProducts.length; i += chunkSize) {
+    const chunk = activeProducts.slice(i, i + chunkSize);
+    // Only add chunk if it has any data
+    if (chunk.some(product => 
+      activeDates.some(date => (reportData[date]?.[product.id] || 0) > 0)
+    )) {
+      chunks.push(chunk);
+    }
+  }
+  return chunks;
 };
 
-// Normalize package type to prevent duplicates
-const normalizePackageType = (type: string): string => {
-  const normalized = type.toLowerCase();
-  if (normalized === 'extra' || normalized === 'Extra') return 'Extra';
-  if (normalized === 'cold drink' || normalized === 'cold') return 'Cold Drink';
-  if (normalized === 'normal' || normalized === 'catering') return 'Normal';
-  return type;
-};
-
-const DayReport = ({ data, selectedDay, selectedPackage = 'all' }: DayReportProps) => {
+const DayReport: React.FC<DayReportProps> = ({ selectedMonth, selectedPackage }) => {
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [products, setProducts] = useState<ProductEntry[]>([]);
+  const [reportData, setReportData] = useState<ReportData>({});
+  const [dates, setDates] = useState<string[]>([]);
+  const [packageType, setPackageType] = useState<string>('');
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
   const [actionType, setActionType] = useState<'print' | 'download' | null>(null);
+  const [packageGroups, setPackageGroups] = useState<PackageGroup[]>([]);
+
+  // Function to check if a row has any consumption
+  const hasRowConsumption = (date: string): boolean => {
+    // Get all product entries for this date
+    const dateEntries = reportData[date] || {};
+    // Check if any product has a value greater than 0
+    return Object.values(dateEntries).some(quantity => quantity > 0);
+  };
+
+  // Function to check if a product has any consumption
+  const hasProductConsumption = (productId: string): boolean => {
+    // Check each date for this product's consumption
+    return Object.values(reportData).some(dateData => 
+      (dateData[productId] || 0) > 0
+    );
+  };
+
+  // Filter out products with no consumption
+  const activeProducts = useMemo(() => {
+    if (!products.length || !Object.keys(reportData).length) return [];
+    
+    // First sort products based on package type and index
+    const sortedProducts = [...products].sort((a, b) => {
+      if (packageType.toLowerCase() === 'normal') {
+        const indexA = PRODUCT_ORDER.indexOf(a.name);
+        const indexB = PRODUCT_ORDER.indexOf(b.name);
+        if (indexA !== -1 && indexB !== -1) return indexA - indexB;
+        if (indexA !== -1) return -1;
+        if (indexB !== -1) return 1;
+      }
+      return (a.index || 0) - (b.index || 0);
+    });
+
+    // Then filter out products with no consumption
+    return sortedProducts.filter(product => hasProductConsumption(product.id));
+  }, [products, reportData, packageType]);
+
+  // Filter out dates with no consumption
+  const activeDates = useMemo(() => {
+    if (!dates.length || !Object.keys(reportData).length) return [];
+    return dates.filter(hasRowConsumption);
+  }, [dates, reportData]);
+
+  // Function to check if a chunk has any data
+  const hasChunkData = (chunk: ProductEntry[], dates: string[]): boolean => {
+    return chunk.some(product => 
+      dates.some(date => (reportData[date]?.[product.id] || 0) > 0)
+    );
+  };
+
+  // Function to check if a date has data for a specific chunk
+  const hasDateDataForChunk = (date: string, chunk: ProductEntry[]): boolean => {
+    return chunk.some(product => (reportData[date]?.[product.id] || 0) > 0);
+  };
+
+  // Split products into chunks with optimized chunk size and filter empty chunks
+  const productChunks = useMemo(() => {
+    if (!activeProducts.length) return [];
+    
+    // Adjust chunk size based on package type
+    let chunkSize = PRODUCTS_PER_TABLE;
+    if (packageType.toLowerCase() === 'extra catering' || packageType.toLowerCase() === 'cold drinks') {
+      // Use smaller chunks for packages with more products
+      chunkSize = Math.min(PRODUCTS_PER_TABLE, 9);
+    }
+
+    const chunks: ProductEntry[][] = [];
+    for (let i = 0; i < activeProducts.length; i += chunkSize) {
+      const chunk = activeProducts.slice(i, i + chunkSize);
+      // Only add chunk if it has any data
+      if (hasChunkData(chunk, activeDates)) {
+        chunks.push(chunk);
+      }
+    }
+    return chunks;
+  }, [activeProducts, packageType, activeDates, reportData]);
+
+  // Calculate totals for each product
+  const productTotals = useMemo(() => {
+    if (!activeProducts.length || !Object.keys(reportData).length) return {};
+    
+    return activeProducts.reduce((totals, product) => {
+      totals[product.id] = activeDates.reduce((sum, date) => {
+        return sum + (reportData[date]?.[product.id] || 0);
+      }, 0);
+      return totals;
+    }, {} as { [key: string]: number });
+  }, [activeProducts, activeDates, reportData]);
+
+  // Process package groups with their active products and chunks
+  const processedPackageGroups = useMemo(() => {
+    if (!packageGroups.length) return [];
+    
+    return packageGroups.map(group => {
+      const activeProducts = getActiveProductsForGroup(group.products, group.type, reportData);
+      const productChunks = getProductChunksForGroup(activeProducts, group.type, reportData, activeDates);
+      
+      return {
+        ...group,
+        activeProducts,
+        productChunks
+      };
+    });
+  }, [packageGroups, reportData, activeDates]);
+
+  // Memoize the data fetching function to prevent unnecessary re-renders
+  const fetchData = async () => {
+    try {
+      setIsLoading(true);
+      setError(null);
+
+      if (selectedPackage === 'all') {
+        // Fetch all packages first to get their names
+        const { data: allPackagesData, error: allPackagesError } = await supabase
+          .from('packages')
+          .select('id, type, name')
+          .order('type');
+
+        if (allPackagesError) throw allPackagesError;
+
+        // Group packages by type
+        const packagesByType = allPackagesData?.reduce((acc, pkg) => {
+          if (!acc[pkg.type]) {
+            acc[pkg.type] = pkg;
+          }
+          return acc;
+        }, {} as { [key: string]: any });
+
+        const packageTypes = ['Normal', 'Extra', 'Cold Drink'];
+        const allProducts: PackageGroup[] = [];
+        const allReportData: ReportData = {};
+        const allDates = new Set<string>();
+
+        // Calculate date range once
+        const startDate = new Date(`${selectedMonth}-01`);
+        const endDate = new Date(startDate.getFullYear(), startDate.getMonth() + 1, 0);
+        const startDateStr = startDate.toISOString().split('T')[0];
+        const endDateStr = endDate.toISOString().split('T')[0];
+
+        // Initialize all dates in the month with empty data
+        for (let d = 1; d <= endDate.getDate(); d++) {
+          const currentDate = new Date(startDate.getFullYear(), startDate.getMonth(), d);
+          const dateStr = currentDate.toISOString().split('T')[0];
+          allDates.add(dateStr);
+          allReportData[dateStr] = {};
+        }
+
+        // Fetch data for each package type
+        for (const type of packageTypes) {
+          const packageData = packagesByType[type];
+          if (!packageData) continue;
+
+          // Fetch products for this package
+          const { data: productsData, error: productsError } = await supabase
+            .from('products')
+            .select('id, name, rate, index')
+            .eq('package_id', packageData.id)
+            .order('index');
+
+          if (productsError) throw productsError;
+
+          if (productsData && productsData.length > 0) {
+            // Sort products based on type
+            const sortedProducts = [...productsData].sort((a, b) => {
+              if (type.toLowerCase() === 'normal') {
+                const indexA = PRODUCT_ORDER.indexOf(a.name);
+                const indexB = PRODUCT_ORDER.indexOf(b.name);
+                if (indexA !== -1 && indexB !== -1) return indexA - indexB;
+                if (indexA !== -1) return -1;
+                if (indexB !== -1) return 1;
+              }
+              return (a.index || 0) - (b.index || 0);
+            });
+
+            // Add package with its name to allProducts
+            allProducts.push({
+              type: packageData.type,
+              name: packageData.name,
+              products: sortedProducts
+            });
+
+            // Fetch billing entries for this package
+            const { data: entriesData, error: entriesError } = await supabase
+              .from('billing_entries')
+              .select('entry_date, quantity, product_id')
+              .eq('package_id', packageData.id)
+              .gte('entry_date', startDateStr)
+              .lte('entry_date', endDateStr)
+              .order('entry_date');
+
+            if (entriesError) throw entriesError;
+
+            // Process entries data
+            if (entriesData) {
+              entriesData.forEach(entry => {
+                const dateStr = entry.entry_date;
+                if (!allReportData[dateStr]) {
+                  allReportData[dateStr] = {};
+                }
+                allReportData[dateStr][entry.product_id] = entry.quantity;
+              });
+            }
+          }
+        }
+
+        setPackageGroups(allProducts);
+        setReportData(allReportData);
+        setDates(Array.from(allDates).sort());
+        setPackageType('all');
+        setProducts([]); // Clear products as we're using package groups
+
+        console.log('Fetched Data:', {
+          packageGroups: allProducts,
+          reportData: allReportData,
+          dates: Array.from(allDates).sort(),
+          packageType: 'all'
+        });
+
+      } else {
+        // Original single package logic
+        const { data: packageData, error: packageError } = await supabase
+          .from('packages')
+          .select('id, type, name')
+          .eq('id', selectedPackage)
+          .single();
+
+        if (packageError) throw packageError;
+        setPackageType(packageData.type);
+
+        // Rest of your existing single package logic...
+        const { data: productsData, error: productsError } = await supabase
+          .from('products')
+          .select('id, name, rate, index')
+          .eq('package_id', packageData.id)
+          .order('index');
+
+        if (productsError) throw productsError;
+
+        const sortedProducts = [...(productsData || [])].sort((a, b) => {
+          if (packageData.type.toLowerCase() === 'normal') {
+            const indexA = PRODUCT_ORDER.indexOf(a.name);
+            const indexB = PRODUCT_ORDER.indexOf(b.name);
+            if (indexA !== -1 && indexB !== -1) return indexA - indexB;
+            if (indexA !== -1) return -1;
+            if (indexB !== -1) return 1;
+          }
+          return (a.index || 0) - (b.index || 0);
+        });
+
+        setProducts(sortedProducts);
+        setPackageGroups([{
+          type: packageData.type,
+          name: packageData.name,
+          products: sortedProducts
+        }]);
+
+        // Calculate date range
+        const startDate = new Date(`${selectedMonth}-01`);
+        const endDate = new Date(startDate.getFullYear(), startDate.getMonth() + 1, 0);
+
+        // Fetch billing entries
+        const { data: entriesData, error: entriesError } = await supabase
+          .from('billing_entries')
+          .select('entry_date, quantity, product_id')
+          .eq('package_id', packageData.id)
+          .gte('entry_date', startDate.toISOString().split('T')[0])
+          .lte('entry_date', endDate.toISOString().split('T')[0])
+          .order('entry_date');
+
+        if (entriesError) throw entriesError;
+
+        // Process data into the required format
+        const processedData: ReportData = {};
+        const datesSet = new Set<string>();
+
+        // Initialize all dates in the month with empty data
+        for (let d = 1; d <= endDate.getDate(); d++) {
+          const currentDate = new Date(startDate.getFullYear(), startDate.getMonth(), d);
+          const dateStr = currentDate.toISOString().split('T')[0];
+          datesSet.add(dateStr);
+          processedData[dateStr] = {};
+        }
+
+        // Fill in the actual data
+        entriesData?.forEach(entry => {
+          const date = entry.entry_date;
+          if (!processedData[date]) {
+            processedData[date] = {};
+          }
+          processedData[date][entry.product_id] = entry.quantity;
+        });
+
+        setDates(Array.from(datesSet).sort());
+        setReportData(processedData);
+
+        console.log('Fetched Data:', {
+          products: sortedProducts,
+          packageGroups: [{
+            type: packageData.type,
+            name: packageData.name,
+            products: sortedProducts
+          }],
+          reportData: processedData,
+          dates: Array.from(datesSet).sort(),
+          packageType: packageData.type
+        });
+      }
+    } catch (err) {
+      console.error('Error fetching report data:', err);
+      setError(err instanceof Error ? err.message : 'An error occurred while fetching data');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (selectedMonth && selectedPackage) {
+      fetchData();
+    }
+  }, [selectedMonth, selectedPackage]);
 
   const handlePrint = async () => {
     try {
@@ -78,37 +421,16 @@ const DayReport = ({ data, selectedDay, selectedPackage = 'all' }: DayReportProp
       setIsGeneratingPDF(true);
       const toastId = toast.loading('Preparing document for print...');
 
-      const formattedDate = format(new Date(selectedDay), 'yyyy-MM-dd');
-      
-      const packageTypeMap: { [key: string]: string } = {
-        'normal': 'Normal',
-        'extra': 'Extra',
-        'cold drink': 'Cold Drink',
-        'catering': 'Normal',
-        'all': 'all'
-      };
-
-      const mappedPackageType = packageTypeMap[selectedPackage.toLowerCase()] || selectedPackage;
-
       const response = await fetch('/api/reports/day', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          date: formattedDate,
-          packageType: mappedPackageType,
-          action: 'print',
-          layoutOptions: {
-            compactTables: true,
-            optimizePageBreaks: true
-          }
-        })
-      });
-
-      console.log('API Request:', {
-        date: formattedDate,
-        packageType: mappedPackageType
+          date: selectedMonth,
+          packageType: selectedPackage === 'all' ? undefined : selectedPackage,
+          action: 'print'
+        }),
       });
 
       if (!response.ok) {
@@ -149,27 +471,14 @@ const DayReport = ({ data, selectedDay, selectedPackage = 'all' }: DayReportProp
       setIsGeneratingPDF(true);
       const toastId = toast.loading('Generating PDF...');
 
-      // Ensure we're using the correct date format (YYYY-MM-DD)
-      const formattedDate = format(new Date(selectedDay), 'yyyy-MM-dd');
-
-      const packageTypeMap: { [key: string]: string } = {
-        'normal': 'Normal',
-        'extra': 'Extra',
-        'cold drink': 'Cold Drink',
-        'catering': 'Normal',
-        'all': 'all'
-      };
-
-      const mappedPackageType = packageTypeMap[selectedPackage.toLowerCase()] || selectedPackage;
-
       const response = await fetch('/api/reports/day', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          date: formattedDate,
-          packageType: mappedPackageType,
+          date: selectedMonth,
+          packageType: selectedPackage === 'all' ? undefined : selectedPackage,
           action: 'download'
         }),
       });
@@ -182,7 +491,7 @@ const DayReport = ({ data, selectedDay, selectedPackage = 'all' }: DayReportProp
       const url = window.URL.createObjectURL(pdfBlob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `day-report-${selectedDay}.pdf`;
+      a.download = `day-report-${selectedMonth}.pdf`;
       document.body.appendChild(a);
       a.click();
       window.URL.revokeObjectURL(url);
@@ -205,140 +514,51 @@ const DayReport = ({ data, selectedDay, selectedPackage = 'all' }: DayReportProp
     }
   };
 
-  const renderPackageTables = () => {
-    if (!data?.entries || data.entries.length === 0) {
-      return null;
+  // Modify the hasAnyData check to handle both single package and all packages cases
+  const hasAnyData = useMemo(() => {
+    if (selectedPackage === 'all') {
+      // For all packages, check if any package group has data
+      return packageGroups.some(group => 
+        group.products.some(product => 
+          Object.values(reportData).some(dateData => 
+            (dateData[product.id] || 0) > 0
+          )
+        )
+      );
+    } else {
+      // For single package, check if there's any consumption data
+      return Object.values(reportData).some(dateData => 
+        Object.values(dateData).some(quantity => quantity > 0)
+      );
     }
+  }, [selectedPackage, packageGroups, reportData]);
 
-    // Group entries by package type with normalization
-    const packageGroups = data.entries.reduce((groups, entry) => {
-      const normalizedType = normalizePackageType(entry.packageType);
-      
-      if (!groups[normalizedType]) {
-        groups[normalizedType] = [];
-      }
-      groups[normalizedType].push(entry);
-      return groups;
-    }, {} as { [key: string]: DayReportEntry[] });
-
-    // Filter package groups based on selected package
-    const filteredPackageTypes = Object.keys(packageGroups).filter(type => {
-      if (!selectedPackage || selectedPackage === 'all') return true;
-      const normalizedSelected = normalizePackageType(selectedPackage);
-      const normalizedType = normalizePackageType(type);
-      return normalizedType === normalizedSelected;
+  // Add a debug effect to monitor state changes
+  useEffect(() => {
+    console.log('State Update:', {
+      hasAnyData,
+      reportData: Object.keys(reportData).length,
+      packageGroups: packageGroups.length,
+      selectedPackage,
+      isGeneratingPDF
     });
+  }, [hasAnyData, reportData, packageGroups, selectedPackage, isGeneratingPDF]);
 
-    if (filteredPackageTypes.length === 0) return null;
-
-    // Sort package types according to defined order
-    const sortedPackageTypes = filteredPackageTypes.sort((a, b) => {
-      const orderA = PACKAGE_TYPE_ORDER.indexOf(normalizePackageType(a));
-      const orderB = PACKAGE_TYPE_ORDER.indexOf(normalizePackageType(b));
-      return orderA - orderB;
-    });
-
+  if (isLoading) {
     return (
-      <div className="flex flex-col gap-6">
-        {sortedPackageTypes.map((packageType, packageIndex) => {
-          // Sort entries by product order for catering package, otherwise by name
-          const sortedEntries = [...packageGroups[packageType]].sort((a, b) => {
-            const orderA = getProductOrderIndex(a.productName, packageType);
-            const orderB = getProductOrderIndex(b.productName, packageType);
-            
-            if (orderA !== -1 && orderB !== -1) {
-              return orderA - orderB;
-            }
-            
-            return a.productName.localeCompare(b.productName);
-          });
-
-          const packageTotal = sortedEntries.reduce((sum, entry) => sum + entry.total, 0);
-
-          return (
-            <div 
-              key={`${packageType}-${packageIndex}`}
-              className="w-full"
-            >
-              <div className="mb-2 p-3 bg-white">
-                <div className="flex justify-center items-center bg-gray-50 p-6 border border-gray-200 rounded-t-lg">
-                  <h3 className="text-lg font-semibold text-gray-900">
-                    {PACKAGE_TYPE_DISPLAY[packageType as keyof typeof PACKAGE_TYPE_DISPLAY] || packageType.toUpperCase()} 
-                  </h3>
-                </div>
-              </div>
-
-              <div className="relative overflow-x-auto shadow-sm rounded-lg">
-                <div className="border border-gray-200">
-                  <table className="w-full text-sm border-collapse">
-                    <thead>
-                      <tr className="bg-gray-50">
-                        <th className="px-4 py-3 font-medium text-gray-700 text-left border-r border-b border-gray-200 w-[40%]">
-                          Product Name
-                        </th>
-                        <th className="px-4 py-3 font-medium text-gray-700 text-center border-r border-b border-gray-200 w-[20%]">
-                          Total Quantity
-                        </th>
-                        <th className="px-4 py-3 font-medium text-gray-700 text-right border-r border-b border-gray-200 w-[20%]">
-                          Rate
-                        </th>
-                        <th className="px-4 py-3 font-medium text-gray-700 text-right border-b border-gray-200 w-[20%]">
-                          Total Amount
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody className="bg-white">
-                      {sortedEntries.map((entry, entryIndex) => (
-                        <tr 
-                          key={`${entry.productName}-${entryIndex}`}
-                          className="border-b border-gray-200 hover:bg-gray-50"
-                        >
-                          <td className="px-4 py-3 text-gray-900 border-r border-gray-200">
-                            {entry.productName}
-                          </td>
-                          <td className="px-4 py-3 text-gray-900 text-center border-r border-gray-200">
-                            {entry.quantity}
-                          </td>
-                          <td className="px-4 py-3 text-gray-900 text-right border-r border-gray-200">
-                            ₹{entry.rate.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                          </td>
-                          <td className="px-4 py-3 text-gray-900 text-right">
-                            ₹{entry.total.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                          </td>
-                        </tr>
-                      ))}
-                      <tr className="bg-gray-50 font-medium">
-                        <td colSpan={3} className="px-4 py-3 text-gray-900 text-right border-r border-gray-200">
-                          Package Total
-                        </td>
-                        <td className="px-4 py-3 text-gray-900 text-right">
-                          ₹{packageTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-          );
-        })}
-
-        {/* Grand Total */}
-        <div className="w-full mt-6 p-4 bg-amber-50 border border-amber-200 rounded-lg">
-          <div className="flex justify-end">
-            <div className="text-right">
-              <span className="font-semibold mr-4">Grand Total:</span>
-              <span className="text-amber-900">
-                ₹{data.grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-              </span>
-            </div>
-          </div>
-        </div>
+      <div className="flex justify-center items-center p-8">
+        <LoadingSpinner size="lg" />
       </div>
     );
-  };
+  }
 
-  const hasEntries = data.entries && data.entries.length > 0;
+  if (error) {
+    return (
+      <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-red-700">
+        {error}
+      </div>
+    );
+  }
 
   return (
     <div className="bg-white w-full">
@@ -346,7 +566,7 @@ const DayReport = ({ data, selectedDay, selectedPackage = 'all' }: DayReportProp
       <div className="flex justify-end gap-4 mb-6 print:hidden max-w-5xl mx-auto">
         <button
           onClick={handlePrint}
-          disabled={isGeneratingPDF || !hasEntries}
+          disabled={isGeneratingPDF || !hasAnyData}
           className="inline-flex items-center px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-800 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed min-w-[100px] justify-center"
         >
           {isGeneratingPDF && actionType === 'print' ? (
@@ -358,7 +578,7 @@ const DayReport = ({ data, selectedDay, selectedPackage = 'all' }: DayReportProp
         </button>
         <button
           onClick={handleDownloadPDF}
-          disabled={isGeneratingPDF || !hasEntries}
+          disabled={isGeneratingPDF || !hasAnyData}
           className="inline-flex items-center px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-800 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed min-w-[120px] justify-center"
         >
           {isGeneratingPDF && actionType === 'download' ? (
@@ -371,7 +591,7 @@ const DayReport = ({ data, selectedDay, selectedPackage = 'all' }: DayReportProp
       </div>
 
       {/* Report Content */}
-      <div className="bg-white max-w-5xl mx-auto px-4">
+      <div className="max-w-5xl mx-auto px-4">
         {isGeneratingPDF && (
           <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50">
             <div className="bg-white p-6 rounded-lg shadow-xl flex items-center space-x-4">
@@ -383,21 +603,100 @@ const DayReport = ({ data, selectedDay, selectedPackage = 'all' }: DayReportProp
           </div>
         )}
 
-        {hasEntries ? (
-          <>
-            {/* Report Header */}
-            <div className="text-center mb-6 p-4 bg-gray-50 border border-gray-200 rounded-lg">
-              <h2 className="text-xl font-semibold text-gray-900">
-                Day Report - {format(new Date(selectedDay), 'dd/MM/yyyy')}
-              </h2>
-            </div>
-            {renderPackageTables()}
-          </>
+        {/* Report Header */}
+        <div className="text-center mb-6 p-4 bg-gray-50 border border-gray-200 rounded-lg">
+          <h2 className="text-xl font-semibold text-gray-900">
+            Report for {format(new Date(selectedMonth), 'MMMM yyyy')}
+          </h2>
+        </div>
+
+        {activeDates.length > 0 ? (
+          <div className="space-y-8">
+            {processedPackageGroups.map((packageGroup, groupIndex) => (
+              <div key={groupIndex} className="space-y-6">
+                <h3 className="text-lg font-semibold text-gray-900 border-b pb-2">
+                  {packageGroup.name} ({packageGroup.type})
+                </h3>
+                {packageGroup.productChunks?.map((productChunk, chunkIndex) => {
+                  // Filter dates that have data for this chunk
+                  const chunkDates = activeDates.filter(date => 
+                    productChunk.some(product => (reportData[date]?.[product.id] || 0) > 0)
+                  );
+
+                  if (chunkDates.length === 0) return null;
+
+                  return (
+                    <div key={chunkIndex} className="relative overflow-x-auto">
+                      <div className="border border-gray-200">
+                        <table className="w-full text-[11px] border-collapse">
+                          <thead>
+                            <tr className="bg-gray-50">
+                              <th className="px-1.5 py-1 border-b border-r border-gray-200 text-left font-normal text-gray-900 w-[100px] sticky left-0 bg-gray-50 z-10">
+                                Date
+                              </th>
+                              {productChunk.map(product => (
+                                <th 
+                                  key={product.id}
+                                  className="px-1.5 py-1 border-b border-r border-gray-200 text-center font-normal text-gray-900 w-[45px]"
+                                >
+                                  {product.name}
+                                </th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody className="bg-white">
+                            {chunkDates.map(date => (
+                              <tr key={date} className="border-b border-gray-200 hover:bg-gray-50">
+                                <td className="px-1.5 py-1 border-r border-gray-200 text-gray-900 font-normal sticky left-0 bg-white z-10">
+                                  {format(new Date(date), 'dd/MM/yyyy')}
+                                </td>
+                                {productChunk.map(product => {
+                                  const quantity = reportData[date]?.[product.id] || 0;
+                                  return (
+                                    <td 
+                                      key={`${date}-${product.id}`}
+                                      className={`px-1.5 py-1 border-r border-gray-200 text-center ${
+                                        quantity > 0 ? 'text-gray-900' : 'text-gray-400'
+                                      }`}
+                                    >
+                                      {quantity || '-'}
+                                    </td>
+                                  );
+                                })}
+                              </tr>
+                            ))}
+                            {/* Total Row */}
+                            <tr className="bg-amber-50 font-medium">
+                              <td className="px-1.5 py-1 border-r border-gray-200 text-gray-900 sticky left-0 bg-amber-50 z-10">
+                                Total
+                              </td>
+                              {productChunk.map(product => {
+                                const total = chunkDates.reduce((sum, date) => 
+                                  sum + (reportData[date]?.[product.id] || 0), 0
+                                );
+                                return (
+                                  <td 
+                                    key={`total-${product.id}`}
+                                    className="px-1.5 py-1 border-r border-gray-200 text-center text-amber-900"
+                                  >
+                                    {total || '-'}
+                                  </td>
+                                );
+                              })}
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ))}
+          </div>
         ) : (
           <div className="text-center py-8 bg-gray-50 rounded-lg border border-gray-200">
             <p className="text-gray-500">
-              No entries found for {format(new Date(selectedDay), 'dd/MM/yyyy')}
-              {selectedPackage !== 'all' ? ` in ${selectedPackage} package` : ''}.
+              No data found for {format(new Date(selectedMonth), 'MMMM yyyy')}
             </p>
           </div>
         )}

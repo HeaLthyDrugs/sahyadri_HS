@@ -137,7 +137,7 @@ export default function DashboardLayout({
       title: "Configuration",
       path: "/dashboard/config",
       icon: <RiSettingsLine className="w-5 h-5" />
-    }
+    },
   ];
 
   const handleLogout = async () => {
