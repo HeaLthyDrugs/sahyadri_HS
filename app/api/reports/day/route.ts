@@ -192,11 +192,12 @@ export async function POST(req: NextRequest) {
               table { 
                 width: 100%; 
                 border-collapse: collapse; 
-                margin-bottom: 8px;
+                margin-bottom: 4px;
                 background-color: white;
+                border: 0.5px solid #d1d5db;
               }
               th, td { 
-                border: 1px solid #e5e7eb;
+                border: 0.5px solid #d1d5db;
                 padding: 4px;
                 font-size: 9px;
                 text-align: center;
@@ -210,20 +211,21 @@ export async function POST(req: NextRequest) {
                 left: 0;
                 background-color: white;
                 z-index: 1;
-                border-right: 2px solid #e5e7eb;
+                border: 0.5px solid #d1d5db;
+                border-right: 1px solid #d1d5db;
               }
               th { 
                 font-weight: 600;
-                background-color: #f9fafb;
-                border-bottom: 2px solid #e5e7eb;
+                background-color: #fff;
+                border: 0.5px solid #d1d5db;
+                border-bottom: 1px solid #d1d5db;
               }
               .package-header {
                 text-align: center;
-                margin: 4px 0;
+                margin: 2px 0;
                 padding: 4px;
                 background-color: white;
-                border: 1px solid #e5e7eb;
-                page-break-after: avoid;
+                border: 0.5px solid #d1d5db;
               }
               .package-header h3 {
                 font-size: 12px;
@@ -232,14 +234,15 @@ export async function POST(req: NextRequest) {
                 font-weight: 600;
               }
               .total-row {
-                background-color: #f9fafb;
+                background-color: #fff;
                 font-weight: 500;
               }
               .total-row td {
-                border-top: 2px solid #e5e7eb;
+                border: 0.5px solid #d1d5db;
+                border-top: 1px solid #d1d5db;
               }
               .table-spacer {
-                height: 6px;
+                height: 4px;
               }
               @page { 
                 margin: 10mm;
@@ -258,39 +261,20 @@ export async function POST(req: NextRequest) {
                   margin: 0;
                   padding: 0;
                 }
-                .page-break-before {
-                  page-break-before: always;
-                }
-                .page-break-after {
-                  page-break-after: always;
-                }
-                .package-section {
-                  page-break-inside: avoid;
-                }
-                .table-container {
-                  page-break-inside: avoid;
-                }
                 .package-header {
-                  page-break-after: avoid;
+                  break-after: avoid-page;
                 }
-                .table-container {
-                  page-break-before: avoid;
-                }
-                .cold-drinks-section {
-                  page-break-before: always;
-                }
-                .extra-section {
-                  page-break-before: avoid;
+                thead {
+                  display: table-header-group;
                 }
               }
               
               .table-container {
-                margin-bottom: 6px;
+                margin-bottom: 8px;
               }
               
               .package-section {
-                margin-bottom: 6px;
-                break-inside: avoid;
+                margin-bottom: 8px;
               }
               
               .packages-container {
@@ -312,10 +296,10 @@ export async function POST(req: NextRequest) {
               .no-data {
                 text-align: center;
                 padding: 12px;
-                color: #666;
+                color: black;
                 background-color: white;
-                border: 1px solid #e5e7eb;
-                margin: 12px 0;
+                border: 0.5px solid #d1d5db;
+                margin: 8px 0;
               }
             </style>
           </head>
@@ -364,7 +348,7 @@ export async function POST(req: NextRequest) {
       `;
 
       await page.setContent(htmlContent, {
-        waitUntil: 'networkidle0'
+        waitUntil: ['networkidle0', 'load', 'domcontentloaded']
       });
 
       const pdf = await page.pdf({

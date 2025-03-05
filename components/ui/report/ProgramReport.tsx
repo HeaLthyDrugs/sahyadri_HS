@@ -1,10 +1,11 @@
 "use client"
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { format } from 'date-fns';
 import { RiDownloadLine, RiPrinterLine } from 'react-icons/ri';
 import { toast } from 'react-hot-toast';
 import LoadingSpinner from '../LoadingSpinner';
+import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 
 interface PackageItem {
   productName: string;
@@ -12,6 +13,7 @@ interface PackageItem {
   rate: number;
   total: number;
   dates?: { [date: string]: number };
+  comment?: string;
 }
 
 interface PackageData {
@@ -24,6 +26,7 @@ interface Packages {
 }
 
 interface ProgramReportProps {
+  programId: string;
   programName: string;
   customerName: string;
   startDate: string;
@@ -44,6 +47,7 @@ const PACKAGE_TYPE_DISPLAY = {
 const PACKAGE_TYPE_ORDER = ['Normal', 'Extra', 'Cold Drink'];
 
 const ProgramReport: React.FC<ProgramReportProps> = ({
+  programId,
   programName,
   customerName,
   startDate,
@@ -55,6 +59,89 @@ const ProgramReport: React.FC<ProgramReportProps> = ({
 }) => {
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
   const [actionType, setActionType] = useState<'print' | 'download' | null>(null);
+  const [comments, setComments] = useState<{ [key: string]: string }>({});
+  const [savingStates, setSavingStates] = useState<{ [key: string]: boolean }>({});
+  const [savedStates, setSavedStates] = useState<{ [key: string]: boolean }>({});
+  const supabase = createClientComponentClient();
+
+  // Fetch existing comments when component mounts
+  useEffect(() => {
+    const fetchComments = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('program_item_comments')
+          .select('package_type, product_name, comment')
+          .eq('program_id', programId);
+
+        if (error) throw error;
+
+        const commentMap = data.reduce((acc, item) => {
+          const key = `${item.package_type}:${item.product_name}`;
+          acc[key] = item.comment;
+          return acc;
+        }, {} as { [key: string]: string });
+
+        setComments(commentMap);
+      } catch (error) {
+        console.error('Error fetching comments:', error);
+        toast.error('Failed to load comments');
+      }
+    };
+
+    if (programId) {
+      fetchComments();
+    }
+  }, [programId]);
+
+  // Updated saveComment function
+  const saveComment = async (packageType: string, productName: string, comment: string) => {
+    const commentKey = `${packageType}:${productName}`;
+    
+    try {
+      setSavingStates(prev => ({ ...prev, [commentKey]: true }));
+      setSavedStates(prev => ({ ...prev, [commentKey]: false }));
+
+      const { error } = await supabase
+        .from('program_item_comments')
+        .upsert({
+          program_id: programId,
+          package_type: packageType,
+          product_name: productName,
+          comment: comment.trim() || null
+        }, {
+          onConflict: 'program_id,package_type,product_name'
+        });
+
+      if (error) throw error;
+
+      // Show success state
+      setSavedStates(prev => ({ ...prev, [commentKey]: true }));
+      
+      // Reset success state after 2 seconds
+      setTimeout(() => {
+        setSavedStates(prev => ({ ...prev, [commentKey]: false }));
+      }, 2000);
+
+    } catch (error) {
+      console.error('Error saving comment:', error);
+      toast.error('Failed to save comment');
+    } finally {
+      setSavingStates(prev => ({ ...prev, [commentKey]: false }));
+    }
+  };
+
+  // Updated handleCommentChange with debounce
+  const handleCommentChange = (packageType: string, productName: string, comment: string) => {
+    const commentKey = `${packageType}:${productName}`;
+    setComments(prev => ({ ...prev, [commentKey]: comment }));
+
+    // Debounce the save operation
+    const timeoutId = setTimeout(() => {
+      saveComment(packageType, productName, comment);
+    }, 1000);
+
+    return () => clearTimeout(timeoutId);
+  };
 
   // Get all unique dates from all items
   const getAllDates = () => {
@@ -79,9 +166,10 @@ const ProgramReport: React.FC<ProgramReportProps> = ({
       const transformedPackages = Object.entries(packages).reduce((acc, [type, data]) => {
         acc[type] = {
           products: data.items.map(item => ({
-            id: item.productName, // Using productName as id since we don't have actual ids
+            id: item.productName,
             name: item.productName,
-            rate: item.rate
+            rate: item.rate,
+            comment: comments[`${type}:${item.productName}`] || null // Include comments in transformation
           })),
           entries: getAllDates().map(date => ({
             date,
@@ -167,7 +255,8 @@ const ProgramReport: React.FC<ProgramReportProps> = ({
           products: data.items.map(item => ({
             id: item.productName,
             name: item.productName,
-            rate: item.rate
+            rate: item.rate,
+            comment: comments[`${type}:${item.productName}`] || null // Include comments in transformation
           })),
           entries: getAllDates().map(date => ({
             date,
@@ -354,8 +443,11 @@ const ProgramReport: React.FC<ProgramReportProps> = ({
                             <th className="px-1.5 py-1 border-b border-r border-gray-200 text-center font-normal text-gray-900 w-[45px]">
                               Rate
                             </th>
-                            <th className="px-1.5 py-1 border-b border-gray-200 text-center font-normal text-gray-900 w-[50px]">
+                            <th className="px-1.5 py-1 border-b border-r border-gray-200 text-center font-normal text-gray-900 w-[50px]">
                               Amount
+                            </th>
+                            <th className="px-1.5 py-1 border-b border-gray-200 text-center font-normal text-gray-900 w-[150px]">
+                              Comments
                             </th>
                           </tr>
                         </thead>
@@ -386,6 +478,39 @@ const ProgramReport: React.FC<ProgramReportProps> = ({
                                 </td>
                                 <td className="px-1.5 py-1 text-center text-gray-900">
                                   ₹{item.total.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                </td>
+                                <td className="px-1.5 py-1 border-l border-gray-200">
+                                  <div className="relative">
+                                    <textarea
+                                      value={comments[`${packageType}:${item.productName}`] || ''}
+                                      onChange={(e) => handleCommentChange(packageType, item.productName, e.target.value)}
+                                      placeholder="Add comment..."
+                                      className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-amber-500 focus:border-amber-500 resize-none pr-6"
+                                      rows={1}
+                                      style={{ minHeight: '2rem' }}
+                                    />
+                                    <div className="absolute right-2 top-1/2 -translate-y-1/2 transition-opacity duration-200">
+                                      {savingStates[`${packageType}:${item.productName}`] && (
+                                        <LoadingSpinner size="sm" className="text-amber-400 opacity-60 w-3 h-3" />
+                                      )}
+                                      {savedStates[`${packageType}:${item.productName}`] && (
+                                        <svg
+                                          className="w-3 h-3 text-green-500 opacity-60"
+                                          fill="none"
+                                          stroke="currentColor"
+                                          viewBox="0 0 24 24"
+                                          xmlns="http://www.w3.org/2000/svg"
+                                        >
+                                          <path
+                                            strokeLinecap="round"
+                                            strokeLinejoin="round"
+                                            strokeWidth={2}
+                                            d="M5 13l4 4L19 7"
+                                          />
+                                        </svg>
+                                      )}
+                                    </div>
+                                  </div>
                                 </td>
                               </tr>
                             );

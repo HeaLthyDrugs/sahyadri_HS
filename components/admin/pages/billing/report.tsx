@@ -1508,6 +1508,7 @@ export default function ReportPage() {
           )}
           {reportType === 'program' && programReport && (
             <ProgramReport
+              programId={selectedProgram}
               programName={programReport.programDetails.name}
               customerName={programReport.programDetails.customerName}
               startDate={programReport.programDetails.startDate}

@@ -8,6 +8,7 @@ interface Product {
   id: string;
   name: string;
   rate: number;
+  comment?: string;
 }
 
 interface Entry {
@@ -149,7 +150,7 @@ export async function POST(req: NextRequest) {
                 gap: 4px;
               }
               .package-section {
-                page-break-inside: avoid;
+                // page-break-inside: avoid;
                 margin-bottom: 4px;
               }
               .package-header {
@@ -166,7 +167,7 @@ export async function POST(req: NextRequest) {
                 font-size: 12px;
               }
               .table-container {
-                page-break-inside: avoid;
+                // page-break-inside: avoid;
                 margin-bottom: 4px;
               }
               table { 
@@ -175,7 +176,6 @@ export async function POST(req: NextRequest) {
                 margin-bottom: 4px;
                 border: 1px solid #dee2e6;
                 table-layout: fixed;
-                page-break-inside: avoid;
               }
               th, td { 
                 border: 1px solid #dee2e6; 
@@ -190,11 +190,25 @@ export async function POST(req: NextRequest) {
                 width: 120px;
                 text-align: left;
               }
-              th:not(:first-child), td:not(:first-child) {
+              th:not(:first-child):not(:last-child), td:not(:first-child):not(:last-child) {
                 width: 45px;
               }
-              th:nth-last-child(-n+3), td:nth-last-child(-n+3) {
+              th:nth-last-child(-n+4):not(:last-child), td:nth-last-child(-n+4):not(:last-child) {
                 width: 60px;
+              }
+              th:last-child, td:last-child {
+                width: 150px;
+              }
+              th[style*="display: none;"], td[style*="display: none;"] {
+                width: 0;
+                padding: 0;
+                border: none;
+              }
+              .comment-cell {
+                text-align: center;
+                white-space: normal;
+                font-size: 8px;
+                border-right: none;
               }
               th { 
                 background-color: #fff;
@@ -222,7 +236,7 @@ export async function POST(req: NextRequest) {
               }
               @page { 
                 margin: 10mm;
-                size: A4 portrait;
+                size: A4 landscape;
               }
               
               /* Keep headers with their content */
@@ -343,6 +357,13 @@ export async function POST(req: NextRequest) {
                                   <th>Total</th>
                                   <th>Rate</th>
                                   <th>Amount</th>
+                                  ${(() => {
+                                    // Only show comment header if any product in current chunk has a comment
+                                    const hasCommentsInChunk = chunk.some((p: Product) => p.comment);
+                                    return hasCommentsInChunk 
+                                      ? '<th class="comment-cell">Comments</th>'
+                                      : '';
+                                  })()}
                                 </tr>
                               </thead>
                               <tbody>
@@ -352,6 +373,9 @@ export async function POST(req: NextRequest) {
 
                                   const rate = packageData.rates[product.id] || 0;
                                   const amount = packageData.totalAmounts[product.id] || 0;
+                                  
+                                  // Check if any product in the current chunk has a comment
+                                  const hasCommentsInChunk = chunk.some((p: Product) => p.comment);
                                   
                                   return `
                                     <tr>
@@ -364,6 +388,9 @@ export async function POST(req: NextRequest) {
                                       <td style="font-weight: 500;">${total}</td>
                                       <td>₹${rate.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
                                       <td>₹${amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                                      ${hasCommentsInChunk && product.comment 
+                                        ? `<td class="comment-cell">${product.comment}</td>`
+                                        : ''}
                                     </tr>
                                   `;
                                 }).join('')}
