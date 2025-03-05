@@ -411,16 +411,10 @@ export default function ReportPage() {
     } else {
       fetchPrograms();
     }
-    fetchCateringProducts();
-  }, [reportType, programFilterDate, fetchPackages, fetchPrograms, fetchProgramsByDate, fetchCateringProducts]);
+  }, [reportType, programFilterDate, fetchPackages, fetchPrograms, fetchProgramsByDate]);
 
   // Optimize report generation functions
   const generateReport = useCallback(async () => {
-    if (!selectedMonth) {
-      toast.error('Please select a month');
-      return;
-    }
-
     if (!selectedPackage) {
       toast.error('Please select a package');
       return;
@@ -428,21 +422,37 @@ export default function ReportPage() {
 
     switch (reportType) {
       case 'day':
+        if (!selectedMonth) {
+          toast.error('Please select month');
+          return;
+        }
         await generateDayReport();
         break;
       case 'monthly':
+        if (!selectedMonth) {
+          toast.error('Please select month');
+          return;
+        }
         await generateMonthlyReport();
         break;
       case 'program':
+        if (!selectedProgram) {
+          toast.error('Please select a program');
+          return;
+        }
         await generateProgramReport();
         break;
       case 'lifetime':
+        if (!dateRange.start || !dateRange.end) {
+          toast.error('Please select date range');
+          return;
+        }
         await generateLifetimeReport();
         break;
       default:
         toast.error('Invalid report type');
     }
-  }, [selectedMonth, selectedPackage, reportType]);
+  }, [selectedMonth, selectedProgram, selectedPackage, reportType, dateRange.start, dateRange.end]);
 
   const generateMonthlyReport = async () => {
     if (!selectedMonth) {
@@ -503,31 +513,16 @@ export default function ReportPage() {
   };
 
   const generateProgramReport = async () => {
-    if (!selectedProgram) {
-      toast.error('Please select a program');
-      return;
-    }
-
-    setIsLoading(true);
     try {
-      // Fetch program details
-      const { data: programData, error: programError } = await supabase
-        .from('programs')
-        .select('*')
-        .eq('id', selectedProgram)
-        .single();
+      if (!selectedProgram) {
+        toast.error('Please select a program');
+        return;
+      }
 
-      if (programError) throw programError;
-
-      // Map package type to database type
-      const packageTypeMap = {
-        'normal': 'Normal',
-        'extra': 'Extra',
-        'cold drink': 'Cold Drink',
-        'all': 'all'
-      };
-
-      const mappedPackageType = packageTypeMap[selectedPackage.toLowerCase() as keyof typeof packageTypeMap] || selectedPackage;
+      setIsLoading(true);
+      // Clear any existing data
+      setProgramReport(null);
+      setReportData([]);
 
       // Build query for billing entries
       let query = supabase
@@ -541,17 +536,14 @@ export default function ReportPage() {
         .eq('program_id', selectedProgram)
         .order('entry_date', { ascending: true });
 
-      // Add package filter if selected
+      // Add package filter if not 'all'
       if (selectedPackage && selectedPackage !== 'all') {
-        query = query.eq('packages.type', mappedPackageType);
+        query = query.eq('packages.type', selectedPackage);
       }
 
       const { data: billingData, error: billingError } = await query;
 
-      if (billingError) {
-        console.error('Billing error:', billingError);
-        throw billingError;
-      }
+      if (billingError) throw billingError;
 
       if (!billingData || billingData.length === 0) {
         toast.error('No billing data found for the selected program');
@@ -591,26 +583,33 @@ export default function ReportPage() {
           packageGroups[packageType].items.push(item);
         }
 
-        // Update item quantities and totals
-        item.quantity += entry.quantity;
-        item.total = item.quantity * item.rate;
-
         // Add or update date-wise consumption
         const dateKey = format(new Date(entry.entry_date), 'yyyy-MM-dd');
         item.dates[dateKey] = (item.dates[dateKey] || 0) + entry.quantity;
+        item.quantity += entry.quantity;
+        item.total = item.quantity * item.rate;
 
         // Update package total
         packageGroups[packageType].packageTotal = packageGroups[packageType].items.reduce(
           (sum: number, item: any) => sum + item.total,
           0
         );
-
-        // Update grand total
-        grandTotal = Object.values(packageGroups).reduce(
-          (sum: number, pkg: any) => sum + pkg.packageTotal,
-          0
-        );
       });
+
+      // Update grand total after all packages are processed
+      grandTotal = Object.values(packageGroups).reduce(
+        (sum: number, pkg: any) => sum + pkg.packageTotal,
+        0
+      );
+
+      // Get program details
+      const { data: programData, error: programError } = await supabase
+        .from('programs')
+        .select('*')
+        .eq('id', selectedProgram)
+        .single();
+
+      if (programError) throw programError;
 
       setProgramReport({
         programDetails: {
@@ -1238,6 +1237,32 @@ export default function ReportPage() {
     shouldShowReport
   });
 
+  // Update the package selection options for program report
+  const renderPackageOptions = () => {
+    if (reportType === 'program') {
+      return (
+        <>
+          <option value="">Select Package</option>
+          <option value="all">All Packages</option>
+          <option value="Normal">Catering Package</option>
+          <option value="Extra">Extra Catering</option>
+          <option value="Cold Drink">Cold Drinks</option>
+        </>
+      );
+    }
+    return (
+      <>
+        <option value="">Select Package</option>
+        <option value="all">All Packages</option>
+        {packages.map((pkg) => (
+          <option key={pkg.id} value={pkg.id}>
+            {pkg.name} ({pkg.type})
+          </option>
+        ))}
+      </>
+    );
+  };
+
   return (
     <div className="space-y-6">
       <style>{pdfStyles}</style>
@@ -1255,15 +1280,18 @@ export default function ReportPage() {
                 key={type.id}
                 onClick={() => {
                   setReportType(type.id as ReportType);
-                  // Reset selections when changing report type
-                  setSelectedPackage("");
-                  setSelectedProgram("");
-                  setReportData([]);
+                  // Only reset selections if switching to a different report type
+                  if (reportType !== type.id) {
+                    setSelectedPackage("");
+                    setSelectedProgram("");
+                    setReportData([]);
+                  }
                 }}
-                className={`p-3 rounded-lg border transition-all duration-200 shadow-sm hover:shadow-md ${reportType === type.id
-                  ? 'border-amber-500 bg-gradient-to-br from-amber-50 to-amber-100 text-amber-900 shadow-inner'
-                  : 'border-gray-200 hover:border-amber-200 hover:bg-amber-50/30'
-                  }`}
+                className={`p-3 rounded-lg border transition-all duration-200 shadow-sm hover:shadow-md ${
+                  reportType === type.id
+                    ? 'border-amber-500 bg-gradient-to-br from-amber-50 to-amber-100 text-amber-900 shadow-inner'
+                    : 'border-gray-200 hover:border-amber-200 hover:bg-amber-50/30'
+                }`}
               >
                 <div className="flex flex-col items-center gap-2">
                   <type.icon className={`w-5 h-5 ${reportType === type.id ? 'text-amber-600' : 'text-gray-400'
@@ -1311,17 +1339,14 @@ export default function ReportPage() {
                     value={selectedPackage}
                     onChange={(e) => {
                       setSelectedPackage(e.target.value);
-                      setReportData([]); // Clear report data when package changes
+                      // Don't clear report data when package changes
+                      if (reportType === 'program') {
+                        generateProgramReport();
+                      }
                     }}
                     className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
                   >
-                    <option value="">Select Package</option>
-                    <option value="all">All Packages</option>
-                    {packages.map((pkg) => (
-                      <option key={pkg.id} value={pkg.id}>
-                        {pkg.name} ({pkg.type})
-                      </option>
-                    ))}
+                    {renderPackageOptions()}
                   </select>
                 </div>
               </>
@@ -1347,11 +1372,7 @@ export default function ReportPage() {
                     onChange={(e) => setSelectedPackage(e.target.value)}
                     className="w-full rounded-md border-gray-300 shadow-sm focus:border-amber-500 focus:ring-amber-500 p-2 border-2"
                   >
-                    <option value="">Select Package</option>
-                    <option value="all">All Packages</option>
-                    {/* <option value="normal">Catering Package</option>
-                    <option value="extra">Extra Package</option>
-                    <option value="cold drink">Cold Drink Package</option> */}
+                    {renderPackageOptions()}
                   </select>
                 </div>
               </>
@@ -1374,13 +1395,17 @@ export default function ReportPage() {
                   </label>
                   <select
                     value={selectedProgram}
-                    onChange={(e) => setSelectedProgram(e.target.value)}
+                    onChange={(e) => {
+                      setSelectedProgram(e.target.value);
+                      // Don't generate report here, wait for generate button click
+                    }}
                     className="w-full rounded-md border-gray-300 shadow-sm focus:border-amber-500 focus:ring-amber-500 p-2 border-2"
                   >
                     <option value="">Choose a program</option>
                     {programs.map((program) => (
                       <option key={program.id} value={program.id}>
-                        {program.name} ({format(new Date(program.start_date), 'dd/MM/yyyy')} - {format(new Date(program.end_date), 'dd/MM/yyyy')})
+                        {program.name} ({format(new Date(program.start_date), 'dd/MM/yyyy')} -{' '}
+                        {format(new Date(program.end_date), 'dd/MM/yyyy')})
                       </option>
                     ))}
                   </select>
@@ -1391,14 +1416,13 @@ export default function ReportPage() {
                   </label>
                   <select
                     value={selectedPackage}
-                    onChange={(e) => setSelectedPackage(e.target.value)}
+                    onChange={(e) => {
+                      setSelectedPackage(e.target.value);
+                      // Remove the automatic report generation
+                    }}
                     className="w-full rounded-md border-gray-300 shadow-sm focus:border-amber-500 focus:ring-amber-500 p-2 border-2"
                   >
-                    <option value="">Select Package</option>
-                    <option value="all">All Packages</option>
-                    <option value="normal">Catering Package</option>
-                    <option value="extra">Extra Catering</option>
-                    <option value="cold drink">Cold Drinks</option>
+                    {renderPackageOptions()}
                   </select>
                 </div>
               </>
@@ -1435,13 +1459,7 @@ export default function ReportPage() {
                     onChange={(e) => setSelectedPackage(e.target.value)}
                     className="w-full rounded-md border-gray-300 shadow-sm focus:border-amber-500 focus:ring-amber-500 p-2 border-2"
                   >
-                    <option value="">Select Package</option>
-                    {/* <option value="all">All Packages</option> */}
-                    {packages.map((pkg) => (
-                      <option key={pkg.id} value={pkg.id}>
-                        {pkg.name}
-                      </option>
-                    ))}
+                    {renderPackageOptions()}
                   </select>
                 </div>
               </>
@@ -1450,7 +1468,7 @@ export default function ReportPage() {
             <div className="flex items-end">
               <button
                 onClick={generateReport}
-                disabled={isLoading}
+                disabled={isLoading || (reportType === 'program' ? (!selectedProgram || !selectedPackage) : !selectedPackage)}
                 className="w-full bg-amber-600 text-white px-4 py-2 rounded-md hover:bg-amber-700 disabled:opacity-50 transition-colors flex items-center justify-center gap-2 h-[42px]"
               >
                 {isLoading ? (

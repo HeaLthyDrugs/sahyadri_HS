@@ -6,6 +6,23 @@ import { RiDownloadLine, RiPrinterLine } from 'react-icons/ri';
 import { toast } from 'react-hot-toast';
 import LoadingSpinner from '../LoadingSpinner';
 
+interface PackageItem {
+  productName: string;
+  quantity: number;
+  rate: number;
+  total: number;
+  dates?: { [date: string]: number };
+}
+
+interface PackageData {
+  items: PackageItem[];
+  packageTotal: number;
+}
+
+interface Packages {
+  [key: string]: PackageData;
+}
+
 interface ProgramReportProps {
   programName: string;
   customerName: string;
@@ -13,19 +30,7 @@ interface ProgramReportProps {
   endDate: string;
   totalParticipants: number;
   selectedPackage: string;
-  packages: {
-    [key: string]: {
-      packageName: string;
-      items: {
-        productName: string;
-        quantity: number;
-        rate: number;
-        total: number;
-        dates?: { [date: string]: number }; // Add dates for consumption entries
-      }[];
-      packageTotal: number;
-    };
-  };
+  packages: Packages;
   grandTotal: number;
 }
 
@@ -254,24 +259,21 @@ const ProgramReport: React.FC<ProgramReportProps> = ({
     const filteredPackages = selectedPackage === 'all' 
       ? packages 
       : Object.entries(packages).reduce((acc, [type, data]) => {
-          const normalizedType = type;
-          const normalizedSelected = selectedPackage === 'normal' ? 'Normal' :
-                                   selectedPackage === 'extra' ? 'Extra' :
-                                   selectedPackage === 'cold drink' ? 'Cold Drink' :
-                                   selectedPackage;
-
-          if (normalizedType === normalizedSelected) {
-            acc[type] = {
-              ...data,
-              items: data.items.filter(item => 
-                Object.values(item.dates || {}).some(quantity => quantity > 0)
-              )
-            };
+          if (type === selectedPackage) {
+            acc[type] = data;
           }
           return acc;
         }, {} as typeof packages);
 
-    if (Object.keys(filteredPackages).length === 0) return null;
+    if (Object.keys(filteredPackages).length === 0) {
+      return (
+        <div className="text-center py-8 bg-gray-50 rounded-lg border border-gray-200">
+          <p className="text-gray-500">
+            No data found for the selected package type.
+          </p>
+        </div>
+      );
+    }
 
     // Sort package types according to defined order
     const sortedPackageTypes = Object.keys(filteredPackages).sort((a, b) => {
@@ -291,16 +293,23 @@ const ProgramReport: React.FC<ProgramReportProps> = ({
             return null;
           }
 
+          // Filter out items with no consumption
           const sortedItems = [...packageData.items]
             .filter(item => Object.values(item.dates || {}).some(qty => qty > 0));
 
           if (sortedItems.length === 0) return null;
 
-          // Split items into chunks for multiple tables
-          const itemChunks = [];
-          for (let i = 0; i < sortedItems.length; i += PRODUCTS_PER_TABLE) {
-            itemChunks.push(sortedItems.slice(i, i + PRODUCTS_PER_TABLE));
-          }
+          // Only chunk normal package items
+          const shouldChunk = packageType.toLowerCase() === 'normal';
+          const itemChunks = shouldChunk 
+            ? sortedItems.reduce((chunks: PackageItem[][], item: PackageItem, index: number) => {
+                if (index % PRODUCTS_PER_TABLE === 0) {
+                  chunks.push([]);
+                }
+                chunks[chunks.length - 1].push(item);
+                return chunks;
+              }, [] as PackageItem[][])
+            : [sortedItems];
 
           return (
             <div key={`${packageType}-${packageIndex}`} className="w-full">
@@ -312,63 +321,81 @@ const ProgramReport: React.FC<ProgramReportProps> = ({
                 </div>
               </div>
 
-              {itemChunks.map((chunk, chunkIndex) => (
-                <div key={chunkIndex} className="relative overflow-x-auto mb-2">
-                  <div className="border border-gray-200">
-                    <table className="w-full text-[11px] border-collapse">
-                      <thead>
-                        <tr className="bg-gray-50">
-                          <th className="px-1.5 py-1 border-b border-r border-gray-200 text-left font-normal text-gray-900 w-[100px]">
-                            Product Name
-                          </th>
-                          {datesWithConsumption.map(date => (
-                            <th key={date} className="px-1 py-1 border-b border-r border-gray-200 text-center font-normal text-gray-900 w-[30px]">
-                              {format(new Date(date), 'dd/MM').split('/').map((part, i) => (
-                                <React.Fragment key={i}>
-                                  {i > 0 && <br />}
-                                  {part}
-                                </React.Fragment>
-                              ))}
+              {itemChunks.map((chunk, chunkIndex) => {
+                // Filter dates that have data for this chunk
+                const chunkDates = datesWithConsumption.filter(date => 
+                  chunk.some(item => (item.dates?.[date] || 0) > 0)
+                );
+
+                if (chunkDates.length === 0) return null;
+
+                return (
+                  <div key={chunkIndex} className="relative overflow-x-auto mb-2">
+                    <div className="border border-gray-200">
+                      <table className="w-full text-[11px] border-collapse">
+                        <thead>
+                          <tr className="bg-gray-50">
+                            <th className="px-1.5 py-1 border-b border-r border-gray-200 text-left font-normal text-gray-900 w-[100px]">
+                              Product Name
                             </th>
-                          ))}
-                          <th className="px-1.5 py-1 border-b border-r border-gray-200 text-center font-normal text-gray-900 w-[40px]">
-                            Total
-                          </th>
-                          <th className="px-1.5 py-1 border-b border-r border-gray-200 text-center font-normal text-gray-900 w-[45px]">
-                            Rate
-                          </th>
-                          <th className="px-1.5 py-1 border-b border-gray-200 text-center font-normal text-gray-900 w-[50px]">
-                            Amount
-                          </th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {chunk.map(item => (
-                          <tr key={item.productName} className="border-b border-gray-200">
-                            <td className="px-1.5 py-1 border-r border-gray-200 text-gray-900">
-                              {item.productName}
-                            </td>
-                            {datesWithConsumption.map(date => (
-                              <td key={date} className="px-1 py-1 border-r border-gray-200 text-center text-gray-900">
-                                {item.dates?.[date] || 0}
-                              </td>
+                            {chunkDates.map(date => (
+                              <th key={date} className="px-1 py-1 border-b border-r border-gray-200 text-center font-normal text-gray-900 w-[30px]">
+                                {format(new Date(date), 'dd/MM').split('/').map((part, i) => (
+                                  <React.Fragment key={i}>
+                                    {i > 0 && <br />}
+                                    {part}
+                                  </React.Fragment>
+                                ))}
+                              </th>
                             ))}
-                            <td className="px-1.5 py-1 border-r border-gray-200 text-center text-gray-900">
-                              {item.quantity}
-                            </td>
-                            <td className="px-1.5 py-1 border-r border-gray-200 text-center text-gray-900">
-                              ₹{item.rate.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                            </td>
-                            <td className="px-1.5 py-1 text-center text-gray-900">
-                              ₹{item.total.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                            </td>
+                            <th className="px-1.5 py-1 border-b border-r border-gray-200 text-center font-normal text-gray-900 w-[40px]">
+                              Total
+                            </th>
+                            <th className="px-1.5 py-1 border-b border-r border-gray-200 text-center font-normal text-gray-900 w-[45px]">
+                              Rate
+                            </th>
+                            <th className="px-1.5 py-1 border-b border-gray-200 text-center font-normal text-gray-900 w-[50px]">
+                              Amount
+                            </th>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                        </thead>
+                        <tbody>
+                          {chunk.map(item => {
+                            // Calculate row totals
+                            const rowTotal = chunkDates.reduce((sum, date) => 
+                              sum + (item.dates?.[date] || 0), 0
+                            );
+
+                            if (rowTotal === 0) return null;
+
+                            return (
+                              <tr key={item.productName} className="border-b border-gray-200">
+                                <td className="px-1.5 py-1 border-r border-gray-200 text-gray-900">
+                                  {item.productName}
+                                </td>
+                                {chunkDates.map(date => (
+                                  <td key={date} className="px-1 py-1 border-r border-gray-200 text-center text-gray-900">
+                                    {item.dates?.[date] || '-'}
+                                  </td>
+                                ))}
+                                <td className="px-1.5 py-1 border-r border-gray-200 text-center text-gray-900">
+                                  {item.quantity}
+                                </td>
+                                <td className="px-1.5 py-1 border-r border-gray-200 text-center text-gray-900">
+                                  ₹{item.rate.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                </td>
+                                <td className="px-1.5 py-1 text-center text-gray-900">
+                                  ₹{item.total.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
 
               {/* Package Total */}
               <div className="mb-2 py-1 px-2 text-right text-[11px]">

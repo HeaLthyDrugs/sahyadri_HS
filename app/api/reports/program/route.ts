@@ -49,7 +49,7 @@ export async function POST(req: NextRequest) {
     try {
       if (process.env.NODE_ENV === 'production' || process.env.VERCEL_ENV === 'production') {
         // Configure chromium for production/Vercel environment
-        const executablePath = await chromium.executablePath('https://github.com/Sparticuz/chromium/releases/download/v123.0.0/chromium-v123.0.0-pack.tar');
+        const executablePath = await chromium.executablePath('https://github.com/Sparticuz/chromium/releases/download/v133.0.0/chromium-v133.0.0-pack.tar');
         browser = await puppeteerCore.launch({
           executablePath,
           args: chromium.args,
@@ -98,7 +98,7 @@ export async function POST(req: NextRequest) {
         <html>
           <head>
             <meta charset="UTF-8">
-            <title>Program Report - ${programName}</title>
+            <title>${customerName} - ${programName}</title>
             <style>
               body { 
                 font-family: Arial, sans-serif; 
@@ -143,12 +143,39 @@ export async function POST(req: NextRequest) {
                 font-weight: 500;
                 font-size: 9px;
               }
+              .packages-container {
+                display: flex;
+                flex-direction: column;
+                gap: 4px;
+              }
+              .package-section {
+                page-break-inside: avoid;
+                margin-bottom: 4px;
+              }
+              .package-header {
+                text-align: center;
+                margin: 4px 0;
+                padding: 6px;
+                background-color: #fff;
+                border: 1px solid #dee2e6;
+                border-radius: 4px;
+                page-break-after: avoid;
+              }
+              .package-header h3 {
+                margin: 0;
+                font-size: 12px;
+              }
+              .table-container {
+                page-break-inside: avoid;
+                margin-bottom: 4px;
+              }
               table { 
                 width: 100%; 
-                border-collapse: collapse; 
-                margin-bottom: 12px;
+                border-collapse: collapse;
+                margin-bottom: 4px;
                 border: 1px solid #dee2e6;
                 table-layout: fixed;
+                page-break-inside: avoid;
               }
               th, td { 
                 border: 1px solid #dee2e6; 
@@ -174,106 +201,67 @@ export async function POST(req: NextRequest) {
                 font-weight: 600;
                 color: #1a1a1a;
               }
-              .package-header {
-                text-align: center;
-                margin: 12px 0;
-                padding: 6px;
-                background-color: #fff;
-                border: 1px solid #dee2e6;
-                border-radius: 4px;
-              }
-              .package-header h3 {
-                font-size: 12px;
-                margin: 0;
-              }
               .package-total {
                 text-align: right;
-                margin: 6px 0 12px;
+                margin: 4px 0;
                 padding: 6px;
                 background-color: #fff;
                 font-size: 10px;
+                page-break-inside: avoid;
               }
               .grand-total {
                 text-align: right;
-                margin-top: 12px;
+                margin-top: 8px;
                 padding: 8px;
                 background-color: #fff;
                 border: 1px solid #dee2e6;
                 border-radius: 4px;
                 font-weight: 600;
                 font-size: 11px;
+                page-break-inside: avoid;
               }
               @page { 
                 margin: 10mm;
-                size: A4 landscape;
-              }
-              @media print {
-                .page-break-before {
-                  page-break-before: always;
-                }
-                .page-break-after {
-                  page-break-after: always;
-                }
+                size: A4 portrait;
               }
               
-              /* Modified styles for better table continuity */
-              .table-container {
-                page-break-inside: avoid;
-                margin-bottom: 12px;
-              }
-              
-              .table-container table {
-                margin-bottom: 0;
-              }
-              
-              .package-section {
-                break-inside: avoid;
-                margin-bottom: 16px;
-              }
-              
-              .package-header {
-                margin: 8px 0;
-                padding: 6px;
-                break-inside: avoid;
-              }
-              
-              .package-total {
-                margin: 4px 0 8px;
-                padding: 6px;
-                break-inside: avoid;
-              }
-
-              /* Container for all packages */
-              .packages-container {
-                display: flex;
-                flex-direction: column;
-                gap: 16px;
-              }
-
-              /* Adjust spacing between packages */
-              .package-section + .package-section {
-                margin-top: 0;
-                padding-top: 8px;
-              }
-
-              /* Ensure tables stay together */
-              table {
-                break-inside: avoid;
-              }
-
               /* Keep headers with their content */
               thead {
                 display: table-header-group;
               }
-
               tbody {
                 display: table-row-group;
+              }
+
+              /* Ensure continuous flow between packages */
+              .package-section + .package-section {
+                margin-top: 4px;
+              }
+
+              /* Prevent page breaks between packages */
+              .packages-container {
+                page-break-inside: auto;
+              }
+
+              /* Force packages to stay together */
+              .package-section:not(:first-child) {
+                page-break-before: auto;
+              }
+
+              /* Keep package content together */
+              .package-header + .table-container {
+                page-break-before: avoid;
+              }
+
+              /* Keep package totals with their tables */
+              .table-container + .package-total {
+                page-break-before: avoid;
               }
             </style>
           </head>
           <body>
             <div class="report-header">
-              <h2>Program Report - ${programName}</h2>
+              <h2>${customerName} - ${programName}</h2>
             </div>
 
             <div class="program-details">
@@ -298,59 +286,96 @@ export async function POST(req: NextRequest) {
             <div class="packages-container">
               ${PACKAGE_ORDER
                 .filter(pkgType => filteredPackages[pkgType])
-                .map((packageType) => {
+                .map((packageType, index) => {
                   const packageData = filteredPackages[packageType];
-                  const products = packageData.products || [];
-                  const productChunks = [];
-                  for (let i = 0; i < products.length; i += PRODUCTS_PER_TABLE) {
-                    productChunks.push(products.slice(i, i + PRODUCTS_PER_TABLE));
-                  }
+                  
+                  // Filter products with consumption
+                  const products = (packageData.products || [])
+                    .filter((product: Product) => {
+                      const hasConsumption = datesWithConsumption.some(date => {
+                        const entry = packageData.entries.find((e: Entry) => e.date === date);
+                        return entry && (entry.quantities[product.id] || 0) > 0;
+                      });
+                      return hasConsumption;
+                    });
+
+                  if (products.length === 0) return '';
+
+                  // Only chunk normal package items
+                  const shouldChunk = packageType.toLowerCase() === 'normal';
+                  const productChunks = shouldChunk
+                    ? products.reduce((chunks: Product[][], product: Product, index: number) => {
+                        if (index % PRODUCTS_PER_TABLE === 0) {
+                          chunks.push([]);
+                        }
+                        chunks[chunks.length - 1].push(product);
+                        return chunks;
+                      }, [] as Product[][])
+                    : [products];
+
+                  if (productChunks.length === 0) return '';
 
                   return `
-                    <div class="package-section">
+                    <div class="package-section" ${index > 0 ? 'style="margin-top: 0;"' : ''}>
                       <div class="package-header">
                         <h3 style="margin: 0;">${PACKAGE_NAMES[packageType as keyof typeof PACKAGE_NAMES]?.toUpperCase() || packageType.toUpperCase()}</h3>
                       </div>
-                      ${productChunks.map((chunk: Product[], chunkIndex) => `
-                        <div class="table-container">
-                          <table>
-                            <thead>
-                              <tr>
-                                <th>Product Name</th>
-                                ${datesWithConsumption.map(date => `
-                                  <th>${format(new Date(date), 'dd/MM/yyyy')}</th>
-                                `).join('')}
-                                <th>Total</th>
-                                <th>Rate</th>
-                                <th>Amount</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              ${chunk.map((product: Product) => {
-                                const total = packageData.totals[product.id] || 0;
-                                const rate = packageData.rates[product.id] || 0;
-                                const amount = packageData.totalAmounts[product.id] || 0;
-                                
-                                return `
-                                  <tr>
-                                    <td>${product.name}</td>
-                                    ${datesWithConsumption.map(date => {
-                                      const entry = packageData.entries.find((e: Entry) => e.date === date);
-                                      const quantity = entry ? entry.quantities[product.id] || 0 : 0;
-                                      return `<td>${quantity}</td>`;
-                                    }).join('')}
-                                    <td style="font-weight: 500;">${total}</td>
-                                    <td>₹${rate.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-                                    <td>₹${amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-                                  </tr>
-                                `;
-                              }).join('')}
-                            </tbody>
-                          </table>
-                        </div>
-                      `).join('')}
+                      ${productChunks.map((chunk: Product[]) => {
+                        // Filter dates with consumption for this chunk
+                        const chunkDates = datesWithConsumption.filter(date => 
+                          chunk.some((product: Product) => {
+                            const entry = packageData.entries.find((e: Entry) => e.date === date);
+                            return entry && (entry.quantities[product.id] || 0) > 0;
+                          })
+                        );
+
+                        if (chunkDates.length === 0) return '';
+
+                        return `
+                          <div class="table-container">
+                            <table>
+                              <thead>
+                                <tr>
+                                  <th>Product Name</th>
+                                  ${chunkDates.map(date => `
+                                    <th>${format(new Date(date), 'dd/MM/yyyy')}</th>
+                                  `).join('')}
+                                  <th>Total</th>
+                                  <th>Rate</th>
+                                  <th>Amount</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                ${chunk.map((product: Product) => {
+                                  const total = packageData.totals[product.id] || 0;
+                                  if (total === 0) return '';
+
+                                  const rate = packageData.rates[product.id] || 0;
+                                  const amount = packageData.totalAmounts[product.id] || 0;
+                                  
+                                  return `
+                                    <tr>
+                                      <td>${product.name}</td>
+                                      ${chunkDates.map(date => {
+                                        const entry = packageData.entries.find((e: Entry) => e.date === date);
+                                        const quantity = entry ? entry.quantities[product.id] || 0 : 0;
+                                        return `<td>${quantity || '-'}</td>`;
+                                      }).join('')}
+                                      <td style="font-weight: 500;">${total}</td>
+                                      <td>₹${rate.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                                      <td>₹${amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                                    </tr>
+                                  `;
+                                }).join('')}
+                              </tbody>
+                            </table>
+                          </div>
+                        `;
+                      }).join('')}
                       <div class="package-total">
-                        Package Total: ₹${Object.values(packageData.totalAmounts as Record<string, number>).reduce((sum: number, amount: number) => sum + amount, 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        Package Total: ₹${Object.values(packageData.totalAmounts as Record<string, number>)
+                          .reduce((sum: number, amount: number) => sum + amount, 0)
+                          .toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                       </div>
                     </div>
                   `;
@@ -361,7 +386,8 @@ export async function POST(req: NextRequest) {
               Grand Total: ₹${PACKAGE_ORDER
                 .filter(pkgType => filteredPackages[pkgType])
                 .reduce((sum: number, pkgType) => 
-                  sum + Object.values(filteredPackages[pkgType].totalAmounts as Record<string, number>).reduce((pkgSum: number, amount: number) => pkgSum + amount, 0), 
+                  sum + Object.values(filteredPackages[pkgType].totalAmounts as Record<string, number>)
+                    .reduce((pkgSum: number, amount: number) => pkgSum + amount, 0), 
                   0
                 ).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
             </div>
@@ -382,7 +408,8 @@ export async function POST(req: NextRequest) {
           right: '10mm',
           bottom: '10mm',
           left: '10mm'
-        }
+        },
+        displayHeaderFooter: false
       });
 
       await browser.close();

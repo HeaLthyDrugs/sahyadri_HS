@@ -7,7 +7,7 @@ export async function generatePDF(htmlContent: string): Promise<Buffer> {
   try {
     if (process.env.NODE_ENV === 'production' || process.env.VERCEL_ENV === 'production') {
       // Configure chromium for production/Vercel environment
-      const executablePath = await chromium.executablePath('https://github.com/Sparticuz/chromium/releases/download/v123.0.0/chromium-v123.0.0-pack.tar');
+      const executablePath = await chromium.executablePath('https://github.com/Sparticuz/chromium/releases/download/v133.0.0/chromium-v133.0.0-pack.tar');
       browser = await puppeteerCore.launch({
         executablePath,
         args: chromium.args,
