@@ -451,19 +451,52 @@ export function BillingEntriesPage() {
         .select('*')
         .or(
           `and(start_date.lte.${monthEnd.toISOString()},end_date.gte.${monthStart.toISOString()})`
-        )
-        .order('start_date', { ascending: false });
+        );
 
       if (error) throw error;
 
-      // Filter programs that overlap with the selected month, but don't filter out completed programs
+      // Filter programs that overlap with the selected month
       const filteredPrograms = data?.filter(program => {
         const programStart = parseISO(program.start_date);
         const programEnd = parseISO(program.end_date);
         return (programStart <= monthEnd && programEnd >= monthStart);
       });
 
-      setPrograms(filteredPrograms || []);
+      // Sort programs by name (considering numeric parts), status, and start date
+      const sortedPrograms = filteredPrograms?.sort((a, b) => {
+        // Extract numbers from program names for proper numeric sorting
+        const aMatch = a.name.match(/\d+/);
+        const bMatch = b.name.match(/\d+/);
+        const aNum = aMatch ? parseInt(aMatch[0]) : 0;
+        const bNum = bMatch ? parseInt(bMatch[0]) : 0;
+        
+        // First sort by numeric value in name
+        if (aNum !== bNum) {
+          return aNum - bNum;
+        }
+        
+        // If numeric values are same or don't exist, sort by full name
+        if (a.name !== b.name) {
+          return a.name.localeCompare(b.name);
+        }
+
+        // Then sort by status priority
+        const statusPriority = {
+          'Ongoing': 0,
+          'Upcoming': 1,
+          'Completed': 2
+        };
+        
+        const statusDiff = (statusPriority[a.status as keyof typeof statusPriority] || 0) - 
+                          (statusPriority[b.status as keyof typeof statusPriority] || 0);
+        
+        if (statusDiff !== 0) return statusDiff;
+        
+        // Finally sort by start date if everything else is equal
+        return parseISO(a.start_date).getTime() - parseISO(b.start_date).getTime();
+      });
+
+      setPrograms(sortedPrograms || []);
       setSelectedProgram(""); // Reset program selection
       setSelectedPackage(""); // Reset package selection
     } catch (error) {
