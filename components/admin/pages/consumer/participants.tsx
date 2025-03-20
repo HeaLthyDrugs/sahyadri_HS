@@ -133,7 +133,7 @@ export function ParticipantsPage() {
         .or(
           `and(start_date.lte.${monthEnd.toISOString()},end_date.gte.${monthStart.toISOString()})`
         )
-        .order('start_date', { ascending: false });
+        .order('name', { ascending: true });
 
       if (error) throw error;
 
@@ -143,7 +143,24 @@ export function ParticipantsPage() {
         return (programStart <= monthEnd && programEnd >= monthStart);
       });
 
-      setPrograms(filteredPrograms || []);
+      // Sort programs by extracting program numbers from names
+      const sortedPrograms = filteredPrograms?.sort((a, b) => {
+        // Extract numbers from program names
+        const aMatch = a.name.match(/\d+/);
+        const bMatch = b.name.match(/\d+/);
+        
+        // If both have numbers, compare them numerically
+        if (aMatch && bMatch) {
+          return parseInt(aMatch[0], 10) - parseInt(bMatch[0], 10);
+        }
+        // If only one has a number, prioritize the one with a number
+        if (aMatch) return -1;
+        if (bMatch) return 1;
+        // Fallback to alphabetical sorting
+        return a.name.localeCompare(b.name);
+      });
+
+      setPrograms(sortedPrograms || []);
 
       setSelectedProgramId('all');
     } catch (error) {

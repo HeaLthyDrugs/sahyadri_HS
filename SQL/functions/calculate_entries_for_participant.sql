@@ -8,6 +8,7 @@ DECLARE
     participant_start_date DATE;
     participant_end_date DATE;
     affected_dates DATE[];
+    participant_type TEXT;
 BEGIN
     -- Get the normal package ID
     SELECT id INTO normal_package_id 
@@ -20,11 +21,13 @@ BEGIN
         RETURN NULL;
     END IF;
 
-    -- Get program ID based on operation type
+    -- Get program ID and participant type based on operation type
     IF TG_OP = 'DELETE' THEN
         program_id := OLD.program_id;
+        participant_type := OLD.type;
     ELSE
         program_id := NEW.program_id;
+        participant_type := NEW.type;
     END IF;
 
     -- Get program details
@@ -74,6 +77,10 @@ BEGIN
         FROM 
             unnest(affected_dates) as d(date)
             CROSS JOIN products pr
+            INNER JOIN product_rules pr_rules ON 
+                pr_rules.product_id = pr.id 
+                AND pr_rules.participant_type = p.type
+                AND pr_rules.allowed = true
             LEFT JOIN participants p ON 
                 p.program_id = program_record.id
                 AND DATE(p.reception_checkin) <= d.date
@@ -120,10 +127,14 @@ BEGIN
         -- Loop through each date
         check_date := participant_start_date;
         WHILE check_date <= participant_end_date LOOP
-            -- For each product in the normal package
+            -- For each product in the normal package that's allowed for this participant type
             FOR product_record IN (
                 SELECT p.* 
                 FROM products p
+                INNER JOIN product_rules pr ON 
+                    pr.product_id = p.id 
+                    AND pr.participant_type = NEW.type
+                    AND pr.allowed = true
                 WHERE p.package_id = normal_package_id
                 ORDER BY p.slot_start
             ) LOOP
