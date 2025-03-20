@@ -42,12 +42,40 @@ interface InvoiceConfig {
   logo_url: string;
 }
 
+type ParticipantType = 'participant' | 'guest' | 'other' | 'driver';
+
+interface ProductRule {
+  id: string;
+  participant_type: ParticipantType;
+  product_id: string;
+  allowed: boolean;
+}
+
+interface Product {
+  id: string;
+  name: string;
+  package_id: string;
+  rate: number;
+  slot_start: string;
+  slot_end: string;
+  index: number;
+  package?: {
+    name: string;
+    type: string;
+  };
+}
+
 interface StaffType {
   id: string;
   name: string;
   description: string;
   created_at: string;
   updated_at: string;
+}
+
+interface NewStaffType {
+  name: string;
+  description: string;
 }
 
 const Config = () => {
@@ -64,20 +92,26 @@ const Config = () => {
     footer_note: '',
     logo_url: ''
   });
+  
+  // New state variables for product rules
+  const [products, setProducts] = useState<Product[]>([]);
+  const [selectedParticipantType, setSelectedParticipantType] = useState<ParticipantType | ''>('');
+  const [productRules, setProductRules] = useState<ProductRule[]>([]);
+  const [selectedProducts, setSelectedProducts] = useState<string[]>([]);
   const [staffTypes, setStaffTypes] = useState<StaffType[]>([]);
   const [selectedStaffType, setSelectedStaffType] = useState<StaffType | null>(null);
-  const [newStaffType, setNewStaffType] = useState<Partial<StaffType>>({
+  const [newStaffType, setNewStaffType] = useState<NewStaffType>({
     name: "",
     description: ""
   });
-  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [staffTypeToDelete, setStaffTypeToDelete] = useState<StaffType | null>(null);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+
+  const participantTypes: ParticipantType[] = ['participant', 'guest', 'driver', 'other'];
 
   useEffect(() => {
     fetchInvoiceConfig();
-  }, []);
-
-  useEffect(() => {
+    fetchProducts();
     fetchStaffTypes();
   }, []);
 
@@ -126,6 +160,78 @@ const Config = () => {
     }
   };
 
+  const fetchProducts = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('products')
+        .select(`
+          id,
+          name,
+          package_id,
+          rate,
+          slot_start,
+          slot_end,
+          index,
+          packages:package_id (
+            name,
+            type
+          )
+        `)
+        .eq('package_id', '3e46279d-c2ff-4bb6-ab0d-935e32ed7820')  // Filter by specific catering package ID
+        .order('index');
+
+      if (error) throw error;
+      setProducts(data || []);
+    } catch (error) {
+      console.error('Error fetching products:', error);
+      toast.error('Failed to fetch products');
+    }
+  };
+
+  const fetchProductRules = async (type: ParticipantType) => {
+    try {
+      setIsLoading(true);
+      
+      // Clear any previous data first
+      setSelectedProducts([]);
+      setProductRules([]);
+      
+      const { data, error } = await supabase
+        .from('product_rules')
+        .select('*')
+        .eq('participant_type', type);
+
+      if (error) {
+        console.error('Error fetching product rules:', error);
+        throw error;
+      }
+
+      // Set the product rules
+      setProductRules(data || []);
+      
+      // If we have existing rules, use them to determine allowed products
+      if (data && data.length > 0) {
+        // Extract the IDs of allowed products
+        const allowedProductIds = data
+          .filter(rule => rule.allowed)
+          .map(rule => rule.product_id);
+        
+        setSelectedProducts(allowedProductIds);
+      } else {
+        // First-time setup: pre-select all products by default
+        setSelectedProducts(products.map(p => p.id));
+      }
+    } catch (error) {
+      console.error('Error fetching product rules:', error);
+      toast.error('Failed to fetch product rules');
+      // Reset states on error
+      setSelectedProducts([]);
+      setProductRules([]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const saveInvoiceConfig = async () => {
     try {
       setIsLoading(true);
@@ -169,6 +275,69 @@ const Config = () => {
     }
   };
 
+  const handleSaveProductRules = async () => {
+    if (!selectedParticipantType) {
+      toast.error('Please select a participant type');
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+
+      // Create new rules objects from the current selection
+      const newRules = products.map(product => ({
+        participant_type: selectedParticipantType,
+        product_id: product.id,
+        allowed: selectedProducts.includes(product.id)
+      }));
+
+      // First, delete existing rules for this participant type
+      const { error: deleteError } = await supabase
+        .from('product_rules')
+        .delete()
+        .eq('participant_type', selectedParticipantType);
+
+      if (deleteError) {
+        console.error('Error deleting existing product rules:', deleteError);
+        throw deleteError;
+      }
+
+      // Then insert the new set of rules
+      if (newRules.length > 0) {
+        const { error: insertError } = await supabase
+          .from('product_rules')
+          .insert(newRules);
+
+        if (insertError) {
+          console.error('Error inserting product rules:', insertError);
+          throw insertError;
+        }
+      }
+
+      // Update local state to reflect the changes without requiring a refetch
+      const updatedRules = newRules.map(rule => ({
+        id: '', // The ID will be generated by Supabase
+        participant_type: rule.participant_type,
+        product_id: rule.product_id,
+        allowed: rule.allowed
+      })) as ProductRule[];
+      
+      setProductRules(updatedRules);
+      
+      toast.success(`Product rules for ${selectedParticipantType} saved successfully`);
+    } catch (error) {
+      console.error('Error saving product rules:', error);
+      toast.error('Failed to save product rules. Please try again.');
+      
+      // Refresh the rules in case of partial failure
+      if (selectedParticipantType) {
+        fetchProductRules(selectedParticipantType);
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const handleSaveStaffType = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
@@ -190,7 +359,10 @@ const Config = () => {
         // Add new staff type
         const { error } = await supabase
           .from('staff_types')
-          .insert([newStaffType]);
+          .insert([{
+            name: newStaffType.name,
+            description: newStaffType.description
+          }]);
 
         if (error) throw error;
         toast.success("Staff type added successfully");
@@ -235,15 +407,17 @@ const Config = () => {
     }
   };
 
+
   return (
     <div className="p-6">
-      <Tabs defaultValue="staff-types" className="w-full">
-        <TabsList className="grid w-full grid-cols-2 mb-6">
-          <TabsTrigger value="staff-types">Staff Types</TabsTrigger>
+      <Tabs defaultValue="product-rules" className="w-full">
+        <TabsList className="grid w-full grid-cols-3 mb-6">
+          <TabsTrigger value="product-rules">Product Rules</TabsTrigger>
           <TabsTrigger value="invoice">Invoice Settings</TabsTrigger>
+          <TabsTrigger value="staff-types">Staff Types</TabsTrigger>
         </TabsList>
 
-        {/* Staff Types Tab */}
+ {/* Staff Types Tab */}
         <TabsContent value="staff-types" className="mt-0">
           <div className="bg-white rounded-lg shadow p-6">
             <div className="flex justify-between items-center mb-6">
@@ -308,6 +482,217 @@ const Config = () => {
                   ))}
                 </TableBody>
               </Table>
+            </div>
+          </div>
+        </TabsContent>
+
+
+              {/* Staff Type Modal */}
+      <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {selectedStaffType ? 'Edit Staff Type' : 'Add New Staff Type'}
+            </DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleSaveStaffType} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="name">Name</Label>
+              <Input
+                id="name"
+                value={newStaffType.name}
+                onChange={(e) =>
+                  setNewStaffType({ ...newStaffType, name: e.target.value })
+                }
+                placeholder="Enter type name"
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="description">Description</Label>
+              <Input
+                id="description"
+                value={newStaffType.description}
+                onChange={(e) =>
+                  setNewStaffType({ ...newStaffType, description: e.target.value })
+                }
+                placeholder="Enter description"
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setIsModalOpen(false);
+                  setSelectedStaffType(null);
+                  setNewStaffType({
+                    name: "",
+                    description: ""
+                  });
+                }}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" className="bg-amber-600 hover:bg-amber-700">
+                {selectedStaffType ? 'Update' : 'Add'} Staff Type
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Modal */}
+      <Dialog open={isDeleteModalOpen} onOpenChange={setIsDeleteModalOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <RiAlertLine className="h-5 w-5 text-red-500" />
+              Confirm Deletion
+            </DialogTitle>
+          </DialogHeader>
+          <div className="py-3">
+            <p>Are you sure you want to delete the staff type &quot;{staffTypeToDelete?.name}&quot;?</p>
+            <p className="text-sm text-gray-500 mt-2">This action cannot be undone.</p>
+          </div>
+          <DialogFooter className="flex justify-end gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setIsDeleteModalOpen(false);
+                setStaffTypeToDelete(null);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button 
+              type="button" 
+              variant="destructive"
+              disabled={isLoading}
+              onClick={handleDeleteStaffType}
+            >
+              {isLoading ? "Deleting..." : "Delete Staff Type"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+        {/* Product Rules Tab */}
+        <TabsContent value="product-rules" className="mt-0">
+          <div className="bg-white rounded-lg shadow p-6">
+            <div className="flex justify-between items-center mb-6">
+              <div>
+                <h2 className="text-lg font-medium text-gray-900">Product Rules</h2>
+                <p className="text-sm text-gray-500">Configure which normal package products each participant type can consume</p>
+              </div>
+            </div>
+
+            <div className="space-y-6">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Select Participant Type
+                </label>
+                <select
+                  value={selectedParticipantType}
+                  onChange={(e) => {
+                    const type = e.target.value as ParticipantType;
+                    // Clear selected products before loading new data
+                    setSelectedProducts([]);
+                    setProductRules([]);
+                    setSelectedParticipantType(type);
+                    if (type) {
+                      fetchProductRules(type);
+                    }
+                  }}
+                  className="w-full p-3 border border-gray-300 rounded-md shadow-sm focus:border-amber-500 focus:ring-amber-500"
+                >
+                  <option value="">Select a participant type</option>
+                  {participantTypes.map((type) => (
+                    <option key={type} value={type}>
+                      {type.charAt(0).toUpperCase() + type.slice(1)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {selectedParticipantType && (
+                <div>
+                  <h3 className="text-sm font-medium text-gray-700 mb-4">Configure Allowed Products</h3>
+                  
+                  {isLoading ? (
+                    <div className="flex justify-center items-center py-8 border rounded-md">
+                      <div className="flex flex-col items-center">
+                        <div className="w-8 h-8 border-t-2 border-amber-600 border-solid rounded-full animate-spin"></div>
+                        <p className="mt-2 text-sm text-gray-500">Loading product rules...</p>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="border rounded-md overflow-hidden">
+                      <Table className="w-full">
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead className="w-[10%] text-center">Access</TableHead>
+                            <TableHead className="w-[45%]">Product Name</TableHead>
+                            <TableHead className="w-[15%] text-right">Rate</TableHead>
+                            <TableHead className="w-[30%]">Time Slot</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {products.length === 0 ? (
+                            <TableRow>
+                              <TableCell colSpan={4} className="text-center py-6 text-gray-500">
+                                No products found for the selected package
+                              </TableCell>
+                            </TableRow>
+                          ) : (
+                            products.map((product) => (
+                              <TableRow key={product.id} className="border-b">
+                                <TableCell className="text-center py-3">
+                                  <input
+                                    type="checkbox"
+                                    checked={selectedProducts.includes(product.id)}
+                                    onChange={() => {
+                                      setSelectedProducts(prev =>
+                                        prev.includes(product.id)
+                                          ? prev.filter(id => id !== product.id)
+                                          : [...prev, product.id]
+                                      );
+                                    }}
+                                    className="h-4 w-4 rounded border-gray-300 text-amber-600 focus:ring-amber-500"
+                                  />
+                                </TableCell>
+                                <TableCell className="py-3 font-medium">{product.name}</TableCell>
+                                <TableCell className="py-3 text-right">₹{product.rate ? product.rate.toFixed(2) : '0.00'}</TableCell>
+                                <TableCell className="py-3">
+                                  {product.slot_start && product.slot_end ? (
+                                    `${new Date('1970-01-01T' + product.slot_start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true })} - ${new Date('1970-01-01T' + product.slot_end).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true })}`
+                                  ) : 'No time slot'}
+                                </TableCell>
+                              </TableRow>
+                            ))
+                          )}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  )}
+
+                  <div className="mt-6 flex justify-end">
+                    <Button
+                      onClick={handleSaveProductRules}
+                      disabled={isLoading}
+                      className="bg-amber-600 hover:bg-amber-700"
+                    >
+                      {isLoading ? (
+                        <span className="flex items-center">
+                          <span className="w-4 h-4 mr-2 border-t-2 border-white border-solid rounded-full animate-spin"></span>
+                          Saving...
+                        </span>
+                      ) : "Save Product Rules"}
+                    </Button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </TabsContent>
@@ -419,101 +804,6 @@ const Config = () => {
           </div>
         </TabsContent>
       </Tabs>
-
-      {/* Staff Type Modal */}
-      <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>
-              {selectedStaffType ? 'Edit Staff Type' : 'Add New Staff Type'}
-            </DialogTitle>
-          </DialogHeader>
-          <form onSubmit={handleSaveStaffType} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="name">Name</Label>
-              <Input
-                id="name"
-                value={newStaffType.name}
-                onChange={(e) =>
-                  setNewStaffType({ ...newStaffType, name: e.target.value })
-                }
-                placeholder="Enter type name"
-                required
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="description">Description</Label>
-              <Input
-                id="description"
-                value={newStaffType.description}
-                onChange={(e) =>
-                  setNewStaffType({ ...newStaffType, description: e.target.value })
-                }
-                placeholder="Enter description"
-              />
-            </div>
-            <div className="flex justify-end gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => {
-                  setIsModalOpen(false);
-                  setSelectedStaffType(null);
-                  setNewStaffType({
-                    name: "",
-                    description: ""
-                  });
-                }}
-              >
-                Cancel
-              </Button>
-              <Button type="submit" className="bg-amber-600 hover:bg-amber-700">
-                {selectedStaffType ? 'Update' : 'Add'} Staff Type
-              </Button>
-            </div>
-          </form>
-        </DialogContent>
-      </Dialog>
-
-      {/* Delete Confirmation Modal */}
-      <Dialog open={isDeleteModalOpen} onOpenChange={setIsDeleteModalOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <RiAlertLine className="w-5 h-5 text-red-600" />
-              Delete Staff Type
-            </DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <p className="text-gray-500">
-              Are you sure you want to delete <span className="font-medium">{staffTypeToDelete?.name}</span>?
-            </p>
-            <p className="text-sm text-red-600">
-              This action cannot be undone. Staff members using this type will need to be reassigned.
-            </p>
-            <div className="flex justify-end gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => {
-                  setIsDeleteModalOpen(false);
-                  setStaffTypeToDelete(null);
-                }}
-              >
-                Cancel
-              </Button>
-              <Button
-                type="button"
-                variant="destructive"
-                onClick={handleDeleteStaffType}
-                className="bg-red-600 hover:bg-red-700"
-              >
-                Delete
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 };

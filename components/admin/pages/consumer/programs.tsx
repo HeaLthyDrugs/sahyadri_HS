@@ -1015,7 +1015,7 @@ export function ProgramsPage() {
             <thead className="bg-gray-50">
               <tr>
                 <th className="w-[100px] min-w-[80px] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  ID
+                  S.No
                 </th>
                 <th className="w-1/4 min-w-[200px] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Customer Name
@@ -1044,10 +1044,10 @@ export function ProgramsPage() {
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {paginatedPrograms().map((program) => (
+              {paginatedPrograms().map((program, index) => (
                 <tr key={program.id} className="hover:bg-gray-50">
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {program.program_number || 0}
+                    {(currentPage - 1) * itemsPerPage + index + 1}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-wrap">
                     {program.customer_name}
