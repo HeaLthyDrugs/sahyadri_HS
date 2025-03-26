@@ -1,0 +1,33 @@
+{
+  "metadata": {
+    "table": "packages",
+    "count": 3,
+    "timestamp": "2025-03-26T11:12:04.659Z"
+  },
+  "data": [
+    {
+      "id": "752a6bcb-d6d6-43ba-ab5b-84a787182b41",
+      "name": "COLD DRINKS",
+      "description": "Fruits, Juices, Soft Drinks, etc.",
+      "type": "Cold Drink",
+      "created_at": "2025-01-06T17:47:30.150353+00:00",
+      "updated_at": "2025-01-06T17:47:30.150353+00:00"
+    },
+    {
+      "id": "620e67e9-8d50-4505-930a-f571629147a2",
+      "name": "EXTRA CATERING",
+      "description": "Day Session and Special Dinner Package",
+      "type": "Extra",
+      "created_at": "2025-01-06T17:46:32.197858+00:00",
+      "updated_at": "2025-01-25T05:54:42.306256+00:00"
+    },
+    {
+      "id": "3e46279d-c2ff-4bb6-ab0d-935e32ed7820",
+      "name": "CATERING PACKAGE",
+      "description": "Default Normal Package",
+      "type": "Normal",
+      "created_at": "2025-01-06T17:48:22.909736+00:00",
+      "updated_at": "2025-01-15T11:41:18.598693+00:00"
+    }
+  ]
+}

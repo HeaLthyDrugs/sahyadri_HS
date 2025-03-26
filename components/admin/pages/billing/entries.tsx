@@ -653,19 +653,38 @@ export function BillingEntriesPage() {
           )
         `)
         .eq('program_id', selectedProgram)
-        .eq('package_id', selectedPackage)
-        .gte('entry_date', startDate)
-        .lte('entry_date', endDate);
+        .eq('package_id', selectedPackage);
+        // Removed date range filters to get ALL entries for this program/package
 
       if (entriesError) throw entriesError;
 
       console.log('Fetched billing entries:', billingEntries);
 
-      // Initialize entry data structure
+      // Find the min and max dates from all entries to expand the date range if needed
+      let minDate = new Date(startDate);
+      let maxDate = new Date(endDate);
+      
+      billingEntries?.forEach(entry => {
+        const entryDate = new Date(entry.entry_date);
+        if (entryDate < minDate) minDate = entryDate;
+        if (entryDate > maxDate) maxDate = entryDate;
+      });
+      
+      // Create expanded date range if entries exist outside program dates
+      const hasExtraEntries = minDate < new Date(startDate) || maxDate > new Date(endDate);
+      let expandedDateRange = dateRange;
+      
+      if (hasExtraEntries) {
+        expandedDateRange = eachDayOfInterval({ start: minDate, end: maxDate });
+        // Update the dateRange state to include these extra dates
+        setDateRange(expandedDateRange);
+      }
+
+      // Initialize entry data structure with expanded date range
       const newEntryData: EntryData = {};
 
       // Initialize all dates with 0 quantities for all products
-      dateRange.forEach(date => {
+      expandedDateRange.forEach(date => {
         const dateStr = format(date, 'yyyy-MM-dd');
         newEntryData[dateStr] = {};
         products.forEach(product => {
@@ -683,7 +702,7 @@ export function BillingEntriesPage() {
 
       console.log('Transformed entry data:', newEntryData);
       console.log('Current products:', products);
-      console.log('Current date range:', dateRange);
+      console.log('Current date range:', expandedDateRange);
 
       setEntryData(newEntryData);
 
@@ -795,14 +814,13 @@ export function BillingEntriesPage() {
 
         if (insertError) throw insertError;
       } else {
-        // Handle regular program entries
+        // For regular program entries - delete all entries for this program/package
+        // regardless of date to handle extra entries properly
         const { error: deleteError } = await supabase
           .from('billing_entries')
           .delete()
           .eq('program_id', selectedProgram)
-          .eq('package_id', selectedPackage)
-          .gte('entry_date', format(dateRange[0], 'yyyy-MM-dd'))
-          .lte('entry_date', format(dateRange[dateRange.length - 1], 'yyyy-MM-dd'));
+          .eq('package_id', selectedPackage);
 
         if (deleteError) throw deleteError;
 
@@ -1110,6 +1128,25 @@ export function BillingEntriesPage() {
     }
   }, [selectedProgram, programs]);
 
+  // Fix the isExtraDate function
+  const isExtraDate = (date: Date, program: Program | undefined): boolean => {
+    if (!program) return false;
+    
+    // Convert program dates to YYYY-MM-DD format for proper comparison
+    const programStart = new Date(program.start_date);
+    programStart.setHours(0, 0, 0, 0);
+    
+    const programEnd = new Date(program.end_date);
+    programEnd.setHours(23, 59, 59, 999);
+    
+    // Convert input date to start of day for proper comparison
+    const compareDate = new Date(date);
+    compareDate.setHours(0, 0, 0, 0);
+    
+    // Check if date is strictly before program start or strictly after program end
+    return compareDate < programStart || compareDate > programEnd;
+  };
+
   return (
     <div className={`${isFullScreenMode ? 'fixed inset-0 bg-white z-50' : 'p-2 sm:p-4'}`}>
       {/* Toggle Full Screen and Save Button Container */}
@@ -1242,11 +1279,14 @@ export function BillingEntriesPage() {
                         const isFirstOfMonth = date.getDate() === 1;
                         // Get month name for the first date of each month
                         const monthName = isFirstOfMonth ? format(date, 'MMMM yyyy') : '';
+                        // Check if date is outside program duration
+                        const program = programs.find(p => p.id === selectedProgram);
+                        const isExtra = isExtraDate(date, program);
                         
                         return (
                           <th
                             key={date.toISOString()}
-                            className="border bg-gray-50 sticky top-0 z-[50] min-w-[70px] sm:min-w-[80px] max-w-[100px] text-xs sm:text-sm whitespace-nowrap shadow-[0_2px_4px_-2px_rgba(0,0,0,0.1)]"
+                            className={`border bg-gray-50 sticky top-0 z-[50] min-w-[70px] sm:min-w-[80px] max-w-[100px] text-xs sm:text-sm whitespace-nowrap shadow-[0_2px_4px_-2px_rgba(0,0,0,0.1)] ${isExtra ? 'bg-amber-50' : ''}`}
                             style={{ minHeight: '64px' }}
                           >
                             {isFirstOfMonth && (
@@ -1254,8 +1294,11 @@ export function BillingEntriesPage() {
                                 {monthName}
                               </div>
                             )}
-                            <div className="flex flex-col items-center p-1 sm:p-2">
+                            <div className={`flex flex-col items-center p-1 sm:p-2 ${isExtra ? 'text-amber-700 font-medium' : ''}`}>
                               <span>{format(date, 'dd-MM-yyyy')}</span>
+                              {isExtra && (
+                                <span className="text-[10px] text-amber-600">Extra</span>
+                              )}
                             </div>
                           </th>
                         );
@@ -1287,8 +1330,11 @@ export function BillingEntriesPage() {
                           </td>
                           {dateRange.map((date, colIndex) => {
                             const dateStr = format(date, 'yyyy-MM-dd');
-                            // Get background color based on month
-                            const bgColor = getCellBackgroundColor(date);
+                            // Check if date is outside program duration
+                            const program = programs.find(p => p.id === selectedProgram);
+                            const isExtra = isExtraDate(date, program);
+                            const bgColor = isExtra ? 'bg-amber-50' : getCellBackgroundColor(date);
+                            
                             return (
                               <td
                                 key={`${date}-${product.id}`}
@@ -1307,9 +1353,9 @@ export function BillingEntriesPage() {
                                       focusedCell?.row === rowIndex && focusedCell?.col === colIndex
                                         ? 'ring-2 ring-amber-500'
                                         : ''
-                                    }`}
+                                    } ${isExtra ? 'bg-amber-50 border-amber-300' : ''}`}
                                     min="0"
-                                    title="Click to view participant details"
+                                    title={isExtra ? "Extra entry outside program duration" : "Click to view participant details"}
                                   />
                                 </div>
                               </td>

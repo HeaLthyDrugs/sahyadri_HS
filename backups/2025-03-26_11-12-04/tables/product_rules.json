@@ -1,0 +1,233 @@
+{
+  "metadata": {
+    "table": "product_rules",
+    "count": 28,
+    "timestamp": "2025-03-26T11:12:04.972Z"
+  },
+  "data": [
+    {
+      "id": "499e70e0-f2a7-42d0-9a9f-50ac6be476bb",
+      "participant_type": "other",
+      "product_id": "836b64ac-4adc-45a9-b3f5-c105722331db",
+      "allowed": false,
+      "created_at": "2025-03-22T12:33:21.750732+00:00",
+      "updated_at": "2025-03-22T12:33:21.750732+00:00"
+    },
+    {
+      "id": "9a770705-8a27-4199-933c-63b0ded139c4",
+      "participant_type": "other",
+      "product_id": "a10cb286-52e4-4313-b1ab-2055b4173934",
+      "allowed": true,
+      "created_at": "2025-03-22T12:33:21.750732+00:00",
+      "updated_at": "2025-03-22T12:33:21.750732+00:00"
+    },
+    {
+      "id": "34750a12-4078-46fe-b711-c568c925bba5",
+      "participant_type": "other",
+      "product_id": "1b71e976-955f-454e-a4fe-4f1834707745",
+      "allowed": true,
+      "created_at": "2025-03-22T12:33:21.750732+00:00",
+      "updated_at": "2025-03-22T12:33:21.750732+00:00"
+    },
+    {
+      "id": "1d4a4737-5432-4a6b-bbae-c960aff7de7e",
+      "participant_type": "other",
+      "product_id": "6aa1d480-66e0-4aea-a77e-8cd7b1c45126",
+      "allowed": true,
+      "created_at": "2025-03-22T12:33:21.750732+00:00",
+      "updated_at": "2025-03-22T12:33:21.750732+00:00"
+    },
+    {
+      "id": "baacf228-01fc-4a2a-b4c1-e1a4f26222d7",
+      "participant_type": "other",
+      "product_id": "646b8b47-7e58-4666-92d3-f496761e0ee6",
+      "allowed": true,
+      "created_at": "2025-03-22T12:33:21.750732+00:00",
+      "updated_at": "2025-03-22T12:33:21.750732+00:00"
+    },
+    {
+      "id": "f5ab1959-e2d6-44db-a5ad-900113570ab6",
+      "participant_type": "other",
+      "product_id": "c0805a9c-fa8c-40e2-80af-4faa08c045cc",
+      "allowed": true,
+      "created_at": "2025-03-22T12:33:21.750732+00:00",
+      "updated_at": "2025-03-22T12:33:21.750732+00:00"
+    },
+    {
+      "id": "53533e9c-86e0-4d8b-9852-ec84a11dd365",
+      "participant_type": "other",
+      "product_id": "424d32aa-2347-4bbe-abc9-05340717af56",
+      "allowed": true,
+      "created_at": "2025-03-22T12:33:21.750732+00:00",
+      "updated_at": "2025-03-22T12:33:21.750732+00:00"
+    },
+    {
+      "id": "b6276bc4-55fb-430c-aac4-4757e1f519b2",
+      "participant_type": "guest",
+      "product_id": "836b64ac-4adc-45a9-b3f5-c105722331db",
+      "allowed": false,
+      "created_at": "2025-03-22T12:33:34.567038+00:00",
+      "updated_at": "2025-03-22T12:33:34.567038+00:00"
+    },
+    {
+      "id": "9a8c5787-00c5-4512-a824-a0d313ade1dd",
+      "participant_type": "guest",
+      "product_id": "a10cb286-52e4-4313-b1ab-2055b4173934",
+      "allowed": true,
+      "created_at": "2025-03-22T12:33:34.567038+00:00",
+      "updated_at": "2025-03-22T12:33:34.567038+00:00"
+    },
+    {
+      "id": "69632854-3488-4d22-88d7-5e42097fc413",
+      "participant_type": "guest",
+      "product_id": "1b71e976-955f-454e-a4fe-4f1834707745",
+      "allowed": true,
+      "created_at": "2025-03-22T12:33:34.567038+00:00",
+      "updated_at": "2025-03-22T12:33:34.567038+00:00"
+    },
+    {
+      "id": "f5a68e1a-37d1-4c72-9789-7a68bc96d350",
+      "participant_type": "guest",
+      "product_id": "6aa1d480-66e0-4aea-a77e-8cd7b1c45126",
+      "allowed": true,
+      "created_at": "2025-03-22T12:33:34.567038+00:00",
+      "updated_at": "2025-03-22T12:33:34.567038+00:00"
+    },
+    {
+      "id": "43990d38-a766-4c89-b63f-90125450f5e5",
+      "participant_type": "guest",
+      "product_id": "646b8b47-7e58-4666-92d3-f496761e0ee6",
+      "allowed": true,
+      "created_at": "2025-03-22T12:33:34.567038+00:00",
+      "updated_at": "2025-03-22T12:33:34.567038+00:00"
+    },
+    {
+      "id": "7b33b734-863a-43ba-b9f3-9824083c20be",
+      "participant_type": "guest",
+      "product_id": "c0805a9c-fa8c-40e2-80af-4faa08c045cc",
+      "allowed": true,
+      "created_at": "2025-03-22T12:33:34.567038+00:00",
+      "updated_at": "2025-03-22T12:33:34.567038+00:00"
+    },
+    {
+      "id": "ae52a080-5aae-495b-82e8-cbfb00dfb13f",
+      "participant_type": "guest",
+      "product_id": "424d32aa-2347-4bbe-abc9-05340717af56",
+      "allowed": true,
+      "created_at": "2025-03-22T12:33:34.567038+00:00",
+      "updated_at": "2025-03-22T12:33:34.567038+00:00"
+    },
+    {
+      "id": "139c032d-aa80-4ea4-97a2-1198cc16b887",
+      "participant_type": "participant",
+      "product_id": "836b64ac-4adc-45a9-b3f5-c105722331db",
+      "allowed": true,
+      "created_at": "2025-03-22T12:33:41.340489+00:00",
+      "updated_at": "2025-03-22T12:33:41.340489+00:00"
+    },
+    {
+      "id": "7188432a-3f79-4a99-a907-af32a4644dfc",
+      "participant_type": "participant",
+      "product_id": "a10cb286-52e4-4313-b1ab-2055b4173934",
+      "allowed": true,
+      "created_at": "2025-03-22T12:33:41.340489+00:00",
+      "updated_at": "2025-03-22T12:33:41.340489+00:00"
+    },
+    {
+      "id": "92cd3b40-bce3-44bd-9302-27f7c684b059",
+      "participant_type": "participant",
+      "product_id": "1b71e976-955f-454e-a4fe-4f1834707745",
+      "allowed": true,
+      "created_at": "2025-03-22T12:33:41.340489+00:00",
+      "updated_at": "2025-03-22T12:33:41.340489+00:00"
+    },
+    {
+      "id": "8956d382-35a5-4ce3-a4e2-c5ff645f439f",
+      "participant_type": "participant",
+      "product_id": "6aa1d480-66e0-4aea-a77e-8cd7b1c45126",
+      "allowed": true,
+      "created_at": "2025-03-22T12:33:41.340489+00:00",
+      "updated_at": "2025-03-22T12:33:41.340489+00:00"
+    },
+    {
+      "id": "0f948a75-a52c-49fb-81e4-c6310c4ccb16",
+      "participant_type": "participant",
+      "product_id": "646b8b47-7e58-4666-92d3-f496761e0ee6",
+      "allowed": true,
+      "created_at": "2025-03-22T12:33:41.340489+00:00",
+      "updated_at": "2025-03-22T12:33:41.340489+00:00"
+    },
+    {
+      "id": "fc3558f0-c74f-4bea-9308-ff9be4e02038",
+      "participant_type": "participant",
+      "product_id": "c0805a9c-fa8c-40e2-80af-4faa08c045cc",
+      "allowed": true,
+      "created_at": "2025-03-22T12:33:41.340489+00:00",
+      "updated_at": "2025-03-22T12:33:41.340489+00:00"
+    },
+    {
+      "id": "e3d48cb0-cd39-4dc1-bf79-48a8f2a73175",
+      "participant_type": "participant",
+      "product_id": "424d32aa-2347-4bbe-abc9-05340717af56",
+      "allowed": true,
+      "created_at": "2025-03-22T12:33:41.340489+00:00",
+      "updated_at": "2025-03-22T12:33:41.340489+00:00"
+    },
+    {
+      "id": "e31117c3-d10d-4628-91a8-f3f39ca7dfa3",
+      "participant_type": "driver",
+      "product_id": "836b64ac-4adc-45a9-b3f5-c105722331db",
+      "allowed": false,
+      "created_at": "2025-03-26T09:09:36.532034+00:00",
+      "updated_at": "2025-03-26T09:09:36.532034+00:00"
+    },
+    {
+      "id": "fc0803d5-d665-4e3e-a6df-34552945b493",
+      "participant_type": "driver",
+      "product_id": "a10cb286-52e4-4313-b1ab-2055b4173934",
+      "allowed": true,
+      "created_at": "2025-03-26T09:09:36.532034+00:00",
+      "updated_at": "2025-03-26T09:09:36.532034+00:00"
+    },
+    {
+      "id": "7af3b759-bb40-48f7-a01d-c124bc713687",
+      "participant_type": "driver",
+      "product_id": "1b71e976-955f-454e-a4fe-4f1834707745",
+      "allowed": false,
+      "created_at": "2025-03-26T09:09:36.532034+00:00",
+      "updated_at": "2025-03-26T09:09:36.532034+00:00"
+    },
+    {
+      "id": "e78f21d9-d196-4ebc-bd08-993c16daa51f",
+      "participant_type": "driver",
+      "product_id": "6aa1d480-66e0-4aea-a77e-8cd7b1c45126",
+      "allowed": true,
+      "created_at": "2025-03-26T09:09:36.532034+00:00",
+      "updated_at": "2025-03-26T09:09:36.532034+00:00"
+    },
+    {
+      "id": "46c5a303-3d99-4c60-afc5-930c3bc4d77d",
+      "participant_type": "driver",
+      "product_id": "646b8b47-7e58-4666-92d3-f496761e0ee6",
+      "allowed": false,
+      "created_at": "2025-03-26T09:09:36.532034+00:00",
+      "updated_at": "2025-03-26T09:09:36.532034+00:00"
+    },
+    {
+      "id": "52eb4d92-c891-4b0f-9dd5-773582bab769",
+      "participant_type": "driver",
+      "product_id": "c0805a9c-fa8c-40e2-80af-4faa08c045cc",
+      "allowed": true,
+      "created_at": "2025-03-26T09:09:36.532034+00:00",
+      "updated_at": "2025-03-26T09:09:36.532034+00:00"
+    },
+    {
+      "id": "669ffddc-a37d-4d06-87a3-0cfc171a05eb",
+      "participant_type": "driver",
+      "product_id": "424d32aa-2347-4bbe-abc9-05340717af56",
+      "allowed": true,
+      "created_at": "2025-03-26T09:09:36.532034+00:00",
+      "updated_at": "2025-03-26T09:09:36.532034+00:00"
+    }
+  ]
+}

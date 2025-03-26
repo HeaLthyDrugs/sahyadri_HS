@@ -1,0 +1,23 @@
+{
+  "metadata": {
+    "table": "staff_types",
+    "count": 2,
+    "timestamp": "2025-03-26T11:12:04.936Z"
+  },
+  "data": [
+    {
+      "id": "86e39f0b-2c75-4aed-bb53-b4f0e133a736",
+      "name": "Contractor",
+      "description": "External contractors or consultants",
+      "created_at": "2025-02-27T06:42:18.974258+00:00",
+      "updated_at": "2025-02-27T07:03:31.063915+00:00"
+    },
+    {
+      "id": "d6f43550-5e3f-4b0e-b282-a1dce162e1fd",
+      "name": "Full time",
+      "description": "Full-time employees working standard hours",
+      "created_at": "2025-02-27T06:42:18.974258+00:00",
+      "updated_at": "2025-02-27T07:03:38.863022+00:00"
+    }
+  ]
+}

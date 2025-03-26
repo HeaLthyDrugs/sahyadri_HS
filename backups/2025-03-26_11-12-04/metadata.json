@@ -1,0 +1,24 @@
+{
+  "timestamp": "2025-03-26T11:12:04.972Z",
+  "tables": [
+    "programs",
+    "packages",
+    "products",
+    "billing_entries",
+    "participants",
+    "staff",
+    "staff_types",
+    "product_rules"
+  ],
+  "counts": {
+    "programs": 15,
+    "packages": 3,
+    "products": 198,
+    "billing_entries": 441,
+    "participants": 982,
+    "staff": 1,
+    "staff_types": 2,
+    "product_rules": 28
+  },
+  "backupType": "structured"
+}
