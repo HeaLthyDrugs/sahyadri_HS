@@ -335,16 +335,34 @@ export default function StaffPage() {
     
     try {
       setIsLoading(true);
-      const { error } = await supabase
+      
+      // First delete all comments associated with this staff member
+      const { error: commentsError } = await supabase
+        .from('staff_comments')
+        .delete()
+        .eq('staff_id', staffToDelete.id);
+
+      if (commentsError) throw commentsError;
+
+      // Then delete all billing entries associated with this staff member
+      const { error: billingError } = await supabase
+        .from('staff_billing_entries')
+        .delete()
+        .eq('staff_id', staffToDelete.id);
+
+      if (billingError) throw billingError;
+
+      // Finally delete the staff member
+      const { error: staffError } = await supabase
         .from('staff')
         .delete()
         .eq('id', staffToDelete.id);
 
-      if (error) throw error;
+      if (staffError) throw staffError;
 
       toast({
         title: "Success",
-        description: "Staff member deleted successfully",
+        description: "Staff member and all associated data deleted successfully",
       });
       setStaff(prev => prev.filter(s => s.id !== staffToDelete.id));
       setIsDeleteModalOpen(false);
@@ -353,7 +371,7 @@ export default function StaffPage() {
       console.error('Error deleting staff:', error);
       toast({
         title: "Error",
-        description: "Failed to delete staff member",
+        description: "Failed to delete staff member and associated data",
         variant: "destructive",
       });
     } finally {

@@ -107,6 +107,7 @@ export async function POST(req: NextRequest) {
             <tr>
               <th>Date</th>
               ${chunk.map(product => `<th>${product.name}</th>`).join('')}
+              <th>Average</th>
             </tr>
           `;
 
@@ -118,6 +119,13 @@ export async function POST(req: NextRequest) {
                 const quantity = reportData[date]?.[product.id] || 0;
                 return `<td>${quantity || '-'}</td>`;
               }).join('')}
+              <td>${(() => {
+                const sum = chunk.reduce((acc, product) => 
+                  acc + (reportData[date]?.[product.id] || 0), 0
+                );
+                const avg = sum / chunk.length;
+                return avg > 0 ? avg.toFixed(1) : '-';
+              })()}</td>
             </tr>
           `).join('');
 
@@ -129,6 +137,15 @@ export async function POST(req: NextRequest) {
                 const total = chunkDates.reduce((sum, date) => sum + (reportData[date]?.[product.id] || 0), 0);
                 return `<td>${total || '-'}</td>`;
               }).join('')}
+              <td>${(() => {
+                const totalSum = chunk.reduce((acc, product) => 
+                  acc + chunkDates.reduce((sum, date) => 
+                    sum + (reportData[date]?.[product.id] || 0), 0
+                  ), 0
+                );
+                const totalAvg = totalSum / (chunk.length * chunkDates.length);
+                return totalAvg > 0 ? totalAvg.toFixed(1) : '-';
+              })()}</td>
             </tr>
           `;
 

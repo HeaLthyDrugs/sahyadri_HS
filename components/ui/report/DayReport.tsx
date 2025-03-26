@@ -672,6 +672,9 @@ const DayReport: React.FC<DayReportProps> = ({ selectedMonth, selectedPackage })
                                   {product.name}
                                 </th>
                               ))}
+                              <th className="px-1.5 py-1 border-b border-r border-gray-200 text-center font-normal text-gray-900 w-[45px]">
+                                Average
+                              </th>
                             </tr>
                           </thead>
                           <tbody className="bg-white">
@@ -693,6 +696,15 @@ const DayReport: React.FC<DayReportProps> = ({ selectedMonth, selectedPackage })
                                     </td>
                                   );
                                 })}
+                                <td className="px-1.5 py-1 border-r border-gray-200 text-center text-gray-900">
+                                  {(() => {
+                                    const sum = productChunk.reduce((acc, product) => 
+                                      acc + (reportData[date]?.[product.id] || 0), 0
+                                    );
+                                    const avg = Math.round(sum / productChunk.length);
+                                    return avg > 0 ? avg : '-';
+                                  })()}
+                                </td>
                               </tr>
                             ))}
                             {/* Total Row */}
@@ -713,6 +725,17 @@ const DayReport: React.FC<DayReportProps> = ({ selectedMonth, selectedPackage })
                                   </td>
                                 );
                               })}
+                              <td className="px-1.5 py-1 border-r border-gray-200 text-center text-amber-900">
+                                {(() => {
+                                  const totalSum = productChunk.reduce((acc, product) => 
+                                    acc + chunkDates.reduce((sum, date) => 
+                                      sum + (reportData[date]?.[product.id] || 0), 0
+                                    ), 0
+                                  );
+                                  const totalAvg = Math.round(totalSum / (productChunk.length * chunkDates.length));
+                                  return totalAvg > 0 ? totalAvg : '-';
+                                })()}
+                              </td>
                             </tr>
                           </tbody>
                         </table>

@@ -1416,12 +1416,19 @@ export default function ReportPage() {
                     className="w-full rounded-md border-gray-300 shadow-sm focus:border-amber-500 focus:ring-amber-500 p-2 border-2"
                   >
                     <option value="">Choose a program</option>
-                    {programs.map((program) => (
-                      <option key={program.id} value={program.id}>
-                        {program.name} ({format(new Date(program.start_date), 'dd/MM/yyyy')} -{' '}
-                        {format(new Date(program.end_date), 'dd/MM/yyyy')})
-                      </option>
-                    ))}
+                    {programs
+                      .sort((a, b) => {
+                        // Extract numbers from program names
+                        const numA = parseInt(a.name.match(/\d+/)?.[0] || '0');
+                        const numB = parseInt(b.name.match(/\d+/)?.[0] || '0');
+                        return numA - numB;
+                      })
+                      .map((program) => (
+                        <option key={program.id} value={program.id}>
+                          {program.name} ({format(new Date(program.start_date), 'dd/MM/yyyy')} -{' '}
+                          {format(new Date(program.end_date), 'dd/MM/yyyy')})
+                        </option>
+                      ))}
                   </select>
                 </div>
                 <div className="space-y-2">
