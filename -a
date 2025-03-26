@@ -1,0 +1,41 @@
+[33mcommit 4fa81b2ecbed14aecbdc2f3985f23fd442d33524[m
+Author: Manish Vishwakarma <122515021+HeaLthyDrugs@users.noreply.github.com>
+Date:   Wed Mar 26 17:01:59 2025 +0530
+
+    backup functionality structured
+
+app/admin/backups/page.tsx
+app/api/backup/check/route.ts
+app/api/backup/route.ts
+backups/2025-03-26_11-06-41/shs-backup-2025-03-26-11-06-41.json
+backups/2025-03-26_11-07-53/shs-backup-2025-03-26-11-07-53.json
+backups/2025-03-26_11-12-04/README.md
+backups/2025-03-26_11-12-04/metadata.json
+backups/2025-03-26_11-12-04/tables/billing_entries.json
+backups/2025-03-26_11-12-04/tables/packages.json
+backups/2025-03-26_11-12-04/tables/participants.json
+backups/2025-03-26_11-12-04/tables/product_rules.json
+backups/2025-03-26_11-12-04/tables/products.json
+backups/2025-03-26_11-12-04/tables/programs.json
+backups/2025-03-26_11-12-04/tables/staff.json
+backups/2025-03-26_11-12-04/tables/staff_types.json
+backups/2025-03-26_15-27-40/billing_entries.json
+backups/2025-03-26_15-27-40/metadata.json
+backups/2025-03-26_15-27-40/products.json
+backups/2025-03-26_15-27-40/programs.json
+backups/2025-03-26_15-27-40/staff.json
+components/admin/BackupDashboard.tsx
+components/admin/pages/billing/entries.tsx
+components/ui/card.tsx
+components/ui/use-toast.ts
+docs/backup-setup.md
+package-lock.json
+package.json
+scripts/backup.ts
+service-account-key.json
+utils/backup/checkConfig.ts
+utils/backup/driveUploader.ts
+utils/backup/googleDriveConfig.ts
+utils/backup/index.ts
+utils/backup/scheduler.ts
+utils/backup/supabaseExporter.ts
