@@ -18,6 +18,8 @@ import { toast } from "react-hot-toast";
 import { format, startOfMonth, endOfMonth } from 'date-fns';
 import { parse, unparse } from 'papaparse';
 import { supabase } from "@/lib/supabase";
+import Papa from 'papaparse';
+import * as XLSX from 'xlsx';
 
 interface Participant {
   id: string;
@@ -586,84 +588,280 @@ export function ParticipantsPage() {
     event.target.value = '';
     setIsImporting(true);
 
-    const extractTableData = (htmlContent: string): ImportRow[] => {
-      const parser = new DOMParser();
-      const doc = parser.parseFromString(htmlContent, 'text/html');
-      const rows = doc.querySelectorAll('tr');
-      const data: ImportRow[] = [];
-
-      for (let i = 1; i < rows.length; i++) {
-        const cells = rows[i].querySelectorAll('td');
-        if (cells.length >= 6) {
-          const rowData: ImportRow = {
-            'No.': cells[0].textContent?.trim() || null,
-            'Attendee Name': cells[1].textContent?.trim() || null,
-            'Security Check-In': cells[2].textContent?.trim() || null,
-            'Reception Check-In': cells[3].textContent?.trim() || null,
-            'Reception Check-Out': cells[4].textContent?.trim() || null,
-            'Security Check-Out': cells[5].textContent?.trim() || null,
-          };
-          data.push(rowData);
-        }
-      }
-      return data;
-    };
-
     const reader = new FileReader();
     reader.onload = async (e) => {
       try {
-        const content = e.target?.result as string;
-        const tableData = extractTableData(content);
-        const importData = tableData
-          .map((row: ImportRow) => {
+        const content = e.target?.result;
+        let importData: Partial<Participant>[] = [];
+        
+        // Handle Excel files (.xls, .xlsx)
+        if (file.name.endsWith('.xls') || file.name.endsWith('.xlsx')) {
+          try {
+            // Parse Excel binary data
+            const data = new Uint8Array(content as ArrayBuffer);
+            const workbook = XLSX.read(data, { type: 'array' });
+            
+            // Get the first sheet
+            const firstSheetName = workbook.SheetNames[0];
+            const worksheet = workbook.Sheets[firstSheetName];
+            
+            // Convert to JSON
+            const jsonData = XLSX.utils.sheet_to_json(worksheet);
+            
+            if (!jsonData || jsonData.length === 0) {
+              throw new Error('No valid data found in Excel file');
+            }
+            
+            console.log('Parsed Excel data:', jsonData);
+            
+            // Map the Excel data to our participant format
+            importData = (jsonData as Record<string, any>[])
+              .map((row: Record<string, any>) => {
+                try {
+                  // Extract attendee name - try different possible column names
+                  const attendeeName = 
+                    row['Attendee Name'] || 
+                    row['Name'] || 
+                    row['Attendee'] || 
+                    row['Full Name'] || 
+                    '';
+                  
+                  // Extract check-in/out times - try different possible column names
+                  const receptionCheckin = formatExcelDate(
+                    row['Reception Check-In'] || 
+                    row['Check In'] || 
+                    row['Check-In'] || 
+                    row['Reception Check In'] || 
+                    ''
+                  );
+                  
+                  const receptionCheckout = formatExcelDate(
+                    row['Reception Check-Out'] || 
+                    row['Check Out'] || 
+                    row['Check-Out'] || 
+                    row['Reception Check Out'] || 
+                    ''
+                  );
+                  
+                  const securityCheckin = formatExcelDate(
+                    row['Security Check-In'] || 
+                    row['Security In'] || 
+                    row['Security Check In'] || 
+                    ''
+                  );
+                  
+                  const securityCheckout = formatExcelDate(
+                    row['Security Check-Out'] || 
+                    row['Security Out'] || 
+                    row['Security Check Out'] || 
+                    ''
+                  );
+
+                  let hasDateError = false;
+                  let dateErrorMessage = '';
+
+                  if (receptionCheckin && receptionCheckout) {
+                    const validation = validateDates(receptionCheckin, receptionCheckout);
+                    hasDateError = !validation.isValid;
+                    dateErrorMessage = validation.message;
+                  }
+
+                  const participantData: Partial<Participant> = {
+                    attendee_name: attendeeName || 'Unknown Participant',
+                    program_id: selectedProgramId,
+                    type: 'participant',
+                    has_date_error: hasDateError,
+                    date_error_message: dateErrorMessage
+                  };
+
+                  if (receptionCheckin) {
+                    participantData.reception_checkin = receptionCheckin;
+                  }
+                  if (receptionCheckout) {
+                    participantData.reception_checkout = receptionCheckout;
+                  }
+                  if (securityCheckin) {
+                    participantData.security_checkin = securityCheckin;
+                  }
+                  if (securityCheckout) {
+                    participantData.security_checkout = securityCheckout;
+                  }
+
+                  return participantData;
+                } catch (error) {
+                  console.error('Error processing Excel row:', row, error);
+                  return null;
+                }
+              })
+              .filter((item: Partial<Participant> | null): item is Partial<Participant> => item !== null);
+          } catch (excelError: any) {
+            console.error('Error processing Excel file:', excelError);
+            throw new Error(`Failed to parse Excel file: ${excelError.message}`);
+          }
+        }
+        // Original CSV handling logic
+        else {
+          const textContent = content as string;
+          // First try to parse as CSV directly
+          const parsedData = parse(textContent, { header: true });
+          
+          // Check if it's a CSV file with expected headers
+          if (parsedData.data && parsedData.data.length > 0 && 
+              (parsedData.data[0] as Record<string, string>)['Attendee Name'] !== undefined || 
+              (parsedData.data[0] as Record<string, string>)['Name'] !== undefined) {
+            
+            importData = (parsedData.data as Record<string, string>[])
+              .map((row: Record<string, string>) => {
+                try {
+                  const attendeeName = row['Attendee Name'] || row['Name'] || '';
+                  
+                  // Try various possible column names for flexibility
+                  const receptionCheckin = formatExcelDate(
+                    row['Reception Check-In'] || row['Check In'] || row['Check-In'] || ''
+                  );
+                  const receptionCheckout = formatExcelDate(
+                    row['Reception Check-Out'] || row['Check Out'] || row['Check-Out'] || ''
+                  );
+                  const securityCheckin = formatExcelDate(
+                    row['Security Check-In'] || row['Security In'] || ''
+                  );
+                  const securityCheckout = formatExcelDate(
+                    row['Security Check-Out'] || row['Security Out'] || ''
+                  );
+
+                  let hasDateError = false;
+                  let dateErrorMessage = '';
+
+                  if (receptionCheckin && receptionCheckout) {
+                    const validation = validateDates(receptionCheckin, receptionCheckout);
+                    hasDateError = !validation.isValid;
+                    dateErrorMessage = validation.message;
+                  }
+
+                  const participantData: Partial<Participant> = {
+                    attendee_name: attendeeName || 'Unknown Participant',
+                    program_id: selectedProgramId,
+                    type: 'participant',
+                    has_date_error: hasDateError,
+                    date_error_message: dateErrorMessage
+                  };
+
+                  if (receptionCheckin) {
+                    participantData.reception_checkin = receptionCheckin;
+                  }
+                  if (receptionCheckout) {
+                    participantData.reception_checkout = receptionCheckout;
+                  }
+                  if (securityCheckin) {
+                    participantData.security_checkin = securityCheckin;
+                  }
+                  if (securityCheckout) {
+                    participantData.security_checkout = securityCheckout;
+                  }
+
+                  return participantData;
+                } catch (error) {
+                  console.error('Error processing row:', row, error);
+                  return null;
+                }
+              })
+              .filter((item: Partial<Participant> | null): item is Partial<Participant> => item !== null);
+          }
+          // Fallback to HTML table extraction if CSV parsing didn't work
+          else {
             try {
-              const attendeeName = row['Attendee Name']?.trim();
-              const receptionCheckin = formatExcelDate(row['Reception Check-In'] || '');
-              const receptionCheckout = formatExcelDate(row['Reception Check-Out'] || '');
-              const securityCheckin = formatExcelDate(row['Security Check-In'] || '');
-              const securityCheckout = formatExcelDate(row['Security Check-Out'] || '');
+              // Handle HTML table data as before but with more robust error handling
+              const extractTableData = (htmlContent: string): ImportRow[] => {
+                try {
+                  // This runs in browser context
+                  const parser = new DOMParser();
+                  const doc = parser.parseFromString(htmlContent, 'text/html');
+                  const rows = doc.querySelectorAll('tr');
+                  const data: ImportRow[] = [];
 
-              let hasDateError = false;
-              let dateErrorMessage = '';
-
-              if (receptionCheckin && receptionCheckout) {
-                const validation = validateDates(receptionCheckin, receptionCheckout);
-                hasDateError = !validation.isValid;
-                dateErrorMessage = validation.message;
-              }
-
-              const participantData: Partial<Participant> = {
-                attendee_name: attendeeName || 'Unknown Participant',
-                program_id: selectedProgramId,
-                type: 'participant',
-                has_date_error: hasDateError,
-                date_error_message: dateErrorMessage
+                  for (let i = 1; i < rows.length; i++) {
+                    const cells = rows[i].querySelectorAll('td');
+                    if (cells.length >= 6) {
+                      const rowData: ImportRow = {
+                        'No.': cells[0].textContent?.trim() || null,
+                        'Attendee Name': cells[1].textContent?.trim() || null,
+                        'Security Check-In': cells[2].textContent?.trim() || null,
+                        'Reception Check-In': cells[3].textContent?.trim() || null,
+                        'Reception Check-Out': cells[4].textContent?.trim() || null,
+                        'Security Check-Out': cells[5].textContent?.trim() || null,
+                      };
+                      data.push(rowData);
+                    }
+                  }
+                  return data;
+                } catch (error) {
+                  console.error('Error parsing HTML table:', error);
+                  return [];
+                }
               };
 
-              if (receptionCheckin) {
-                participantData.reception_checkin = receptionCheckin;
-              }
-              if (receptionCheckout) {
-                participantData.reception_checkout = receptionCheckout;
-              }
-              if (securityCheckin) {
-                participantData.security_checkin = securityCheckin;
-              }
-              if (securityCheckout) {
-                participantData.security_checkout = securityCheckout;
-              }
+              const tableData = extractTableData(textContent);
+              
+              importData = tableData
+                .map((row: ImportRow) => {
+                  try {
+                    const attendeeName = row['Attendee Name']?.trim();
+                    const receptionCheckin = formatExcelDate(row['Reception Check-In'] || '');
+                    const receptionCheckout = formatExcelDate(row['Reception Check-Out'] || '');
+                    const securityCheckin = formatExcelDate(row['Security Check-In'] || '');
+                    const securityCheckout = formatExcelDate(row['Security Check-Out'] || '');
 
-              return participantData;
-            } catch (error) {
-              console.error('Error processing row:', row, error);
-              return null;
+                    let hasDateError = false;
+                    let dateErrorMessage = '';
+
+                    if (receptionCheckin && receptionCheckout) {
+                      const validation = validateDates(receptionCheckin, receptionCheckout);
+                      hasDateError = !validation.isValid;
+                      dateErrorMessage = validation.message;
+                    }
+
+                    const participantData: Partial<Participant> = {
+                      attendee_name: attendeeName || 'Unknown Participant',
+                      program_id: selectedProgramId,
+                      type: 'participant',
+                      has_date_error: hasDateError,
+                      date_error_message: dateErrorMessage
+                    };
+
+                    if (receptionCheckin) {
+                      participantData.reception_checkin = receptionCheckin;
+                    }
+                    if (receptionCheckout) {
+                      participantData.reception_checkout = receptionCheckout;
+                    }
+                    if (securityCheckin) {
+                      participantData.security_checkin = securityCheckin;
+                    }
+                    if (securityCheckout) {
+                      participantData.security_checkout = securityCheckout;
+                    }
+
+                    return participantData;
+                  } catch (error) {
+                    console.error('Error processing row:', row, error);
+                    return null;
+                  }
+                })
+                .filter((item: Partial<Participant> | null): item is Partial<Participant> => item !== null);
+            } catch (htmlError) {
+              console.error('Error processing HTML content:', htmlError);
+              toast.error('Could not parse file format. Please check the file and try again.');
+              setIsImporting(false);
+              return;
             }
-          })
-          .filter((item: Partial<Participant> | null): item is Partial<Participant> => item !== null);
+          }
+        }
 
         if (importData.length === 0) {
           throw new Error('No valid data found in file');
         }
+
+        console.log('Processed data ready for import:', importData.length, 'records');
 
         const chunkSize = 20;
         const chunks = [];
@@ -710,7 +908,12 @@ export function ParticipantsPage() {
       }
     };
 
-    reader.readAsText(file);
+    // Use different FileReader method based on file type
+    if (file.name.endsWith('.xls') || file.name.endsWith('.xlsx')) {
+      reader.readAsArrayBuffer(file); // For Excel files
+    } else {
+      reader.readAsText(file); // For CSV and other text files
+    }
   };
 
   const sortParticipantsByType = (a: Participant, b: Participant) => {

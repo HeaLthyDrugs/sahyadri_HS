@@ -1,0 +1,83 @@
+<style> .textmode { } </style><div>
+	<table class="datalist tblsp" cellspacing="0" rules="all" border="1" id="ContentPlaceHolder1_CheckInOutGridView" style="border-collapse:collapse;">
+		<tr>
+			<th scope="col">No.</th><th align="center" scope="col" style="width:150px;">Attendee Name</th><th align="center" scope="col" style="width:125px;">Security Check-In</th><th align="center" scope="col" style="width:125px;">Reception Check-In</th><th align="center" scope="col" style="width:125px;">Reception Check-Out</th><th align="center" scope="col" style="width:125px;">Security Check-Out</th>
+		</tr><tr>
+			<td class="textmode">
+                            1
+                        </td><td class="textmode">Ashish Kauthekar</td><td class="textmode">&nbsp;</td><td class="textmode">07/04/2025  8:30AM</td><td class="textmode">08/04/2025  3:00PM</td><td class="textmode">&nbsp;</td>
+		</tr><tr>
+			<td class="textmode">
+                            2
+                        </td><td class="textmode">Balwant Bembalkar</td><td class="textmode">&nbsp;</td><td class="textmode">07/04/2025  8:30AM</td><td class="textmode">08/04/2025  2:55PM</td><td class="textmode">&nbsp;</td>
+		</tr><tr>
+			<td class="textmode">
+                            3
+                        </td><td class="textmode">Gaurav Heda</td><td class="textmode">&nbsp;</td><td class="textmode">07/04/2025  8:30AM</td><td class="textmode">08/04/2025  2:55PM</td><td class="textmode">&nbsp;</td>
+		</tr><tr>
+			<td class="textmode">
+                            4
+                        </td><td class="textmode">Kaustubh Kulkarni</td><td class="textmode">&nbsp;</td><td class="textmode">07/04/2025  8:30AM</td><td class="textmode">08/04/2025  2:55PM</td><td class="textmode">&nbsp;</td>
+		</tr><tr>
+			<td class="textmode">
+                            5
+                        </td><td class="textmode">Manoj Munjal</td><td class="textmode">&nbsp;</td><td class="textmode">07/04/2025  8:30AM</td><td class="textmode">08/04/2025  2:55PM</td><td class="textmode">&nbsp;</td>
+		</tr><tr>
+			<td class="textmode">
+                            6
+                        </td><td class="textmode">Mayur Lahade</td><td class="textmode">&nbsp;</td><td class="textmode">07/04/2025  8:30AM</td><td class="textmode">08/04/2025  2:55PM</td><td class="textmode">&nbsp;</td>
+		</tr><tr>
+			<td class="textmode">
+                            7
+                        </td><td class="textmode">Narayana Prakash</td><td class="textmode">&nbsp;</td><td class="textmode">07/04/2025  8:30AM</td><td class="textmode">08/04/2025  2:55PM</td><td class="textmode">&nbsp;</td>
+		</tr><tr>
+			<td class="textmode">
+                            8
+                        </td><td class="textmode">Pramod Godase</td><td class="textmode">&nbsp;</td><td class="textmode">07/04/2025  8:30AM</td><td class="textmode">08/04/2025  2:55PM</td><td class="textmode">&nbsp;</td>
+		</tr><tr>
+			<td class="textmode">
+                            9
+                        </td><td class="textmode">Shital Kawale</td><td class="textmode">&nbsp;</td><td class="textmode">07/04/2025  8:30AM</td><td class="textmode">08/04/2025  2:55PM</td><td class="textmode">&nbsp;</td>
+		</tr><tr>
+			<td class="textmode">
+                            10
+                        </td><td class="textmode">Poonam Pathak</td><td class="textmode">&nbsp;</td><td class="textmode">07/04/2025  7:45AM</td><td class="textmode">08/04/2025  2:55PM</td><td class="textmode">&nbsp;</td>
+		</tr><tr>
+			<td class="textmode">
+                            11
+                        </td><td class="textmode">Ranjith Kanna</td><td class="textmode">&nbsp;</td><td class="textmode">07/04/2025  7:45AM</td><td class="textmode">08/04/2025  2:55PM</td><td class="textmode">&nbsp;</td>
+		</tr><tr>
+			<td class="textmode">
+                            12
+                        </td><td class="textmode">Sachin Deshmukh</td><td class="textmode">&nbsp;</td><td class="textmode">07/04/2025  7:45AM</td><td class="textmode">08/04/2025  2:55PM</td><td class="textmode">&nbsp;</td>
+		</tr><tr>
+			<td class="textmode">
+                            13
+                        </td><td class="textmode">Shrikant Biradar</td><td class="textmode">&nbsp;</td><td class="textmode">07/04/2025  7:45AM</td><td class="textmode">08/04/2025  2:55PM</td><td class="textmode">&nbsp;</td>
+		</tr><tr>
+			<td class="textmode">
+                            14
+                        </td><td class="textmode">Sudhir Wehale</td><td class="textmode">&nbsp;</td><td class="textmode">07/04/2025  7:45AM</td><td class="textmode">08/04/2025  2:55PM</td><td class="textmode">&nbsp;</td>
+		</tr><tr>
+			<td class="textmode">
+                            15
+                        </td><td class="textmode">Suvarna Gore</td><td class="textmode">&nbsp;</td><td class="textmode">07/04/2025  7:45AM</td><td class="textmode">08/04/2025  2:55PM</td><td class="textmode">&nbsp;</td>
+		</tr><tr>
+			<td class="textmode">
+                            16
+                        </td><td class="textmode">Ashish Bhalla</td><td class="textmode">&nbsp;</td><td class="textmode">07/04/2025  8:55AM</td><td class="textmode">08/04/2025  2:55PM</td><td class="textmode">&nbsp;</td>
+		</tr><tr>
+			<td class="textmode">
+                            17
+                        </td><td class="textmode">Sanmaya Patro</td><td class="textmode">&nbsp;</td><td class="textmode">07/04/2025  8:15AM</td><td class="textmode">08/04/2025  2:55PM</td><td class="textmode">&nbsp;</td>
+		</tr><tr>
+			<td class="textmode">
+                            18
+                        </td><td class="textmode">Felix Frances</td><td class="textmode">&nbsp;</td><td class="textmode">07/04/2025  8:35AM</td><td class="textmode">08/04/2025  3:35PM</td><td class="textmode">&nbsp;</td>
+		</tr><tr>
+			<td class="textmode">
+                            19
+                        </td><td class="textmode">Vijay Minajgi</td><td class="textmode">&nbsp;</td><td class="textmode">&nbsp;</td><td class="textmode">&nbsp;</td><td class="textmode">&nbsp;</td>
+		</tr>
+	</table>
+</div>
