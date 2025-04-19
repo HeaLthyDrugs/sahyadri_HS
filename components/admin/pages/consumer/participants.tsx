@@ -171,6 +171,44 @@ export function ParticipantsPage() {
     }
   };
 
+  const fetchAllPrograms = async () => {
+    setIsLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('programs')
+        .select('id, name, customer_name, start_date, end_date')
+        .order('name', { ascending: true });
+
+      if (error) throw error;
+
+      // Sort programs by extracting program numbers from names
+      const sortedPrograms = data?.sort((a, b) => {
+        // Extract numbers from program names
+        const aMatch = a.name.match(/\d+/);
+        const bMatch = b.name.match(/\d+/);
+        
+        // If both have numbers, compare them numerically
+        if (aMatch && bMatch) {
+          return parseInt(aMatch[0], 10) - parseInt(bMatch[0], 10);
+        }
+        // If only one has a number, prioritize the one with a number
+        if (aMatch) return -1;
+        if (bMatch) return 1;
+        // Fallback to alphabetical sorting
+        return a.name.localeCompare(b.name);
+      });
+
+      setPrograms(sortedPrograms || []);
+      // Reset program selection when month is cleared
+      setSelectedProgramId('all');
+    } catch (error) {
+      console.error('Error fetching all programs:', error);
+      toast.error('Failed to fetch programs');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const fetchParticipants = async () => {
     try {
       let query = supabase
@@ -193,29 +231,36 @@ export function ParticipantsPage() {
       }
       // Only apply additional month filtering if a month is selected
       else if (selectedMonth && selectedMonth.trim() !== '') {
-        const monthDate = new Date(selectedMonth);
-        if (!isNaN(monthDate.getTime())) {
-          const monthStart = startOfMonth(monthDate);
-          const monthEnd = endOfMonth(monthDate);
+        try {
+          const monthDate = new Date(selectedMonth);
+          if (!isNaN(monthDate.getTime())) {
+            const monthStart = startOfMonth(monthDate);
+            const monthEnd = endOfMonth(monthDate);
 
-          const { data: monthPrograms, error: programError } = await supabase
-            .from('programs')
-            .select('id')
-            .lte('start_date', monthEnd.toISOString())
-            .gte('end_date', monthStart.toISOString());
+            const { data: monthPrograms, error: programError } = await supabase
+              .from('programs')
+              .select('id')
+              .or(
+                `start_date.lte.${monthEnd.toISOString()},end_date.gte.${monthStart.toISOString()}`
+              );
 
-          if (programError) throw programError;
+            if (programError) throw programError;
 
-          const programIds = monthPrograms?.map(p => p.id) || [];
-          if (programIds.length > 0) {
-            query = query.in('program_id', programIds);
+            const programIds = monthPrograms?.map(p => p.id) || [];
+            if (programIds.length > 0) {
+              query = query.in('program_id', programIds);
+            }
           }
+        } catch (error) {
+          console.error('Error processing month date:', error);
+          // Continue with unfiltered query if there's an error with the date
         }
       }
 
       const { data, error } = await query;
       if (error) throw error;
 
+      // Process the fetched data
       const transformedData = (data || []).map(participant => {
         const transformed = {
           ...participant,
@@ -261,42 +306,48 @@ export function ParticipantsPage() {
         return transformed;
       });
 
-      // Only filter by month if a month is selected
+      // Only filter by month date range if a month is selected
       if (selectedMonth && selectedMonth.trim() !== '') {
-        const monthDate = new Date(selectedMonth);
-        if (!isNaN(monthDate.getTime())) {
-          const monthStart = startOfMonth(monthDate);
-          const monthEnd = endOfMonth(monthDate);
+        try {
+          const monthDate = new Date(selectedMonth);
+          if (!isNaN(monthDate.getTime())) {
+            const monthStart = startOfMonth(monthDate);
+            const monthEnd = endOfMonth(monthDate);
 
-          const filteredData = transformedData.filter(participant => {
-            if (!participant.reception_checkin || !participant.reception_checkout) {
-              return true;
-            }
-
-            try {
-              const checkinDate = new Date(participant.reception_checkin);
-              const checkoutDate = new Date(participant.reception_checkout);
-
-              if (isNaN(checkinDate.getTime()) || isNaN(checkoutDate.getTime())) {
+            const filteredData = transformedData.filter(participant => {
+              if (!participant.reception_checkin || !participant.reception_checkout) {
                 return true;
               }
 
-              return (
-                (checkinDate >= monthStart && checkinDate <= monthEnd) ||
-                (checkoutDate >= monthStart && checkoutDate <= monthEnd) ||
-                (checkinDate <= monthEnd && checkoutDate >= monthStart)
-              );
-            } catch (error) {
-              console.error('Error filtering by date:', error);
-              return true;
-            }
-          });
+              try {
+                const checkinDate = new Date(participant.reception_checkin);
+                const checkoutDate = new Date(participant.reception_checkout);
 
-          setParticipants(filteredData);
-        } else {
+                if (isNaN(checkinDate.getTime()) || isNaN(checkoutDate.getTime())) {
+                  return true;
+                }
+
+                return (
+                  (checkinDate >= monthStart && checkinDate <= monthEnd) ||
+                  (checkoutDate >= monthStart && checkoutDate <= monthEnd) ||
+                  (checkinDate <= monthEnd && checkoutDate >= monthStart)
+                );
+              } catch (error) {
+                console.error('Error filtering by date:', error);
+                return true;
+              }
+            });
+
+            setParticipants(filteredData);
+          } else {
+            setParticipants(transformedData);
+          }
+        } catch (error) {
+          console.error('Error filtering by month:', error);
           setParticipants(transformedData);
         }
       } else {
+        // If no month selected, use all participants
         setParticipants(transformedData);
       }
     } catch (error) {
@@ -308,6 +359,9 @@ export function ParticipantsPage() {
   useEffect(() => {
     if (selectedMonth) {
       fetchPrograms();
+    } else {
+      // Fetch all programs when month is cleared
+      fetchAllPrograms();
     }
   }, [selectedMonth]);
 
@@ -766,37 +820,84 @@ export function ParticipantsPage() {
     try {
       setIsLoading(true);
 
-      const monthDate = new Date(selectedMonth);
-      const monthStart = startOfMonth(monthDate);
-      const monthEnd = endOfMonth(monthDate);
-
-      let query = supabase
-        .from('participants')
-        .delete();
+      let deleteQuery;
 
       if (selectedProgramId !== 'all') {
-        query = query.eq('program_id', selectedProgramId);
+        // Delete by program
+        deleteQuery = supabase
+          .from('participants')
+          .delete()
+          .eq('program_id', selectedProgramId);
+      } else if (selectedMonth && selectedMonth.trim() !== '') {
+        try {
+          // Delete by month
+          const monthDate = new Date(selectedMonth);
+          if (!isNaN(monthDate.getTime())) {
+            const monthStart = startOfMonth(monthDate);
+            const monthEnd = endOfMonth(monthDate);
+
+            const { data: programsInMonth } = await supabase
+              .from('programs')
+              .select('id')
+              .or(
+                `start_date.lte.${monthEnd.toISOString()},end_date.gte.${monthStart.toISOString()}`
+              );
+
+            const programIds = programsInMonth?.map(p => p.id) || [];
+            if (programIds.length > 0) {
+              deleteQuery = supabase
+                .from('participants')
+                .delete()
+                .in('program_id', programIds);
+            } else {
+              // If no programs in month, use date-based filtering as fallback
+              deleteQuery = supabase
+                .from('participants')
+                .delete()
+                .or(
+                  `reception_checkin.gte.${monthStart.toISOString()},reception_checkin.lte.${monthEnd.toISOString()},` +
+                  `reception_checkout.gte.${monthStart.toISOString()},reception_checkout.lte.${monthEnd.toISOString()}`
+                );
+            }
+          } else {
+            throw new Error('Invalid month selection');
+          }
+        } catch (error) {
+          console.error('Error processing month for deletion:', error);
+          throw new Error('Invalid month selection');
+        }
       } else {
-        query = query.or(
-          `and(reception_checkin.gte.${monthStart.toISOString()},reception_checkin.lte.${monthEnd.toISOString()}),` +
-          `and(reception_checkout.gte.${monthStart.toISOString()},reception_checkout.lte.${monthEnd.toISOString()}),` +
-          `and(reception_checkin.lte.${monthEnd.toISOString()},reception_checkout.gte.${monthStart.toISOString()})`
+        // Confirm deletion of all participants
+        const confirmAll = window.confirm(
+          "Are you sure you want to delete ALL participants across ALL programs? This action cannot be undone."
         );
+        if (!confirmAll) {
+          setIsLoading(false);
+          setIsDeleteAllModalOpen(false);
+          return;
+        }
+        
+        deleteQuery = supabase.from('participants').delete();
       }
 
-      const { error } = await query;
+      const { error } = await deleteQuery;
 
       if (error) throw error;
 
-      fetchParticipants();
-      toast.success(selectedProgramId === 'all'
-        ? `Successfully deleted all participants and their billing entries for ${format(new Date(selectedMonth), 'MMMM yyyy')}`
-        : `Successfully deleted all participants and their billing entries from ${programs.find(p => p.id === selectedProgramId)?.name}`
+      await fetchParticipants();
+      
+      toast.success(
+        selectedProgramId !== 'all'
+          ? `Successfully deleted all participants from ${programs.find(p => p.id === selectedProgramId)?.name}`
+          : selectedMonth
+            ? `Successfully deleted all participants for ${format(new Date(selectedMonth), 'MMMM yyyy')}`
+            : 'Successfully deleted all participants'
       );
+      
       setIsDeleteAllModalOpen(false);
     } catch (error) {
       console.error('Error deleting participants:', error);
-      toast.error('Failed to delete participants');
+      toast.error('Failed to delete participants: ' + (error instanceof Error ? error.message : 'Unknown error'));
     } finally {
       setIsLoading(false);
     }
@@ -937,7 +1038,15 @@ export function ParticipantsPage() {
               />
               <label
                 htmlFor="csv-upload"
-                className="flex items-center gap-2 px-3 py-2 text-amber-600 bg-amber-50 rounded-lg hover:bg-amber-100 transition-colors cursor-pointer text-sm"
+                className={`flex items-center gap-2 px-3 py-2 text-amber-600 ${
+                  selectedProgramId === 'all' ? 'bg-amber-50/50 cursor-not-allowed opacity-70' : 'bg-amber-50 hover:bg-amber-100 cursor-pointer'
+                } rounded-lg transition-colors text-sm`}
+                onClick={(e) => {
+                  if (selectedProgramId === 'all') {
+                    e.preventDefault();
+                    toast.error('Please select a specific program before importing participants');
+                  }
+                }}
               >
                 <RiDownloadLine className="w-4 h-4" />
                 Import
@@ -988,13 +1097,23 @@ export function ParticipantsPage() {
             <input
               type="month"
               value={selectedMonth}
-              onChange={(e) => setSelectedMonth(e.target.value)}
+              onChange={(e) => {
+                const value = e.target.value;
+                setSelectedMonth(value);
+                // If month is cleared, also reset program selection
+                if (!value || value.trim() === '') {
+                  setSelectedProgramId('all');
+                }
+              }}
               className="border-none focus:ring-0 text-sm"
               placeholder="All months"
             />
             {selectedMonth && (
               <button
-                onClick={() => setSelectedMonth('')}
+                onClick={() => {
+                  setSelectedMonth('');
+                  setSelectedProgramId('all');
+                }}
                 className="text-gray-400 hover:text-gray-600"
               >
                 <RiCloseLine className="w-4 h-4" />
