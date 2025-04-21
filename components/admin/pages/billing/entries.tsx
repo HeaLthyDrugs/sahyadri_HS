@@ -1147,6 +1147,46 @@ export function BillingEntriesPage() {
     return compareDate < programStart || compareDate > programEnd;
   };
 
+  // Add this function to check if a column should be shown (has non-zero values)
+  const shouldShowColumn = (date: Date): boolean => {
+    const dateStr = format(date, 'yyyy-MM-dd');
+    // If we don't have entry data for this date, don't show the column
+    if (!entryData[dateStr]) return false;
+    
+    // Check if any product has a value greater than 0 for this date
+    return Object.values(entryData[dateStr]).some(value => value > 0);
+  };
+
+  // Add this function to filter the date range to only dates with data
+  const getFilteredDateRange = (): Date[] => {
+    // If no date range, return empty array
+    if (!dateRange.length) return [];
+    
+    // For dates within program range, always show them
+    const program = programs.find(p => p.id === selectedProgram);
+    if (!program) return dateRange;
+    
+    const programStart = new Date(program.start_date);
+    programStart.setHours(0, 0, 0, 0);
+    
+    const programEnd = new Date(program.end_date);
+    programEnd.setHours(23, 59, 59, 999);
+    
+    // Filter the date range
+    return dateRange.filter(date => {
+      const compareDate = new Date(date);
+      compareDate.setHours(0, 0, 0, 0);
+      
+      // If date is within program range, always show it
+      if (compareDate >= programStart && compareDate <= programEnd) {
+        return true;
+      }
+      
+      // For extra dates, only show if they have non-zero values
+      return shouldShowColumn(date);
+    });
+  };
+
   return (
     <div className={`${isFullScreenMode ? 'fixed inset-0 bg-white z-50' : 'p-2 sm:p-4'}`}>
       {/* Toggle Full Screen and Save Button Container */}
@@ -1274,7 +1314,7 @@ export function BillingEntriesPage() {
                       >
                         <div className="truncate p-2">Product Name</div>
                       </th>
-                      {dateRange.map(date => {
+                      {getFilteredDateRange().map(date => {
                         // Determine if this is the first date of a month
                         const isFirstOfMonth = date.getDate() === 1;
                         // Get month name for the first date of each month
@@ -1328,7 +1368,7 @@ export function BillingEntriesPage() {
                               {product.name}
                             </div>
                           </td>
-                          {dateRange.map((date, colIndex) => {
+                          {getFilteredDateRange().map((date, colIndex) => {
                             const dateStr = format(date, 'yyyy-MM-dd');
                             // Check if date is outside program duration
                             const program = programs.find(p => p.id === selectedProgram);

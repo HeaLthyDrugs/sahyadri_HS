@@ -31,6 +31,8 @@ interface Participant {
   reception_checkout: string;
   security_checkout?: string;
   created_at: string;
+  actual_arrival_date?: string;
+  actual_departure_date?: string;
   type: 'participant' | 'guest' | 'other' | 'driver';
   has_date_error?: boolean;
   date_error_message?: string;
@@ -216,8 +218,20 @@ export function ParticipantsPage() {
       let query = supabase
         .from('participants')
         .select(`
-          *,
-          program:program_id (
+          id,
+          program_id,
+          attendee_name,
+          security_checkin,
+          reception_checkin,
+          reception_checkout,
+          security_checkout,
+          created_at,
+          actual_arrival_date,
+          actual_departure_date,
+          type,
+          has_date_error,
+          date_error_message,
+          program:programs(
             id,
             name,
             customer_name,
@@ -264,9 +278,27 @@ export function ParticipantsPage() {
 
       // Process the fetched data
       const transformedData = (data || []).map(participant => {
-        const transformed = {
-          ...participant,
-          program: participant.program
+        // Extract the program from the array if it exists
+        const programData = participant.program && Array.isArray(participant.program) && participant.program.length > 0 
+          ? participant.program[0] 
+          : participant.program || null;
+        
+        const transformed: Participant = {
+          id: participant.id,
+          program_id: participant.program_id,
+          attendee_name: participant.attendee_name,
+          security_checkin: participant.security_checkin,
+          reception_checkin: participant.reception_checkin,
+          reception_checkout: participant.reception_checkout,
+          security_checkout: participant.security_checkout,
+          created_at: participant.created_at,
+          actual_arrival_date: participant.actual_arrival_date,
+          actual_departure_date: participant.actual_departure_date,
+          type: participant.type,
+          has_date_error: participant.has_date_error || false,
+          date_error_message: participant.date_error_message,
+          program: programData as Program,
+          attendance_status: []
         };
 
         try {
@@ -875,7 +907,8 @@ export function ParticipantsPage() {
           try {
             const { error } = await supabase
               .from('participants')
-              .insert(chunk);
+              .insert(chunk)
+              .select();  // Add this line to force explicit selection
 
             if (error) {
               console.error('Chunk insert error:', error);
