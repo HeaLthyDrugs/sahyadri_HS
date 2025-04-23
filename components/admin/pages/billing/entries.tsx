@@ -637,10 +637,39 @@ export function BillingEntriesPage() {
         dateRange: dateRange.map(d => format(d, 'yyyy-MM-dd'))
       });
 
+      // Check if there are any participants in this program first
+      const { data: programParticipants, error: participantsError } = await supabase
+        .from('participants')
+        .select('id, reception_checkin, reception_checkout')
+        .eq('program_id', selectedProgram)
+        .not('reception_checkin', 'is', null)
+        .not('reception_checkout', 'is', null);
+        
+      if (participantsError) throw participantsError;
+      
       // Get the full date range for the program
       const startDate = format(dateRange[0], 'yyyy-MM-dd');
       const endDate = format(dateRange[dateRange.length - 1], 'yyyy-MM-dd');
 
+      // Initialize entry data structure with all zeros
+      const newEntryData: EntryData = {};
+      dateRange.forEach(date => {
+        const dateStr = format(date, 'yyyy-MM-dd');
+        newEntryData[dateStr] = {};
+        products.forEach(product => {
+          newEntryData[dateStr][product.id] = 0;
+        });
+      });
+
+      // If there are no participants with valid check-in/out times, just return zeros for all entries
+      if (!programParticipants || programParticipants.length === 0) {
+        console.log('No participants with valid check-in/out times found for this program');
+        setEntryData(newEntryData);
+        setIsLoading(false);
+        return;
+      }
+
+      // Only fetch billing entries if we have participants
       const { data: billingEntries, error: entriesError } = await supabase
         .from('billing_entries')
         .select(`
@@ -654,7 +683,6 @@ export function BillingEntriesPage() {
         `)
         .eq('program_id', selectedProgram)
         .eq('package_id', selectedPackage);
-        // Removed date range filters to get ALL entries for this program/package
 
       if (entriesError) throw entriesError;
 
@@ -678,19 +706,18 @@ export function BillingEntriesPage() {
         expandedDateRange = eachDayOfInterval({ start: minDate, end: maxDate });
         // Update the dateRange state to include these extra dates
         setDateRange(expandedDateRange);
-      }
 
-      // Initialize entry data structure with expanded date range
-      const newEntryData: EntryData = {};
-
-      // Initialize all dates with 0 quantities for all products
-      expandedDateRange.forEach(date => {
-        const dateStr = format(date, 'yyyy-MM-dd');
-        newEntryData[dateStr] = {};
-        products.forEach(product => {
-          newEntryData[dateStr][product.id] = 0;
+        // Extend newEntryData to cover expanded date range
+        expandedDateRange.forEach(date => {
+          const dateStr = format(date, 'yyyy-MM-dd');
+          if (!newEntryData[dateStr]) {
+            newEntryData[dateStr] = {};
+            products.forEach(product => {
+              newEntryData[dateStr][product.id] = 0;
+            });
+          }
         });
-      });
+      }
 
       // Fill in the actual quantities from billing entries
       billingEntries?.forEach(entry => {
@@ -761,6 +788,26 @@ export function BillingEntriesPage() {
     setSaveStatus('saving');
     setIsLoading(true);
     try {
+      // For regular program entries, check if there are participants before saving
+      if (!isStaffMode) {
+        // Check if there are any participants in this program
+        const { data: programParticipants, error: participantsError } = await supabase
+          .from('participants')
+          .select('id, reception_checkin, reception_checkout')
+          .eq('program_id', selectedProgram)
+          .not('reception_checkin', 'is', null)
+          .not('reception_checkout', 'is', null);
+          
+        if (participantsError) throw participantsError;
+        
+        // If there are no participants with valid check-in/out times, warn the user
+        if (!programParticipants || programParticipants.length === 0) {
+          toast.error('Cannot save entries: No participants with valid check-in/out times in this program');
+          setSaveStatus('error');
+          return;
+        }
+      }
+
       // Create entries array with different structures for staff and program entries
       const entries = Object.entries(entryData).flatMap(([date, products]) =>
         Object.entries(products)
