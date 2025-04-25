@@ -26,7 +26,7 @@ interface ReportData {
 }
 
 // Product order for catering package
-const PRODUCT_ORDER = ['MT', 'BF', 'M-CRT', 'LUNCH', 'A-CRT', 'HI TEA', 'DINNER'];
+const PRODUCT_ORDER = ['Morning Tea', 'Breakfast', 'Morning CRT', 'LUNCH', 'Afternoon CRT', 'Hi-TEA', 'DINNER'];
 
 const PRODUCTS_PER_TABLE = 7;
 
@@ -43,7 +43,7 @@ interface PackageGroup {
 const getActiveProductsForGroup = (products: ProductEntry[], packageType: string, reportData: ReportData): ProductEntry[] => {
   if (!products.length) return [];
   
-  // Sort products based on package type
+  // First sort products based on package type and index
   const sortedProducts = [...products].sort((a, b) => {
     if (packageType.toLowerCase() === 'normal') {
       const indexA = PRODUCT_ORDER.indexOf(a.name);

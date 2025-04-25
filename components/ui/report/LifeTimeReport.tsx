@@ -29,21 +29,45 @@ interface LifeTimeReportProps {
 
 // Define product order for catering package
 const CATERING_PRODUCT_ORDER = [
-  'MT',
-  'BF',
-  'M-CRT',
+  'Morning Tea',
+  'Breakfast',
+  'Morning CRT',
   'LUNCH',
-  'A-CRT',
-  'HI TEA',
+  'Afternoon CRT',
+  'Hi-TEA',
   'DINNER'
 ];
+
+// Helper function to normalize product names for comparison
+const normalizeProductName = (name: string): string => {
+  return name.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+};
 
 // Helper function to get product order index
 const getProductOrderIndex = (productName: string, packageType: string): number => {
   // Check for both 'catering' and 'normal' package types
   if (packageType.toLowerCase() === 'catering' || packageType.toLowerCase() === 'normal' || packageType.toLowerCase().includes('catering package')) {
-    const index = CATERING_PRODUCT_ORDER.indexOf(productName);
-    return index === -1 ? CATERING_PRODUCT_ORDER.length : index;
+    // Try exact match first
+    const directIndex = CATERING_PRODUCT_ORDER.findIndex(name => 
+      name.toUpperCase() === productName.trim().toUpperCase()
+    );
+    if (directIndex !== -1) return directIndex;
+    
+    // Try normalized match
+    const normalizedName = normalizeProductName(productName);
+    for (let i = 0; i < CATERING_PRODUCT_ORDER.length; i++) {
+      const orderName = normalizeProductName(CATERING_PRODUCT_ORDER[i]);
+      
+      // Exact normalized match
+      if (normalizedName === orderName) return i;
+      
+      // Contains match (for partial matches)
+      if (normalizedName.includes(orderName) || orderName.includes(normalizedName)) {
+        return i;
+      }
+    }
+    
+    return CATERING_PRODUCT_ORDER.length;
   }
   return -1;
 };

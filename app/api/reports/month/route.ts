@@ -246,7 +246,7 @@ const generatePDF = async (
                   </tr>
                 </thead>
                 <tbody>
-                  ${data.map((row, index) => `
+                  ${data.sort((a, b) => new Date(a.start_date).getTime() - new Date(b.start_date).getTime()).map((row, index) => `
                     <tr>
                       <td style="text-align: center">${index + 1}</td>
                       <td>${row.program}</td>
@@ -295,15 +295,32 @@ const generatePDF = async (
                     </tr>
                   </thead>
                   <tbody>
-                    ${cateringData.map(row => `
-                      <tr>
-                        <td style="text-align: center">${row.program}</td>
-                        ${chunk.map(product => `
-                          <td style="text-align: center">${row.products[product.id] || 0}</td>
-                        `).join('')}
-                        <td style="text-align: center">${chunk.reduce((sum, product) => sum + (row.products[product.id] || 0), 0)}</td>
-                      </tr>
-                    `).join('')}
+                    ${(() => {
+                      // Sort cateringData by program start dates
+                      const programStartDates = new Map();
+                      data.forEach(program => {
+                        programStartDates.set(program.program, program.start_date);
+                      });
+                      
+                      return cateringData
+                        .sort((a, b) => {
+                          const dateA = programStartDates.get(a.program);
+                          const dateB = programStartDates.get(b.program);
+                          if (dateA && dateB) {
+                            return new Date(dateA).getTime() - new Date(dateB).getTime();
+                          }
+                          return 0;
+                        })
+                        .map(row => `
+                          <tr>
+                            <td style="text-align: center">${row.program}</td>
+                            ${chunk.map(product => `
+                              <td style="text-align: center">${row.products[product.id] || 0}</td>
+                            `).join('')}
+                            <td style="text-align: center">${chunk.reduce((sum, product) => sum + (row.products[product.id] || 0), 0)}</td>
+                          </tr>
+                        `).join('');
+                    })()}
                     <tr class="total-row">
                       <td style="text-align: center">TOTAL</td>
                       ${chunk.map(product => `
@@ -563,6 +580,9 @@ export async function POST(request: Request) {
 
       console.log('Processed catering data:', cateringData);
     }
+
+    // Sort reportData by start_date
+    reportData.sort((a, b) => new Date(a.start_date).getTime() - new Date(b.start_date).getTime());
 
     // Generate PDF if requested
     if (action === 'print' || action === 'download') {

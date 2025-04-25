@@ -42,6 +42,17 @@ const PACKAGE_NAMES = {
 
 const PACKAGE_ORDER = ['Normal', 'Extra', 'Cold Drink'];
 
+// Add catering product order - EXACT MATCH with the image sequence
+const CATERING_PRODUCT_ORDER = [
+  'Morning Tea',
+  'Breakfast',
+  'Morning CRT',
+  'LUNCH',
+  'Afternoon CRT',
+  'Hi-TEA',
+  'DINNER'
+];
+
 export async function POST(req: NextRequest) {
   try {
     const { programName, customerName, startDate, endDate, totalParticipants, selectedPackage, packages, action } = await req.json();
@@ -315,17 +326,68 @@ export async function POST(req: NextRequest) {
 
                   if (products.length === 0) return '';
 
+                  // Sort products based on package type
+                  let sortedProducts = [...products];
+                  if (packageType.toLowerCase() === 'normal') {
+                    // Helper function to normalize product names
+                    const normalizeProductName = (name: string): string => {
+                      return name.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+                    };
+                    
+                    // Create normalized versions of CATERING_PRODUCT_ORDER for comparison
+                    const normalizedOrderMap = new Map();
+                    CATERING_PRODUCT_ORDER.forEach((name, index) => {
+                      normalizedOrderMap.set(normalizeProductName(name), index);
+                    });
+                    
+                    sortedProducts = sortedProducts.sort((a, b) => {
+                      // Exact matches first
+                      const indexA = CATERING_PRODUCT_ORDER.indexOf(a.name);
+                      const indexB = CATERING_PRODUCT_ORDER.indexOf(b.name);
+                      
+                      if (indexA !== -1 && indexB !== -1) return indexA - indexB;
+                      if (indexA !== -1) return -1;
+                      if (indexB !== -1) return 1;
+                      
+                      // Try normalized matching
+                      const normA = normalizeProductName(a.name);
+                      const normB = normalizeProductName(b.name);
+                      
+                      const normIndexA = normalizedOrderMap.get(normA);
+                      const normIndexB = normalizedOrderMap.get(normB);
+                      
+                      if (normIndexA !== undefined && normIndexB !== undefined) return normIndexA - normIndexB;
+                      if (normIndexA !== undefined) return -1;
+                      if (normIndexB !== undefined) return 1;
+                      
+                      // Partial matching
+                      for (let i = 0; i < CATERING_PRODUCT_ORDER.length; i++) {
+                        const orderNorm = normalizeProductName(CATERING_PRODUCT_ORDER[i]);
+                        
+                        // A contains order name or order name contains A
+                        const aContains = normA.includes(orderNorm) || orderNorm.includes(normA);
+                        const bContains = normB.includes(orderNorm) || orderNorm.includes(normB);
+                        
+                        if (aContains && !bContains) return -1;
+                        if (!aContains && bContains) return 1;
+                      }
+                      
+                      // Fallback to alphabetical
+                      return a.name.localeCompare(b.name);
+                    });
+                  }
+
                   // Only chunk normal package items
                   const shouldChunk = packageType.toLowerCase() === 'normal';
                   const productChunks = shouldChunk
-                    ? products.reduce((chunks: Product[][], product: Product, index: number) => {
+                    ? sortedProducts.reduce((chunks: Product[][], product: Product, index: number) => {
                         if (index % PRODUCTS_PER_TABLE === 0) {
                           chunks.push([]);
                         }
                         chunks[chunks.length - 1].push(product);
                         return chunks;
                       }, [] as Product[][])
-                    : [products];
+                    : [sortedProducts];
 
                   if (productChunks.length === 0) return '';
 

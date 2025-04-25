@@ -205,35 +205,37 @@ const MonthlyReport = ({
               </tr>
             </thead>
             <tbody className="bg-white">
-              {data.map((row, index) => (
-                <tr key={index} className="border-b border-gray-200 hover:bg-gray-50 transition-colors">
-                  <td className="p-4 text-gray-900 text-center border-r border-gray-200 bg-gray-50 font-medium print-text">
-                    {index + 1}
-                  </td>
-                  <td className="p-4 text-gray-900 border-r border-gray-200 print-text">
-                    {row.program}
-                  </td>
-                  <td className="p-4 text-gray-900 text-center border-r border-gray-200 print-text">
-                    {format(new Date(row.start_date), 'dd MMM yyyy')}
-                  </td>
-                  <td className="p-4 text-gray-900 text-center border-r border-gray-200 print-text">
-                    {format(new Date(row.end_date), 'dd MMM yyyy')}
-                  </td>
-                  {packageTypes.map((pkg) => {
-                    const total = pkg.type.toLowerCase() === 'normal' ? row.cateringTotal :
-                                pkg.type.toLowerCase() === 'extra' ? row.extraTotal :
-                                pkg.type.toLowerCase() === 'cold drink' ? row.coldDrinkTotal : 0;
-                    return (
-                      <td key={pkg.id} className="p-4 text-gray-900 text-right border-r border-gray-200 print-text">
-                        ₹{total.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                      </td>
-                    );
-                  })}
-                  <td className="p-4 text-gray-900 text-right print-text">
-                    ₹{row.grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                  </td>
-                </tr>
-              ))}
+              {data
+                .sort((a, b) => new Date(a.start_date).getTime() - new Date(b.start_date).getTime())
+                .map((row, index) => (
+                  <tr key={index} className="border-b border-gray-200 hover:bg-gray-50 transition-colors">
+                    <td className="p-4 text-gray-900 text-center border-r border-gray-200 bg-gray-50 font-medium print-text">
+                      {index + 1}
+                    </td>
+                    <td className="p-4 text-gray-900 border-r border-gray-200 print-text">
+                      {row.program}
+                    </td>
+                    <td className="p-4 text-gray-900 text-center border-r border-gray-200 print-text">
+                      {format(new Date(row.start_date), 'dd MMM yyyy')}
+                    </td>
+                    <td className="p-4 text-gray-900 text-center border-r border-gray-200 print-text">
+                      {format(new Date(row.end_date), 'dd MMM yyyy')}
+                    </td>
+                    {packageTypes.map((pkg) => {
+                      const total = pkg.type.toLowerCase() === 'normal' ? row.cateringTotal :
+                                  pkg.type.toLowerCase() === 'extra' ? row.extraTotal :
+                                  pkg.type.toLowerCase() === 'cold drink' ? row.coldDrinkTotal : 0;
+                      return (
+                        <td key={pkg.id} className="p-4 text-gray-900 text-right border-r border-gray-200 print-text">
+                          ₹{total.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        </td>
+                      );
+                    })}
+                    <td className="p-4 text-gray-900 text-right print-text">
+                      ₹{row.grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                    </td>
+                  </tr>
+                ))}
               <tr className="bg-gray-50 border-t-2 border-gray-200">
                 <td colSpan={4} className="p-4 text-gray-900 text-right border-r border-gray-200 font-semibold print-text">
                   TOTAL
@@ -286,6 +288,18 @@ const MonthlyReport = ({
       );
     }
 
+    // Sort programs by start date
+    const sortedPrograms = [...programsWithConsumption].sort((a, b) => {
+      const programA = data.find(r => r.program === a.program);
+      const programB = data.find(r => r.program === b.program);
+      
+      if (programA && programB) {
+        return new Date(programA.start_date).getTime() - new Date(programB.start_date).getTime();
+      }
+      
+      return 0;
+    });
+
     // Calculate chunks of products (7 per table)
     const PRODUCTS_PER_TABLE = 7;
     const productChunks = Array.from(
@@ -297,7 +311,7 @@ const MonthlyReport = ({
       <div className="w-full">
         {productChunks.map((chunk, chunkIndex) => {
           // Filter dates with consumption for this chunk
-          const hasConsumption = programsWithConsumption.some(program =>
+          const hasConsumption = sortedPrograms.some(program =>
             chunk.some(product => program.products[product.id] > 0)
           );
 
@@ -343,7 +357,7 @@ const MonthlyReport = ({
                       </tr>
                     </thead>
                     <tbody className="bg-white">
-                      {programsWithConsumption.map((program, index) => {
+                      {sortedPrograms.map((program, index) => {
                         const matchingReport = data.find(report => report.program === program.program);
                         if (!matchingReport) return null;
 
@@ -383,7 +397,7 @@ const MonthlyReport = ({
                           TOTAL
                         </td>
                         {chunk.map(product => {
-                          const productTotal = programsWithConsumption.reduce(
+                          const productTotal = sortedPrograms.reduce(
                             (sum, program) => sum + (program.products[product.id] || 0), 
                             0
                           );
@@ -394,7 +408,7 @@ const MonthlyReport = ({
                           );
                         })}
                         <td className="p-4 text-gray-900 text-right font-semibold print-text">
-                          {programsWithConsumption.reduce(
+                          {sortedPrograms.reduce(
                             (sum, program) => sum + chunk.reduce(
                               (rowSum, product) => rowSum + (program.products[product.id] || 0), 
                               0

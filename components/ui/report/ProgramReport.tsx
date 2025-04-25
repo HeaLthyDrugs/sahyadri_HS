@@ -46,6 +46,43 @@ const PACKAGE_TYPE_DISPLAY = {
 
 const PACKAGE_TYPE_ORDER = ['Normal', 'Extra', 'Cold Drink'];
 
+// Define catering product order according to the provided sequence - EXACT MATCH with the screenshot
+const CATERING_PRODUCT_ORDER = [
+  'Morning Tea',
+  'Breakfast',
+  'Morning CRT',
+  'LUNCH',
+  'Afternoon CRT',
+  'Hi-TEA',
+  'DINNER'
+];
+
+// Function to normalize product names for comparison
+const normalizeProductName = (name: string): string => {
+  return name.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+};
+
+// Function to get the product order index, using normalized comparison
+const getProductOrderIndex = (productName: string): number => {
+  const normalizedName = normalizeProductName(productName);
+  
+  for (let i = 0; i < CATERING_PRODUCT_ORDER.length; i++) {
+    const orderName = normalizeProductName(CATERING_PRODUCT_ORDER[i]);
+    
+    // Exact match
+    if (normalizedName === orderName) {
+      return i;
+    }
+    
+    // Contains match (for partial matches)
+    if (normalizedName.includes(orderName) || orderName.includes(normalizedName)) {
+      return i;
+    }
+  }
+  
+  return -1;
+};
+
 const ProgramReport: React.FC<ProgramReportProps> = ({
   programId,
   programName,
@@ -382,11 +419,91 @@ const ProgramReport: React.FC<ProgramReportProps> = ({
             return null;
           }
 
-          // Filter out items with no consumption
-          const sortedItems = [...packageData.items]
+          // Get all items with any consumption
+          const itemsWithConsumption = [...packageData.items]
             .filter(item => Object.values(item.dates || {}).some(qty => qty > 0));
 
-          if (sortedItems.length === 0) return null;
+          if (itemsWithConsumption.length === 0) return null;
+
+          // Apply special sorting ONLY for Normal/Catering package
+          let sortedItems = [...itemsWithConsumption];
+          
+          if (packageType.toLowerCase() === 'normal') {
+            // Create a map for fast lookup of product order
+            const orderMap = new Map();
+            CATERING_PRODUCT_ORDER.forEach((name, index) => {
+              // Store both regular and normalized versions
+              orderMap.set(name, index);
+              orderMap.set(normalizeProductName(name), index);
+            });
+            
+            // Custom sort function that prioritizes our defined order
+            sortedItems = sortedItems.sort((a, b) => {
+              const nameA = a.productName.trim();
+              const nameB = b.productName.trim();
+              
+              // Try direct match first
+              const directOrderA = orderMap.get(nameA);
+              const directOrderB = orderMap.get(nameB);
+              
+              // Then try normalized match
+              const normA = normalizeProductName(nameA);
+              const normB = normalizeProductName(nameB);
+              const orderA = directOrderA !== undefined ? directOrderA : orderMap.get(normA);
+              const orderB = directOrderB !== undefined ? directOrderB : orderMap.get(normB);
+              
+              // If both have a defined order, sort by that order
+              if (orderA !== undefined && orderB !== undefined) {
+                return orderA - orderB;
+              }
+              
+              // If only one has a defined order, prioritize it
+              if (orderA !== undefined) return -1;
+              if (orderB !== undefined) return 1;
+              
+              // Check for partial matches using getProductOrderIndex
+              const indexA = getProductOrderIndex(nameA);
+              const indexB = getProductOrderIndex(nameB);
+              
+              if (indexA !== -1 && indexB !== -1) return indexA - indexB;
+              if (indexA !== -1) return -1;
+              if (indexB !== -1) return 1;
+              
+              // Fallback to alphabetical sorting
+              return nameA.localeCompare(nameB);
+            });
+            
+            // Force the exact order from CATERING_PRODUCT_ORDER if possible
+            const exactOrderItems = new Array(CATERING_PRODUCT_ORDER.length).fill(null);
+            const remainingItems: PackageItem[] = [];
+            
+            // First pass: look for exact matches (case insensitive)
+            sortedItems.forEach(item => {
+              const normalizedName = normalizeProductName(item.productName);
+              
+              for (let i = 0; i < CATERING_PRODUCT_ORDER.length; i++) {
+                const orderName = CATERING_PRODUCT_ORDER[i];
+                const normalizedOrderName = normalizeProductName(orderName);
+                
+                if (normalizedName === normalizedOrderName || 
+                    item.productName.trim().toUpperCase() === orderName.toUpperCase()) {
+                  exactOrderItems[i] = item;
+                  return;
+                }
+              }
+              
+              // Check for partial matches
+              const partialIndex = getProductOrderIndex(item.productName);
+              if (partialIndex !== -1) {
+                exactOrderItems[partialIndex] = item;
+              } else {
+                remainingItems.push(item);
+              }
+            });
+            
+            // Combine the ordered items with any remaining items
+            sortedItems = [...exactOrderItems.filter(Boolean), ...remainingItems];
+          }
 
           // Only chunk normal package items
           const shouldChunk = packageType.toLowerCase() === 'normal';

@@ -36,7 +36,7 @@ const PACKAGE_ORDER = ['Normal', 'Extra', 'Cold Drink'];
 const PRODUCTS_PER_TABLE = 9;
 
 // Product order for catering package
-const PRODUCT_ORDER = ['MT', 'BF', 'M-CRT', 'LUNCH', 'A-CRT', 'HI TEA', 'DINNER'];
+const PRODUCT_ORDER = ['Morning Tea', 'Breakfast', 'Morning CRT', 'LUNCH', 'Afternoon CRT', 'Hi-TEA', 'DINNER'];
 
 export async function POST(req: NextRequest) {
   try {

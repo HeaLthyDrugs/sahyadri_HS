@@ -1264,6 +1264,26 @@ export default function ReportPage() {
         </>
       );
     }
+    if (reportType === 'monthly') {
+      return (
+        <>
+          <option value="">Select Package</option>
+          <option value="all">All Packages</option>
+        </>
+      );
+    }
+    if (reportType === 'lifetime') {
+      return (
+        <>
+          <option value="">Select Package</option>
+          {packages.map((pkg) => (
+            <option key={pkg.id} value={pkg.id}>
+              {pkg.name} ({pkg.type})
+            </option>
+          ))}
+        </>
+      );
+    }   
     return (
       <>
         <option value="">Select Package</option>
@@ -1525,7 +1545,7 @@ export default function ReportPage() {
               type={selectedPackage as 'all' | 'normal' | 'extra' | 'cold drink'}
               cateringData={selectedPackage !== 'all' ? cateringData : undefined}
               products={selectedPackage !== 'all' ? cateringProducts : undefined}
-              packageTypes={packageTypes}
+              // packageTypes={packageTypes}
             />
           )}
           {reportType === 'program' && programReport && (
