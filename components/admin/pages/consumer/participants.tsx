@@ -40,6 +40,7 @@ interface Participant {
     type: 'early-arrival' | 'late-departure';
     message: string;
   }>;
+  sequence_number?: number;
 }
 
 interface FormData {
@@ -73,6 +74,61 @@ interface Program {
   start_date: string;
   end_date: string;
 }
+
+// Move this function above fetchParticipants since it's used there
+const getAttendanceStatus = (participant: Participant, program?: Program): Array<{
+  type: 'early-arrival' | 'late-departure';
+  message: string;
+}> => {
+  if (!program || !participant.reception_checkin || !participant.reception_checkout) return [];
+
+  if (participant.has_date_error && participant.date_error_message?.includes('before check-in')) {
+    return [];
+  }
+
+  // Create dates and adjust for IST offset
+  const programStart = new Date(program.start_date);
+  const programEnd = new Date(program.end_date);
+  const checkinDate = new Date(participant.reception_checkin);
+  const checkoutDate = new Date(participant.reception_checkout);
+
+  // Subtract 5.5 hours to compensate for IST offset that was added when saving
+  const localCheckoutDate = new Date(checkoutDate.getTime() - (5.5 * 60 * 60 * 1000));
+  const localProgramEnd = new Date(programEnd.getTime());
+  localProgramEnd.setHours(23, 59, 59, 999);
+
+  const tags: Array<{
+    type: 'early-arrival' | 'late-departure';
+    message: string;
+  }> = [];
+
+  // For early arrival, compare dates at start of day
+  const programStartDay = new Date(programStart.getTime() - (5.5 * 60 * 60 * 1000));
+  const checkinDay = new Date(checkinDate.getTime() - (5.5 * 60 * 60 * 1000));
+  programStartDay.setHours(0, 0, 0, 0);
+  checkinDay.setHours(0, 0, 0, 0);
+
+  if (checkinDay < programStartDay) {
+    const daysEarly = Math.round((programStartDay.getTime() - checkinDay.getTime()) / (1000 * 60 * 60 * 24));
+    tags.push({
+      type: 'early-arrival',
+      message: `Arrived ${daysEarly} day${daysEarly > 1 ? 's' : ''} early`
+    });
+  }
+
+  // For late departure, compare with program end at 11:59:59 PM
+  if (localCheckoutDate > localProgramEnd) {
+    const daysLate = Math.ceil((localCheckoutDate.getTime() - localProgramEnd.getTime()) / (1000 * 60 * 60 * 24));
+    if (daysLate > 0) {
+      tags.push({
+        type: 'late-departure',
+        message: `Left ${daysLate} day${daysLate > 1 ? 's' : ''} after program end`
+      });
+    }
+  }
+
+  return tags;
+};
 
 export function ParticipantsPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -231,6 +287,7 @@ export function ParticipantsPage() {
           type,
           has_date_error,
           date_error_message,
+          sequence_number,
           program:programs(
             id,
             name,
@@ -239,7 +296,8 @@ export function ParticipantsPage() {
             end_date
           )
         `)
-        .order('created_at', { ascending: false });
+        .order('sequence_number', { ascending: true, nullsFirst: false }) // First sort by sequence_number when available, nulls last
+        .order('created_at', { ascending: false }); // Then fall back to created_at for items without sequence_number
 
       // If a program is selected, filter by program regardless of month
       if (selectedProgramId !== 'all') {
@@ -298,7 +356,8 @@ export function ParticipantsPage() {
           has_date_error: participant.has_date_error || false,
           date_error_message: participant.date_error_message,
           program: programData as Program,
-          attendance_status: []
+          attendance_status: [],
+          sequence_number: participant.sequence_number
         };
 
         try {
@@ -322,9 +381,9 @@ export function ParticipantsPage() {
             transformed.date_error_message = undefined;
 
             if (transformed.program) {
-              const attendanceStatus = getAttendanceStatus(transformed, transformed.program);
-              if (attendanceStatus && attendanceStatus.length > 0) {
-                transformed.date_error_message = attendanceStatus.map(status => status.message).join(', ');
+              transformed.attendance_status = getAttendanceStatus(transformed, transformed.program);
+              if (transformed.attendance_status.length > 0) {
+                transformed.date_error_message = transformed.attendance_status.map(status => status.message).join(', ');
               }
             }
           } else {
@@ -648,7 +707,7 @@ export function ParticipantsPage() {
             
             // Map the Excel data to our participant format
             importData = (jsonData as Record<string, any>[])
-              .map((row: Record<string, any>) => {
+              .map((row: Record<string, any>, index: number) => {
                 try {
                   // Extract attendee name - try different possible column names
                   const attendeeName = 
@@ -703,7 +762,9 @@ export function ParticipantsPage() {
                     program_id: selectedProgramId,
                     type: 'participant',
                     has_date_error: hasDateError,
-                    date_error_message: dateErrorMessage
+                    date_error_message: dateErrorMessage,
+                    // Add a sequence field to preserve the original order
+                    sequence_number: index
                   };
 
                   if (receptionCheckin) {
@@ -743,7 +804,7 @@ export function ParticipantsPage() {
               (parsedData.data[0] as Record<string, string>)['Name'] !== undefined) {
             
             importData = (parsedData.data as Record<string, string>[])
-              .map((row: Record<string, string>) => {
+              .map((row: Record<string, string>, index: number) => {
                 try {
                   const attendeeName = row['Attendee Name'] || row['Name'] || '';
                   
@@ -775,7 +836,9 @@ export function ParticipantsPage() {
                     program_id: selectedProgramId,
                     type: 'participant',
                     has_date_error: hasDateError,
-                    date_error_message: dateErrorMessage
+                    date_error_message: dateErrorMessage,
+                    // Add a sequence field to preserve the original order
+                    sequence_number: index
                   };
 
                   if (receptionCheckin) {
@@ -835,7 +898,7 @@ export function ParticipantsPage() {
               const tableData = extractTableData(textContent);
               
               importData = tableData
-                .map((row: ImportRow) => {
+                .map((row: ImportRow, index: number) => {
                   try {
                     const attendeeName = row['Attendee Name']?.trim();
                     const receptionCheckin = formatExcelDate(row['Reception Check-In'] || '');
@@ -857,7 +920,9 @@ export function ParticipantsPage() {
                       program_id: selectedProgramId,
                       type: 'participant',
                       has_date_error: hasDateError,
-                      date_error_message: dateErrorMessage
+                      date_error_message: dateErrorMessage,
+                      // Add a sequence field to preserve the original order
+                      sequence_number: index
                     };
 
                     if (receptionCheckin) {
@@ -950,13 +1015,36 @@ export function ParticipantsPage() {
   };
 
   const sortParticipantsByType = (a: Participant, b: Participant) => {
+    // First, sort by type
     const typeOrder = {
       participant: 1,
       guest: 2,
       driver: 3,
       other: 4
     };
-    return typeOrder[a.type] - typeOrder[b.type];
+    const typeCompare = typeOrder[a.type] - typeOrder[b.type];
+    
+    // If types are the same, check for sequence_number
+    if (typeCompare === 0) {
+      // If both have sequence_number, sort by it
+      if (a.sequence_number !== undefined && b.sequence_number !== undefined) {
+        return a.sequence_number - b.sequence_number;
+      }
+      // If only one has sequence_number, prioritize the one with sequence_number
+      else if (a.sequence_number !== undefined) {
+        return -1;
+      }
+      else if (b.sequence_number !== undefined) {
+        return 1;
+      }
+      // If neither has sequence_number, fall back to created_at
+      else {
+        // Sort newest first (descending)
+        return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+      }
+    }
+    
+    return typeCompare;
   };
 
   const filteredParticipants = participants
@@ -1182,59 +1270,7 @@ export function ParticipantsPage() {
     return { errorSummary, totalErrors };
   };
 
-  const getAttendanceStatus = (participant: Participant, program?: Program) => {
-    if (!program || !participant.reception_checkin || !participant.reception_checkout) return null;
-
-    if (participant.has_date_error && participant.date_error_message?.includes('before check-in')) {
-      return null;
-    }
-
-    // Create dates and adjust for IST offset
-    const programStart = new Date(program.start_date);
-    const programEnd = new Date(program.end_date);
-    const checkinDate = new Date(participant.reception_checkin);
-    const checkoutDate = new Date(participant.reception_checkout);
-
-    // Subtract 5.5 hours to compensate for IST offset that was added when saving
-    const localCheckoutDate = new Date(checkoutDate.getTime() - (5.5 * 60 * 60 * 1000));
-    const localProgramEnd = new Date(programEnd.getTime());
-    localProgramEnd.setHours(23, 59, 59, 999);
-
-    const tags = [];
-
-    // For early arrival, compare dates at start of day
-    const programStartDay = new Date(programStart.getTime() - (5.5 * 60 * 60 * 1000));
-    const checkinDay = new Date(checkinDate.getTime() - (5.5 * 60 * 60 * 1000));
-    programStartDay.setHours(0, 0, 0, 0);
-    checkinDay.setHours(0, 0, 0, 0);
-
-    if (checkinDay < programStartDay) {
-      const daysEarly = Math.round((programStartDay.getTime() - checkinDay.getTime()) / (1000 * 60 * 60 * 24));
-      tags.push({
-        type: 'early-arrival',
-        message: `Arrived ${daysEarly} day${daysEarly > 1 ? 's' : ''} early`
-      });
-    }
-
-    // For late departure, compare with program end at 11:59:59 PM
-    if (localCheckoutDate > localProgramEnd) {
-      const daysLate = Math.ceil((localCheckoutDate.getTime() - localProgramEnd.getTime()) / (1000 * 60 * 60 * 24));
-      if (daysLate > 0) {
-        tags.push({
-          type: 'late-departure',
-          message: `Left ${daysLate} day${daysLate > 1 ? 's' : ''} after program end`
-        });
-      }
-    }
-
-    return tags;
-  };
-
-  const handleEntriesChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    setItemsPerPage(Number(e.target.value));
-    setCurrentPage(1);
-  };
-
+  // Move this function above handleSubmit since it's used there
   const validateFormDates = () => {
     if (formData.reception_checkin && formData.reception_checkout) {
       const validation = validateDates(formData.reception_checkin, formData.reception_checkout);
@@ -1250,6 +1286,12 @@ export function ParticipantsPage() {
   useEffect(() => {
     validateFormDates();
   }, [formData.reception_checkin, formData.reception_checkout]);
+
+  // Add the handleEntriesChange function back
+  const handleEntriesChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    setItemsPerPage(Number(e.target.value));
+    setCurrentPage(1);
+  };
 
   return (
     <div className="space-y-6">
