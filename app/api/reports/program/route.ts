@@ -414,7 +414,7 @@ export async function POST(req: NextRequest) {
                                 <tr>
                                   <th>Product Name</th>
                                   ${chunkDates.map(date => `
-                                    <th>${format(new Date(date), 'dd/MM/yyyy')}</th>
+                                    <th>${format(new Date(date), 'dd')}</th>
                                   `).join('')}
                                   <th>Total</th>
                                   <th>Rate</th>

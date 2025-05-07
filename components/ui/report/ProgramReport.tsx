@@ -546,12 +546,7 @@ const ProgramReport: React.FC<ProgramReportProps> = ({
                             </th>
                             {chunkDates.map(date => (
                               <th key={date} className="px-1 py-1 border-b border-r border-gray-200 text-center font-normal text-gray-900 w-[30px]">
-                                {format(new Date(date), 'dd/MM').split('/').map((part, i) => (
-                                  <React.Fragment key={i}>
-                                    {i > 0 && <br />}
-                                    {part}
-                                  </React.Fragment>
-                                ))}
+                                {format(new Date(date), 'dd')}
                               </th>
                             ))}
                             <th className="px-1.5 py-1 border-b border-r border-gray-200 text-center font-normal text-gray-900 w-[40px]">

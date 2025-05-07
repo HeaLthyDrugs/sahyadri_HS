@@ -194,11 +194,15 @@ const MonthlyReport = ({
                 <th className="p-4 font-medium text-gray-900 text-center border-b border-r border-gray-200 w-[12%] print-text">
                   To
                 </th>
-                {packageTypes.map((pkg) => (
-                  <th key={pkg.id} className="p-4 font-medium text-gray-900 text-right border-b border-r border-gray-200 w-[11%] print-text">
-                    {pkg.name}
-                  </th>
-                ))}
+                <th className="p-4 font-medium text-gray-900 text-right border-b border-r border-gray-200 w-[12%] print-text">
+                  Catering
+                </th>
+                <th className="p-4 font-medium text-gray-900 text-right border-b border-r border-gray-200 w-[12%] print-text">
+                  Extra
+                </th>
+                <th className="p-4 font-medium text-gray-900 text-right border-b border-r border-gray-200 w-[12%] print-text">
+                  Cold Drink
+                </th>
                 <th className="p-4 font-medium text-gray-900 text-right border-b border-gray-200 w-[12%] print-text">
                   Gr. Total
                 </th>
@@ -221,16 +225,15 @@ const MonthlyReport = ({
                     <td className="p-4 text-gray-900 text-center border-r border-gray-200 print-text">
                       {format(new Date(row.end_date), 'dd MMM yyyy')}
                     </td>
-                    {packageTypes.map((pkg) => {
-                      const total = pkg.type.toLowerCase() === 'normal' ? row.cateringTotal :
-                                  pkg.type.toLowerCase() === 'extra' ? row.extraTotal :
-                                  pkg.type.toLowerCase() === 'cold drink' ? row.coldDrinkTotal : 0;
-                      return (
-                        <td key={pkg.id} className="p-4 text-gray-900 text-right border-r border-gray-200 print-text">
-                          ₹{total.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                        </td>
-                      );
-                    })}
+                    <td className="p-4 text-gray-900 text-right border-r border-gray-200 print-text">
+                      ₹{row.cateringTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                    </td>
+                    <td className="p-4 text-gray-900 text-right border-r border-gray-200 print-text">
+                      ₹{row.extraTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                    </td>
+                    <td className="p-4 text-gray-900 text-right border-r border-gray-200 print-text">
+                      ₹{row.coldDrinkTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                    </td>
                     <td className="p-4 text-gray-900 text-right print-text">
                       ₹{row.grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                     </td>
@@ -240,19 +243,15 @@ const MonthlyReport = ({
                 <td colSpan={4} className="p-4 text-gray-900 text-right border-r border-gray-200 font-semibold print-text">
                   TOTAL
                 </td>
-                {packageTypes.map((pkg) => {
-                  const total = data.reduce((sum, row) => {
-                    const rowTotal = pkg.type.toLowerCase() === 'normal' ? row.cateringTotal :
-                                   pkg.type.toLowerCase() === 'extra' ? row.extraTotal :
-                                   pkg.type.toLowerCase() === 'cold drink' ? row.coldDrinkTotal : 0;
-                    return sum + rowTotal;
-                  }, 0);
-                  return (
-                    <td key={pkg.id} className="p-4 text-gray-900 text-right border-r border-gray-200 font-semibold print-text">
-                      ₹{total.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                    </td>
-                  );
-                })}
+                <td className="p-4 text-gray-900 text-right border-r border-gray-200 font-semibold print-text">
+                  ₹{data.reduce((sum, row) => sum + row.cateringTotal, 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                </td>
+                <td className="p-4 text-gray-900 text-right border-r border-gray-200 font-semibold print-text">
+                  ₹{data.reduce((sum, row) => sum + row.extraTotal, 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                </td>
+                <td className="p-4 text-gray-900 text-right border-r border-gray-200 font-semibold print-text">
+                  ₹{data.reduce((sum, row) => sum + row.coldDrinkTotal, 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                </td>
                 <td className="p-4 text-gray-900 text-right font-semibold bg-gray-50 print-text">
                   ₹{data.reduce((sum, row) => sum + row.grandTotal, 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                 </td>
@@ -346,11 +345,15 @@ const MonthlyReport = ({
                         <th className="p-4 font-medium text-gray-900 text-center border-b border-r border-gray-200 w-[12%] print-text">
                           To
                         </th>
-                        {chunk.map(product => (
-                          <th key={product.id} className="p-4 font-medium text-gray-900 text-right border-b border-r border-gray-200 print-text">
-                            {product.name}
-                          </th>
-                        ))}
+                        <th className="p-4 font-medium text-gray-900 text-right border-b border-r border-gray-200 w-[12%] print-text">
+                          Catering
+                        </th>
+                        <th className="p-4 font-medium text-gray-900 text-right border-b border-r border-gray-200 w-[12%] print-text">
+                          Extra
+                        </th>
+                        <th className="p-4 font-medium text-gray-900 text-right border-b border-r border-gray-200 w-[12%] print-text">
+                          Cold Drink
+                        </th>
                         <th className="p-4 font-medium text-gray-900 text-right border-b border-gray-200 w-[12%] print-text">
                           Total
                         </th>
@@ -381,11 +384,15 @@ const MonthlyReport = ({
                             <td className="p-4 text-gray-900 text-center border-r border-gray-200 print-text">
                               {format(new Date(matchingReport.end_date), 'dd MMM yyyy')}
                             </td>
-                            {chunk.map(product => (
-                              <td key={product.id} className="p-4 text-gray-900 text-right border-r border-gray-200 print-text">
-                                {program.products[product.id] || '-'}
-                              </td>
-                            ))}
+                            <td className="p-4 text-gray-900 text-right border-r border-gray-200 print-text">
+                              ₹{matchingReport.cateringTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                            </td>
+                            <td className="p-4 text-gray-900 text-right border-r border-gray-200 print-text">
+                              ₹{matchingReport.extraTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                            </td>
+                            <td className="p-4 text-gray-900 text-right border-r border-gray-200 print-text">
+                              ₹{matchingReport.coldDrinkTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                            </td>
                             <td className="p-4 text-gray-900 text-right print-text">
                               {rowTotal}
                             </td>
@@ -396,17 +403,15 @@ const MonthlyReport = ({
                         <td colSpan={4} className="p-4 text-gray-900 text-right border-r border-gray-200 font-semibold print-text">
                           TOTAL
                         </td>
-                        {chunk.map(product => {
-                          const productTotal = sortedPrograms.reduce(
-                            (sum, program) => sum + (program.products[product.id] || 0), 
-                            0
-                          );
-                          return (
-                            <td key={product.id} className="p-4 text-gray-900 text-right border-r border-gray-200 font-semibold print-text">
-                              {productTotal}
-                            </td>
-                          );
-                        })}
+                        <td className="p-4 text-gray-900 text-right border-r border-gray-200 font-semibold print-text">
+                          ₹{data.reduce((sum, row) => sum + row.cateringTotal, 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        </td>
+                        <td className="p-4 text-gray-900 text-right border-r border-gray-200 font-semibold print-text">
+                          ₹{data.reduce((sum, row) => sum + row.extraTotal, 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        </td>
+                        <td className="p-4 text-gray-900 text-right border-r border-gray-200 font-semibold print-text">
+                          ₹{data.reduce((sum, row) => sum + row.coldDrinkTotal, 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        </td>
                         <td className="p-4 text-gray-900 text-right font-semibold print-text">
                           {sortedPrograms.reduce(
                             (sum, program) => sum + chunk.reduce(
