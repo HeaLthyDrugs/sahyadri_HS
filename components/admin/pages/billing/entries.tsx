@@ -339,18 +339,14 @@ export function BillingEntriesPage() {
   const [selectedProducts, setSelectedProducts] = useState<ProductChip[]>([]);
   const [isFullScreenMode, setIsFullScreenMode] = useState(false);
   const [showKeyboardGuide, setShowKeyboardGuide] = useState(true);
+  const [startDate, setStartDate] = useState<string>('');
+  const [endDate, setEndDate] = useState<string>('');
+  const [isStaffMode, setIsStaffMode] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'success' | 'error'>('idle');
 
   // Add ref for managing focus
   const tableRef = useRef<HTMLDivElement>(null);
   const [focusedCell, setFocusedCell] = useState<{ row: number; col: number } | null>(null);
-
-  // Add these state variables inside BillingEntriesPage component
-  const [startDate, setStartDate] = useState<string>('');
-  const [endDate, setEndDate] = useState<string>('');
-  const [isStaffMode, setIsStaffMode] = useState(false);
-
-  // Add this state for save status
-  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'success' | 'error'>('idle');
 
   // Add this function to handle keyboard navigation
   const handleKeyDown = async (e: React.KeyboardEvent<HTMLInputElement>, rowIndex: number, colIndex: number) => {
@@ -563,6 +559,8 @@ export function BillingEntriesPage() {
         const dates = eachDayOfInterval({ start: programStart, end: programEnd });
         setDateRange(dates);
       }
+      // Clear selected products when program changes
+      setSelectedProducts([]);
     }
   }, [selectedProgram, programs]);
 
@@ -570,6 +568,8 @@ export function BillingEntriesPage() {
   useEffect(() => {
     if (selectedPackage) {
       fetchProducts(selectedPackage);
+      // Clear selected products when package changes
+      setSelectedProducts([]);
     } else {
       setProducts([]); // Clear products when no package is selected
     }
@@ -637,16 +637,27 @@ export function BillingEntriesPage() {
         dateRange: dateRange.map(d => format(d, 'yyyy-MM-dd'))
       });
 
-      // Check if there are any participants in this program first
-      const { data: programParticipants, error: participantsError } = await supabase
-        .from('participants')
-        .select('id, reception_checkin, reception_checkout')
-        .eq('program_id', selectedProgram)
-        .not('reception_checkin', 'is', null)
-        .not('reception_checkout', 'is', null);
+      // If in staff mode, don't check for participants
+      if (!isStaffMode) {
+        // Check if there are any participants in this program first
+        const { data: programParticipants, error: participantsError } = await supabase
+          .from('participants')
+          .select('id, reception_checkin, reception_checkout')
+          .eq('program_id', selectedProgram)
+          .not('reception_checkin', 'is', null)
+          .not('reception_checkout', 'is', null);
+          
+        if (participantsError) throw participantsError;
         
-      if (participantsError) throw participantsError;
-      
+        // If there are no participants with valid check-in/out times, just return zeros for all entries
+        if (!programParticipants || programParticipants.length === 0) {
+          console.log('No participants with valid check-in/out times found for this program');
+          setEntryData({});
+          setIsLoading(false);
+          return;
+        }
+      }
+
       // Get the full date range for the program
       const startDate = format(dateRange[0], 'yyyy-MM-dd');
       const endDate = format(dateRange[dateRange.length - 1], 'yyyy-MM-dd');
@@ -661,78 +672,59 @@ export function BillingEntriesPage() {
         });
       });
 
-      // If there are no participants with valid check-in/out times, just return zeros for all entries
-      if (!programParticipants || programParticipants.length === 0) {
-        console.log('No participants with valid check-in/out times found for this program');
-        setEntryData(newEntryData);
-        setIsLoading(false);
-        return;
-      }
+      // Fetch entries based on mode
+      if (isStaffMode) {
+        const { data: staffEntries, error: entriesError } = await supabase
+          .from('staff_billing_entries')
+          .select(`
+            *,
+            products!staff_billing_entries_product_id_fkey (
+              id,
+              name,
+              rate,
+              package_id
+            )
+          `)
+          .eq('package_id', selectedPackage)
+          .gte('entry_date', startDate)
+          .lte('entry_date', endDate);
 
-      // Only fetch billing entries if we have participants
-      const { data: billingEntries, error: entriesError } = await supabase
-        .from('billing_entries')
-        .select(`
-          *,
-          products!billing_entries_product_id_fkey (
-            id,
-            name,
-            rate,
-            package_id
-          )
-        `)
-        .eq('program_id', selectedProgram)
-        .eq('package_id', selectedPackage);
+        if (entriesError) throw entriesError;
 
-      if (entriesError) throw entriesError;
+        // Fill in the actual quantities from staff entries
+        staffEntries?.forEach(entry => {
+          const dateStr = format(new Date(entry.entry_date), 'yyyy-MM-dd');
+          if (newEntryData[dateStr] && entry.product_id) {
+            newEntryData[dateStr][entry.product_id] = entry.quantity;
+          }
+        });
+      } else {
+        const { data: billingEntries, error: entriesError } = await supabase
+          .from('billing_entries')
+          .select(`
+            *,
+            products!billing_entries_product_id_fkey (
+              id,
+              name,
+              rate,
+              package_id
+            )
+          `)
+          .eq('program_id', selectedProgram)
+          .eq('package_id', selectedPackage);
 
-      console.log('Fetched billing entries:', billingEntries);
+        if (entriesError) throw entriesError;
 
-      // Find the min and max dates from all entries to expand the date range if needed
-      let minDate = new Date(startDate);
-      let maxDate = new Date(endDate);
-      
-      billingEntries?.forEach(entry => {
-        const entryDate = new Date(entry.entry_date);
-        if (entryDate < minDate) minDate = entryDate;
-        if (entryDate > maxDate) maxDate = entryDate;
-      });
-      
-      // Create expanded date range if entries exist outside program dates
-      const hasExtraEntries = minDate < new Date(startDate) || maxDate > new Date(endDate);
-      let expandedDateRange = dateRange;
-      
-      if (hasExtraEntries) {
-        expandedDateRange = eachDayOfInterval({ start: minDate, end: maxDate });
-        // Update the dateRange state to include these extra dates
-        setDateRange(expandedDateRange);
-
-        // Extend newEntryData to cover expanded date range
-        expandedDateRange.forEach(date => {
-          const dateStr = format(date, 'yyyy-MM-dd');
-          if (!newEntryData[dateStr]) {
-            newEntryData[dateStr] = {};
-            products.forEach(product => {
-              newEntryData[dateStr][product.id] = 0;
-            });
+        // Fill in the actual quantities from billing entries
+        billingEntries?.forEach(entry => {
+          const dateStr = format(new Date(entry.entry_date), 'yyyy-MM-dd');
+          if (newEntryData[dateStr] && entry.product_id) {
+            newEntryData[dateStr][entry.product_id] = entry.quantity;
           }
         });
       }
 
-      // Fill in the actual quantities from billing entries
-      billingEntries?.forEach(entry => {
-        const dateStr = format(new Date(entry.entry_date), 'yyyy-MM-dd');
-        if (newEntryData[dateStr] && entry.product_id) {
-          newEntryData[dateStr][entry.product_id] = entry.quantity;
-        }
-      });
-
-      console.log('Transformed entry data:', newEntryData);
-      console.log('Current products:', products);
-      console.log('Current date range:', expandedDateRange);
-
       setEntryData(newEntryData);
-
     } catch (error) {
       console.error('Error fetching entries:', error);
       toast.error('Failed to fetch entries');
@@ -814,10 +806,9 @@ export function BillingEntriesPage() {
           .filter(([_, quantity]) => quantity > 0)
           .map(([productId, quantity]) => {
             if (isStaffMode) {
-              // Staff entry structure
+              // Simplified staff entry structure without staff_id
               return {
                 id: crypto.randomUUID(),
-                staff_id: 1, // Default staff ID or get from context
                 package_id: selectedPackage,
                 product_id: productId,
                 entry_date: date,
@@ -861,8 +852,7 @@ export function BillingEntriesPage() {
 
         if (insertError) throw insertError;
       } else {
-        // For regular program entries - delete all entries for this program/package
-        // regardless of date to handle extra entries properly
+        // For regular program entries
         const { error: deleteError } = await supabase
           .from('billing_entries')
           .delete()
@@ -1094,7 +1084,7 @@ export function BillingEntriesPage() {
     return 'bg-white';
   };
 
-  // Add this function inside BillingEntriesPage component
+  // Modify the fetchStaffEntries function
   const fetchStaffEntries = async () => {
     if (!startDate || !endDate || !selectedPackage) {
       toast.error('Please select dates and package');
@@ -1103,22 +1093,6 @@ export function BillingEntriesPage() {
 
     setIsLoading(true);
     try {
-      const { data: staffEntries, error } = await supabase
-        .from('staff_billing_entries')
-        .select(`
-          id,
-          staff_id,
-          package_id,
-          product_id,
-          entry_date,
-          quantity
-        `)
-        .eq('package_id', selectedPackage)
-        .gte('entry_date', startDate)
-        .lte('entry_date', endDate);
-
-      if (error) throw error;
-
       // Create date range from selected dates
       const start = new Date(startDate);
       const end = new Date(endDate);
@@ -1134,6 +1108,22 @@ export function BillingEntriesPage() {
           newEntryData[dateStr][product.id] = 0;
         });
       });
+
+      // Fetch existing staff entries
+      const { data: staffEntries, error } = await supabase
+        .from('staff_billing_entries')
+        .select(`
+          id,
+          package_id,
+          product_id,
+          entry_date,
+          quantity
+        `)
+        .eq('package_id', selectedPackage)
+        .gte('entry_date', startDate)
+        .lte('entry_date', endDate);
+
+      if (error) throw error;
 
       // Fill in the actual quantities from staff entries
       staffEntries?.forEach(entry => {
