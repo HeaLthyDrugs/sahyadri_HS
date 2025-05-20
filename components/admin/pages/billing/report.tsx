@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
-import { format } from "date-fns";
+import { format, parseISO } from "date-fns";
 import { toast } from "react-hot-toast";
 import {
   RiFileChartLine,
@@ -12,6 +12,7 @@ import {
   RiPrinterLine,
   RiCalendarLine,
   RiBuilding4Line,
+  RiArrowDownSLine,
 } from "react-icons/ri";
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
@@ -26,13 +27,15 @@ interface Package {
   type: string;
 }
 
-interface Program {
+type Program = {
   id: string;
   name: string;
-  total_participants: number;
   start_date: string;
   end_date: string;
-}
+  customer_name: string;
+  status: string;
+  total_participants: number;
+};
 
 interface ReportData {
   date: string;
@@ -273,6 +276,89 @@ const pdfStyles = `
   }
 `;
 
+const ProgramSelect = ({
+  value,
+  onChange,
+  programs
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  programs: Program[];
+}) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const selectedProgram = programs.find(p => p.id === value);
+  const STAFF_ID = 'staff'; // Fixed ID for staff option
+
+  return (
+    <div className="relative min-w-[300px]">
+      <button
+        type="button"
+        onClick={() => setIsOpen(!isOpen)}
+        className="w-full flex items-center justify-between border rounded px-3 py-2 bg-white hover:bg-gray-50"
+      >
+        {value === STAFF_ID ? (
+          <div className="flex flex-col items-start">
+            <span className="font-bold text-amber-700">STAFF</span>
+          </div>
+        ) : selectedProgram ? (
+          <div className="flex flex-col items-start">
+            <span className="font-medium">{selectedProgram.name}</span>
+            <span className="text-sm text-gray-500">
+              {selectedProgram.customer_name} • {format(parseISO(selectedProgram.start_date), 'dd/MM/yyyy')} - {format(parseISO(selectedProgram.end_date), 'dd/MM/yyyy')}
+              {selectedProgram.status === 'Completed' ? ' (Completed)' : ''}
+            </span>
+          </div>
+        ) : (
+          <span className="text-gray-500">Select Program</span>
+        )}
+        <RiArrowDownSLine className={`w-5 h-5 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+      </button>
+
+      {isOpen && (
+        <div className="absolute z-[100] w-full mt-1 bg-white border rounded-md shadow-lg max-h-60 overflow-auto">
+          {/* Fixed Staff Option */}
+          <button
+            type="button"
+            onClick={() => {
+              onChange(STAFF_ID);
+              setIsOpen(false);
+            }}
+            className={`w-full px-3 py-2 text-left hover:bg-gray-50 ${STAFF_ID === value ? 'bg-amber-50' : ''}`}
+          >
+            <div className="flex flex-col">
+              <span className="font-bold text-amber-700">STAFF</span>
+            </div>
+          </button>
+          
+          {/* Divider */}
+          <div className="border-t border-gray-200 my-1"></div>
+
+          {/* Regular Programs */}
+          {programs.map(program => (
+            <button
+              key={program.id}
+              type="button"
+              onClick={() => {
+                onChange(program.id);
+                setIsOpen(false);
+              }}
+              className={`w-full px-3 py-2 text-left hover:bg-gray-50 ${program.id === value ? 'bg-amber-50' : ''}`}
+            >
+              <div className="flex flex-col">
+                <span className="font-medium">{program.name}</span>
+                <span className="text-sm text-gray-500">
+                  {program.customer_name} • {format(parseISO(program.start_date), 'dd/MM/yyyy')} - {format(parseISO(program.end_date), 'dd/MM/yyyy')}
+                  {program.status === 'Completed' ? ' (Completed)' : ''}
+                </span>
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
 export default function ReportPage() {
   const [packages, setPackages] = useState<Package[]>([]);
   const [programs, setPrograms] = useState<Program[]>([]);
@@ -306,6 +392,7 @@ export default function ReportPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
+  const [isStaffMode, setIsStaffMode] = useState(false);
 
   // Memoize the data fetching functions
   const fetchPackages = useCallback(async () => {
@@ -534,121 +621,236 @@ export default function ReportPage() {
       setProgramReport(null);
       setReportData([]);
 
-      // Build query for billing entries
-      let query = supabase
-        .from('billing_entries')
-        .select(`
-          entry_date,
-          quantity,
-          packages:packages!inner (id, name, type),
-          products:products!inner (id, name, rate)
-        `)
-        .eq('program_id', selectedProgram)
-        .order('entry_date', { ascending: true });
+      if (isStaffMode) {
+        // Handle staff report generation
+        const startDate = `${selectedMonth}-01`;
+        const endDate = new Date(selectedMonth + '-01');
+        endDate.setMonth(endDate.getMonth() + 1);
+        endDate.setDate(endDate.getDate() - 1);
+        const endDateStr = format(endDate, 'yyyy-MM-dd');
 
-      // Add package filter if not 'all'
-      if (selectedPackage && selectedPackage !== 'all') {
-        query = query.eq('packages.type', selectedPackage);
-      }
+        // Build query for staff billing entries
+        let query = supabase
+          .from('staff_billing_entries')
+          .select(`
+            entry_date,
+            quantity,
+            packages:packages!inner (id, name, type),
+            products:products!inner (id, name, rate)
+          `)
+          .gte('entry_date', startDate)
+          .lte('entry_date', endDateStr)
+          .order('entry_date', { ascending: true });
 
-      const { data: billingData, error: billingError } = await query;
-
-      if (billingError) throw billingError;
-
-      if (!billingData || billingData.length === 0) {
-        toast.error('No billing data found for the selected program');
-        setProgramReport(null);
-        setReportData([]);
-        return;
-      }
-
-      // Process and group data by package type
-      const packageGroups: { [key: string]: any } = {};
-      let grandTotal = 0;
-
-      // First, organize data by package type
-      billingData.forEach((entry: any) => {
-        const packageType = entry.packages.type;
-        if (!packageGroups[packageType]) {
-          packageGroups[packageType] = {
-            packageName: entry.packages.name,
-            items: [],
-            packageTotal: 0
-          };
+        // Add package filter if not 'all'
+        if (selectedPackage && selectedPackage !== 'all') {
+          query = query.eq('packages.type', selectedPackage);
         }
 
-        // Find existing item or create new one
-        let item = packageGroups[packageType].items.find(
-          (i: any) => i.productName === entry.products.name
-        );
+        const { data: staffData, error: staffError } = await query;
 
-        if (!item) {
-          item = {
-            productName: entry.products.name,
-            quantity: 0,
-            rate: entry.products.rate,
-            total: 0,
-            dates: {}
-          };
-          packageGroups[packageType].items.push(item);
+        if (staffError) throw staffError;
+
+        if (!staffData || staffData.length === 0) {
+          toast.error('No staff billing data found for the selected period');
+          setProgramReport(null);
+          setReportData([]);
+          return;
         }
 
-        // Add or update date-wise consumption
-        const dateKey = format(new Date(entry.entry_date), 'yyyy-MM-dd');
-        item.dates[dateKey] = (item.dates[dateKey] || 0) + entry.quantity;
-        item.quantity += entry.quantity;
-        item.total = item.quantity * item.rate;
+        // Process and group data by package type
+        const packageGroups: { [key: string]: any } = {};
+        let grandTotal = 0;
 
-        // Update package total
-        packageGroups[packageType].packageTotal = packageGroups[packageType].items.reduce(
-          (sum: number, item: any) => sum + item.total,
+        // First, organize data by package type
+        staffData.forEach((entry: any) => {
+          const packageType = entry.packages.type;
+          if (!packageGroups[packageType]) {
+            packageGroups[packageType] = {
+              packageName: entry.packages.name,
+              items: [],
+              packageTotal: 0
+            };
+          }
+
+          // Find existing item or create new one
+          let item = packageGroups[packageType].items.find(
+            (i: any) => i.productName === entry.products.name
+          );
+
+          if (!item) {
+            item = {
+              productName: entry.products.name,
+              quantity: 0,
+              rate: entry.products.rate,
+              total: 0,
+              dates: {}
+            };
+            packageGroups[packageType].items.push(item);
+          }
+
+          // Add or update date-wise consumption
+          const dateKey = format(new Date(entry.entry_date), 'yyyy-MM-dd');
+          item.dates[dateKey] = (item.dates[dateKey] || 0) + entry.quantity;
+          item.quantity += entry.quantity;
+          item.total = item.quantity * item.rate;
+
+          // Update package total
+          packageGroups[packageType].packageTotal = packageGroups[packageType].items.reduce(
+            (sum: number, item: any) => sum + item.total,
+            0
+          );
+        });
+
+        // Update grand total after all packages are processed
+        grandTotal = Object.values(packageGroups).reduce(
+          (sum: number, pkg: any) => sum + pkg.packageTotal,
           0
         );
-      });
 
-      // Update grand total after all packages are processed
-      grandTotal = Object.values(packageGroups).reduce(
-        (sum: number, pkg: any) => sum + pkg.packageTotal,
-        0
-      );
+        setProgramReport({
+          programDetails: {
+            name: 'Staff Report',
+            startDate: startDate,
+            endDate: endDateStr,
+            totalParticipants: 0,
+            customerName: 'Staff'
+          },
+          packages: packageGroups,
+          grandTotal
+        });
 
-      // Get program details
-      const { data: programData, error: programError } = await supabase
-        .from('programs')
-        .select('*')
-        .eq('id', selectedProgram)
-        .single();
+        // Set reportData to trigger display
+        setReportData([{
+          date: selectedMonth,
+          program: 'Staff Report',
+          start_date: startDate,
+          end_date: endDateStr,
+          cateringTotal: packageGroups['Normal']?.packageTotal || 0,
+          extraTotal: packageGroups['Extra']?.packageTotal || 0,
+          coldDrinkTotal: packageGroups['Cold Drink']?.packageTotal || 0,
+          grandTotal
+        }]);
 
-      if (programError) throw programError;
+        toast.success('Staff report generated successfully');
+      } else {
+        // Program report generation logic
+        // First get program details to ensure it exists
+        const { data: programData, error: programError } = await supabase
+          .from('programs')
+          .select('*')
+          .eq('id', selectedProgram)
+          .single();
 
-      setProgramReport({
-        programDetails: {
-          name: programData.name,
-          startDate: programData.start_date,
-          endDate: programData.end_date,
-          totalParticipants: programData.total_participants,
-          customerName: programData.customer_name
-        },
-        packages: packageGroups,
-        grandTotal
-      });
+        if (programError) throw programError;
 
-      // Set reportData to trigger display
-      setReportData([{
-        date: format(new Date(), 'yyyy-MM-dd'),
-        program: programData.name,
-        start_date: programData.start_date,
-        end_date: programData.end_date,
-        cateringTotal: packageGroups['Normal']?.packageTotal || 0,
-        extraTotal: packageGroups['Extra']?.packageTotal || 0,
-        coldDrinkTotal: packageGroups['Cold Drink']?.packageTotal || 0,
-        grandTotal
-      }]);
+        // Build query for billing entries
+        let query = supabase
+          .from('billing_entries')
+          .select(`
+            entry_date,
+            quantity,
+            packages:packages!inner (id, name, type),
+            products:products!inner (id, name, rate)
+          `)
+          .eq('program_id', selectedProgram)
+          .order('entry_date', { ascending: true });
 
-      toast.success('Program report generated successfully');
+        // Add package filter if not 'all'
+        if (selectedPackage && selectedPackage !== 'all') {
+          query = query.eq('packages.type', selectedPackage);
+        }
+
+        const { data: billingData, error: billingError } = await query;
+
+        if (billingError) throw billingError;
+
+        if (!billingData || billingData.length === 0) {
+          toast.error('No billing data found for the selected program');
+          setProgramReport(null);
+          setReportData([]);
+          return;
+        }
+
+        // Process and group data by package type
+        const packageGroups: { [key: string]: any } = {};
+        let grandTotal = 0;
+
+        // First, organize data by package type
+        billingData.forEach((entry: any) => {
+          const packageType = entry.packages.type;
+          if (!packageGroups[packageType]) {
+            packageGroups[packageType] = {
+              packageName: entry.packages.name,
+              items: [],
+              packageTotal: 0
+            };
+          }
+
+          // Find existing item or create new one
+          let item = packageGroups[packageType].items.find(
+            (i: any) => i.productName === entry.products.name
+          );
+
+          if (!item) {
+            item = {
+              productName: entry.products.name,
+              quantity: 0,
+              rate: entry.products.rate,
+              total: 0,
+              dates: {}
+            };
+            packageGroups[packageType].items.push(item);
+          }
+
+          // Add or update date-wise consumption
+          const dateKey = format(new Date(entry.entry_date), 'yyyy-MM-dd');
+          item.dates[dateKey] = (item.dates[dateKey] || 0) + entry.quantity;
+          item.quantity += entry.quantity;
+          item.total = item.quantity * item.rate;
+
+          // Update package total
+          packageGroups[packageType].packageTotal = packageGroups[packageType].items.reduce(
+            (sum: number, item: any) => sum + item.total,
+            0
+          );
+        });
+
+        // Update grand total after all packages are processed
+        grandTotal = Object.values(packageGroups).reduce(
+          (sum: number, pkg: any) => sum + pkg.packageTotal,
+          0
+        );
+
+        setProgramReport({
+          programDetails: {
+            name: programData.name,
+            startDate: programData.start_date,
+            endDate: programData.end_date,
+            totalParticipants: programData.total_participants,
+            customerName: programData.customer_name
+          },
+          packages: packageGroups,
+          grandTotal
+        });
+
+        // Set reportData to trigger display
+        setReportData([{
+          date: format(new Date(), 'yyyy-MM-dd'),
+          program: programData.name,
+          start_date: programData.start_date,
+          end_date: programData.end_date,
+          cateringTotal: packageGroups['Normal']?.packageTotal || 0,
+          extraTotal: packageGroups['Extra']?.packageTotal || 0,
+          coldDrinkTotal: packageGroups['Cold Drink']?.packageTotal || 0,
+          grandTotal
+        }]);
+
+        toast.success('Program report generated successfully');
+      }
     } catch (error) {
-      console.error('Error generating program report:', error);
-      toast.error('Failed to generate program report');
+      console.error('Error generating report:', error);
+      toast.error('Failed to generate report');
       setProgramReport(null);
       setReportData([]);
     } finally {
@@ -743,7 +945,7 @@ export default function ReportPage() {
 
       setIsLoading(true);
       setReportType('day');
-      
+
       // Clear any existing data
       setDayReportData(null);
       setReportData([]);
@@ -1107,7 +1309,7 @@ export default function ReportPage() {
   const handlePrint = async () => {
     try {
       setIsGeneratingPDF(true);
-      
+
       const response = await fetch(`/api/reports/${reportType}`, {
         method: 'POST',
         headers: {
@@ -1283,7 +1485,7 @@ export default function ReportPage() {
           ))}
         </>
       );
-    }   
+    }
     return (
       <>
         <option value="">Select Package</option>
@@ -1296,6 +1498,25 @@ export default function ReportPage() {
       </>
     );
   };
+
+  const STAFF_ID = 'staff';
+
+  // Modify the useEffect that handles program selection
+  useEffect(() => {
+    if (selectedProgram === 'staff') {
+      setIsStaffMode(true);
+      // Clear existing program data when switching to staff mode
+      setProgramReport(null);
+      setReportData([]);
+    } else {
+      setIsStaffMode(false);
+      // Clear existing staff data when switching to program mode
+      setProgramReport(null);
+      setReportData([]);
+    }
+    // Clear package selection whenever program selection changes
+    setSelectedPackage("");
+  }, [selectedProgram]);
 
   return (
     <div className="space-y-6">
@@ -1321,11 +1542,10 @@ export default function ReportPage() {
                     setReportData([]);
                   }
                 }}
-                className={`p-3 rounded-lg border transition-all duration-200 shadow-sm hover:shadow-md ${
-                  reportType === type.id
+                className={`p-3 rounded-lg border transition-all duration-200 shadow-sm hover:shadow-md ${reportType === type.id
                     ? 'border-amber-500 bg-gradient-to-br from-amber-50 to-amber-100 text-amber-900 shadow-inner'
                     : 'border-gray-200 hover:border-amber-200 hover:bg-amber-50/30'
-                }`}
+                  }`}
               >
                 <div className="flex flex-col items-center gap-2">
                   <type.icon className={`w-5 h-5 ${reportType === type.id ? 'text-amber-600' : 'text-gray-400'
@@ -1427,29 +1647,11 @@ export default function ReportPage() {
                   <label className="block text-sm font-medium text-gray-700">
                     Select Program
                   </label>
-                  <select
+                  <ProgramSelect
                     value={selectedProgram}
-                    onChange={(e) => {
-                      setSelectedProgram(e.target.value);
-                      // Don't generate report here, wait for generate button click
-                    }}
-                    className="w-full rounded-md border-gray-300 shadow-sm focus:border-amber-500 focus:ring-amber-500 p-2 border-2"
-                  >
-                    <option value="">Choose a program</option>
-                    {programs
-                      .sort((a, b) => {
-                        // Extract numbers from program names
-                        const numA = parseInt(a.name.match(/\d+/)?.[0] || '0');
-                        const numB = parseInt(b.name.match(/\d+/)?.[0] || '0');
-                        return numA - numB;
-                      })
-                      .map((program) => (
-                        <option key={program.id} value={program.id}>
-                          {program.name} ({format(new Date(program.start_date), 'dd/MM/yyyy')} -{' '}
-                          {format(new Date(program.end_date), 'dd/MM/yyyy')})
-                        </option>
-                      ))}
-                  </select>
+                    onChange={setSelectedProgram}
+                    programs={programs}
+                  />
                 </div>
                 <div className="space-y-2">
                   <label className="block text-sm font-medium text-gray-700">
@@ -1545,7 +1747,7 @@ export default function ReportPage() {
               type={selectedPackage as 'all' | 'normal' | 'extra' | 'cold drink'}
               cateringData={selectedPackage !== 'all' ? cateringData : undefined}
               products={selectedPackage !== 'all' ? cateringProducts : undefined}
-              // packageTypes={packageTypes}
+            // packageTypes={packageTypes}
             />
           )}
           {reportType === 'program' && programReport && (
