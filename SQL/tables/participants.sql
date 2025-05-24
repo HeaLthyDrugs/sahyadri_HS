@@ -12,6 +12,7 @@ create table public.participants (
   type text not null default 'participant'::text,
   has_date_error boolean null default false,
   date_error_message text null,
+  sequence_number integer null,
   constraint participants_pkey primary key (id),
   constraint participants_program_id_fkey foreign KEY (program_id) references programs (id) on delete CASCADE,
   constraint participants_type_check check (
@@ -37,6 +38,8 @@ create index IF not exists participants_type_idx on public.participants using bt
 create index IF not exists participants_actual_arrival_date_idx on public.participants using btree (actual_arrival_date) TABLESPACE pg_default;
 
 create index IF not exists participants_actual_departure_date_idx on public.participants using btree (actual_departure_date) TABLESPACE pg_default;
+
+create index IF not exists idx_participants_sequence_number on public.participants using btree (sequence_number) TABLESPACE pg_default;
 
 create trigger participant_entry_calculator
 after INSERT

@@ -974,6 +974,9 @@ export function BillingEntriesPage() {
 
   const fetchParticipants = async (programId: string) => {
     try {
+      const program = programs.find(p => p.id === programId);
+      if (!program) return;
+
       const { data, error } = await supabase
         .from('participants')
         .select(`
@@ -983,9 +986,32 @@ export function BillingEntriesPage() {
           reception_checkout,
           program_id
         `)
-        .eq('program_id', programId);
+        .eq('program_id', programId)
+        .not('reception_checkin', 'is', null)
+        .not('reception_checkout', 'is', null);
 
       if (error) throw error;
+
+      // Get the earliest check-in and latest check-out
+      const earliestCheckin = data?.reduce((earliest, p) => {
+        const checkin = new Date(p.reception_checkin);
+        return earliest ? (checkin < earliest ? checkin : earliest) : checkin;
+      }, null as Date | null);
+
+      const latestCheckout = data?.reduce((latest, p) => {
+        const checkout = new Date(p.reception_checkout);
+        return latest ? (checkout > latest ? checkout : latest) : checkout;
+      }, null as Date | null);
+
+      // Update date range to include early arrivals and late departures
+      if (earliestCheckin && latestCheckout) {
+        const dates = eachDayOfInterval({ 
+          start: earliestCheckin, 
+          end: latestCheckout 
+        });
+        setDateRange(dates);
+      }
+
       setParticipants(data || []);
     } catch (error) {
       console.error('Error fetching participants:', error);
@@ -1165,7 +1191,7 @@ export function BillingEntriesPage() {
     }
   }, [selectedProgram, programs]);
 
-  // Fix the isExtraDate function
+  // Helper function to check if a date is outside program dates but has participants
   const isExtraDate = (date: Date, program: Program | undefined): boolean => {
     if (!program) return false;
     
@@ -1180,8 +1206,17 @@ export function BillingEntriesPage() {
     const compareDate = new Date(date);
     compareDate.setHours(0, 0, 0, 0);
     
-    // Check if date is strictly before program start or strictly after program end
-    return compareDate < programStart || compareDate > programEnd;
+    // Check if any participants were present on this date
+    const hasParticipantsOnDate = participants.some(p => {
+      const checkin = new Date(p.reception_checkin);
+      const checkout = new Date(p.reception_checkout);
+      checkin.setHours(0, 0, 0, 0);
+      checkout.setHours(23, 59, 59, 999);
+      return checkin <= compareDate && compareDate <= checkout;
+    });
+    
+    // It's an extra date if it's outside program dates but has participants
+    return hasParticipantsOnDate && (compareDate < programStart || compareDate > programEnd);
   };
 
   // Add this function to check if a column should be shown (has non-zero values)
@@ -1374,7 +1409,10 @@ export function BillingEntriesPage() {
                             <div className={`flex flex-col items-center p-1 sm:p-2 ${isExtra ? 'text-amber-700 font-medium' : ''}`}>
                               <span>{format(date, 'dd-MM-yyyy')}</span>
                               {isExtra && (
-                                <span className="text-[10px] text-amber-600">Extra</span>
+                                <span className="text-[10px] text-amber-600">
+                                  {/* Show early arrival or late departure based on date comparison */}
+                                  {date < new Date(program.start_date) ? '⏰ Early Arrival' : '⌛ Late Departure'}
+                                </span>
                               )}
                             </div>
                           </th>

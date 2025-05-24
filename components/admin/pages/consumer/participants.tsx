@@ -1106,15 +1106,7 @@ export function ParticipantsPage() {
   const handleDelete = async () => {
     if (!participantToDelete) return;
 
-    try {
-      setIsLoading(true);
-
-      const { error: billingError } = await supabase
-        .from('billing_entries')
-        .delete()
-        .eq('program_id', participantToDelete.program_id);
-
-      if (billingError) throw billingError;
+    try {      setIsLoading(true);
 
       const { error: participantError } = await supabase
         .from('participants')

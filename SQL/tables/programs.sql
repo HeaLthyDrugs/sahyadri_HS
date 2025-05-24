@@ -18,14 +18,18 @@ create table public.programs (
   constraint programs_status_check check (
     (
       (status)::text = any (
-        (
-          array[
-            'Upcoming'::character varying,
-            'Ongoing'::character varying,
-            'Completed'::character varying
-          ]
-        )::text[]
+        array[
+          ('Upcoming'::character varying)::text,
+          ('Ongoing'::character varying)::text,
+          ('Completed'::character varying)::text
+        ]
       )
     )
   )
 ) TABLESPACE pg_default;
+
+create trigger trigger_update_program_month_mapping
+after INSERT
+or
+update OF end_date on programs for EACH row
+execute FUNCTION update_program_month_mapping ();

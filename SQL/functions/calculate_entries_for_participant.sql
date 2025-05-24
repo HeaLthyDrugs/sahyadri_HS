@@ -9,6 +9,12 @@ DECLARE
   checkout_timestamp TIMESTAMPTZ;
   rows_count INTEGER;
 BEGIN 
+  -- On DELETE, just delete the billing entries for this participant
+  IF TG_OP = 'DELETE' THEN
+    DELETE FROM public.billing_entries 
+    WHERE billing_entries.participant_id = OLD.id;
+    RETURN OLD;
+  END IF;
   -- Get the normal package ID (CATERING PACKAGE)
   SELECT id INTO normal_package_id FROM packages WHERE type = 'Normal' LIMIT 1;
   IF normal_package_id IS NULL THEN 
@@ -114,12 +120,13 @@ BEGIN
       HAVING COUNT(DISTINCT p.id) > 0
     )
     -- Insert the calculated entries with ON CONFLICT handling
-    INSERT INTO billing_entries (id, program_id, package_id, product_id, entry_date, quantity)
+    INSERT INTO billing_entries (id, program_id, package_id, product_id, participant_id, entry_date, quantity)
     SELECT
       gen_random_uuid(),
       program_record.id,
       normal_package_id,
       product_id,
+      participant_id,
       entry_date,
       quantity
     FROM calculated_entries
