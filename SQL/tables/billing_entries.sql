@@ -3,7 +3,6 @@ create table public.billing_entries (
   program_id uuid null,
   package_id uuid null,
   product_id uuid null,
-  participant_id uuid null,
   entry_date date not null,
   quantity integer not null default 0,
   created_at timestamp with time zone not null default now(),
@@ -13,6 +12,5 @@ create table public.billing_entries (
   constraint billing_entries_package_id_fkey foreign KEY (package_id) references packages (id),
   constraint billing_entries_product_id_fkey foreign KEY (product_id) references products (id) on delete CASCADE,
   constraint billing_entries_program_id_fkey foreign KEY (program_id) references programs (id) on delete CASCADE,
-  constraint billing_entries_participant_id_fkey foreign KEY (participant_id) references participants (id) on delete SET NULL,
   constraint billing_entries_quantity_check check ((quantity >= 0))
 ) TABLESPACE pg_default;

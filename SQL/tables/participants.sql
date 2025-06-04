@@ -41,8 +41,7 @@ create index IF not exists participants_actual_departure_date_idx on public.part
 
 create index IF not exists idx_participants_sequence_number on public.participants using btree (sequence_number) TABLESPACE pg_default;
 
-create trigger participant_entry_calculator
-after INSERT
+create trigger participant_entry_calculator BEFORE INSERT
 or DELETE
 or
 update on participants for EACH row

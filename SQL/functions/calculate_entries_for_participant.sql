@@ -9,10 +9,35 @@ DECLARE
   checkout_timestamp TIMESTAMPTZ;
   rows_count INTEGER;
 BEGIN 
-  -- On DELETE, just delete the billing entries for this participant
+  -- On DELETE, just delete the billing entries for the affected dates
   IF TG_OP = 'DELETE' THEN
+    -- First determine the affected dates
+    SELECT * INTO program_record FROM programs WHERE id = OLD.program_id;
+    IF program_record IS NULL THEN
+      RETURN OLD;
+    END IF;
+    
+    -- Get the normal package ID
+    SELECT id INTO normal_package_id FROM packages WHERE type = 'Normal' LIMIT 1;
+    IF normal_package_id IS NULL THEN
+      RETURN OLD;
+    END IF;
+    
+    -- Calculate affected dates
+    WITH date_range AS (
+      SELECT generate_series(
+        date_trunc('day', OLD.reception_checkin AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata'),
+        date_trunc('day', OLD.reception_checkout AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata'),
+        '1 day'::interval
+      )::date AS day_date
+    )
+    SELECT array_agg(day_date) INTO affected_dates FROM date_range;
+    
+    -- Delete entries for the affected dates
     DELETE FROM public.billing_entries 
-    WHERE billing_entries.participant_id = OLD.id;
+    WHERE program_id = program_record.id
+      AND package_id = normal_package_id
+      AND entry_date = ANY(affected_dates);
     RETURN OLD;
   END IF;
   -- Get the normal package ID (CATERING PACKAGE)
@@ -120,13 +145,12 @@ BEGIN
       HAVING COUNT(DISTINCT p.id) > 0
     )
     -- Insert the calculated entries with ON CONFLICT handling
-    INSERT INTO billing_entries (id, program_id, package_id, product_id, participant_id, entry_date, quantity)
+    INSERT INTO billing_entries (id, program_id, package_id, product_id, entry_date, quantity)
     SELECT
       gen_random_uuid(),
       program_record.id,
       normal_package_id,
       product_id,
-      NULL, -- Change: Set participant_id to NULL since we're aggregating multiple participants
       entry_date,
       quantity
     FROM calculated_entries
