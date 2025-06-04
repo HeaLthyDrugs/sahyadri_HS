@@ -126,7 +126,7 @@ BEGIN
       program_record.id,
       normal_package_id,
       product_id,
-      participant_id,
+      NULL, -- Change: Set participant_id to NULL since we're aggregating multiple participants
       entry_date,
       quantity
     FROM calculated_entries

@@ -164,9 +164,17 @@ export function ParticipantsPage() {
 
   const calculateDuration = (checkin: string, checkout: string): string => {
     try {
+      if (!checkin || !checkout) return '-';
       const start = new Date(checkin);
       const end = new Date(checkout);
+      
+      // Validate dates
+      if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+        return '-';
+      }
+      
       const diff = end.getTime() - start.getTime();
+      if (diff < 0) return '-';
 
       const days = Math.floor(diff / (1000 * 60 * 60 * 24));
       const remainingHours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
@@ -296,153 +304,92 @@ export function ParticipantsPage() {
             end_date
           )
         `)
-        .order('sequence_number', { ascending: true, nullsFirst: false }) // First sort by sequence_number when available, nulls last
-        .order('created_at', { ascending: false }); // Then fall back to created_at for items without sequence_number
+        .order('sequence_number', { ascending: true, nullsFirst: false })
+        .order('created_at', { ascending: false });
 
-      // If a program is selected, filter by program regardless of month
+      // If a specific program is selected, only show participants for that program
       if (selectedProgramId !== 'all') {
         query = query.eq('program_id', selectedProgramId);
       }
-      // Only apply additional month filtering if a month is selected
+      // If no specific program is selected but a month is selected
       else if (selectedMonth && selectedMonth.trim() !== '') {
-        try {
-          const monthDate = new Date(selectedMonth);
-          if (!isNaN(monthDate.getTime())) {
-            const monthStart = startOfMonth(monthDate);
-            const monthEnd = endOfMonth(monthDate);
+        const monthDate = new Date(selectedMonth);
+        if (!isNaN(monthDate.getTime())) {
+          const monthStart = startOfMonth(monthDate);
+          const monthEnd = endOfMonth(monthDate);
 
-            const { data: monthPrograms, error: programError } = await supabase
-              .from('programs')
-              .select('id')
-              .or(
-                `start_date.lte.${monthEnd.toISOString()},end_date.gte.${monthStart.toISOString()}`
-              );
+          // First, get all programs that overlap with the selected month
+          const { data: monthPrograms, error: programError } = await supabase
+            .from('programs')
+            .select('id')
+            .or(
+              `and(start_date.lte.${monthEnd.toISOString()},end_date.gte.${monthStart.toISOString()})`
+            );
 
-            if (programError) throw programError;
+          if (programError) throw programError;
 
-            const programIds = monthPrograms?.map(p => p.id) || [];
-            if (programIds.length > 0) {
-              query = query.in('program_id', programIds);
-            }
+          if (monthPrograms && monthPrograms.length > 0) {
+            // If programs exist for this month, only show participants from these programs
+            const programIds = monthPrograms.map(p => p.id);
+            query = query.in('program_id', programIds);
+          } else {
+            // If no programs exist for this month, return empty array
+            setParticipants([]);
+            return;
           }
-        } catch (error) {
-          console.error('Error processing month date:', error);
-          // Continue with unfiltered query if there's an error with the date
         }
       }
+      // If neither program nor month is selected, show all participants
+      // The query will proceed without additional filters
 
       const { data, error } = await query;
       if (error) throw error;
 
       // Process the fetched data
       const transformedData = (data || []).map(participant => {
-        // Extract the program from the array if it exists
-        const programData = participant.program && Array.isArray(participant.program) && participant.program.length > 0 
-          ? participant.program[0] 
-          : participant.program || null;
-        
+        const programData = participant.program && !Array.isArray(participant.program)
+          ? participant.program
+          : participant.program && Array.isArray(participant.program) && participant.program.length > 0
+            ? participant.program[0]
+            : null;
+
         const transformed: Participant = {
-          id: participant.id,
-          program_id: participant.program_id,
-          attendee_name: participant.attendee_name,
-          security_checkin: participant.security_checkin,
-          reception_checkin: participant.reception_checkin,
-          reception_checkout: participant.reception_checkout,
-          security_checkout: participant.security_checkout,
-          created_at: participant.created_at,
-          actual_arrival_date: participant.actual_arrival_date,
-          actual_departure_date: participant.actual_departure_date,
-          type: participant.type,
-          has_date_error: participant.has_date_error || false,
-          date_error_message: participant.date_error_message,
-          program: programData as Program,
+          ...participant,
+          program: programData,
           attendance_status: [],
-          sequence_number: participant.sequence_number
+          has_date_error: false,
+          date_error_message: undefined
         };
 
         try {
+          // Only validate dates if both check-in and check-out exist
           if (transformed.reception_checkin && transformed.reception_checkout) {
             const checkinDate = new Date(transformed.reception_checkin);
             const checkoutDate = new Date(transformed.reception_checkout);
 
-            if (isNaN(checkinDate.getTime()) || isNaN(checkoutDate.getTime())) {
-              transformed.has_date_error = false;
-              transformed.date_error_message = undefined;
-              return transformed;
-            }
-
-            if (checkoutDate < checkinDate) {
-              transformed.has_date_error = true;
-              transformed.date_error_message = `Check-out date (${format(checkoutDate, 'dd MMM yyyy')}) is before check-in date (${format(checkinDate, 'dd MMM yyyy')})`;
-              return transformed;
-            }
-
-            transformed.has_date_error = false;
-            transformed.date_error_message = undefined;
-
-            if (transformed.program) {
-              transformed.attendance_status = getAttendanceStatus(transformed, transformed.program);
-              if (transformed.attendance_status.length > 0) {
-                transformed.date_error_message = transformed.attendance_status.map(status => status.message).join(', ');
+            if (!isNaN(checkinDate.getTime()) && !isNaN(checkoutDate.getTime())) {
+              if (checkoutDate < checkinDate) {
+                transformed.has_date_error = true;
+                transformed.date_error_message = `Check-out date (${format(checkoutDate, 'dd MMM yyyy')}) is before check-in date (${format(checkinDate, 'dd MMM yyyy')})`;
+              } else if (transformed.program) {
+                // Check for early arrival or late departure
+                transformed.attendance_status = getAttendanceStatus(transformed, transformed.program);
+                if (transformed.attendance_status.length > 0) {
+                  transformed.date_error_message = transformed.attendance_status
+                    .map(status => status.message)
+                    .join(', ');
+                }
               }
             }
-          } else {
-            transformed.has_date_error = false;
-            transformed.date_error_message = undefined;
           }
         } catch (error) {
-          console.error('Error processing dates:', error);
-          transformed.has_date_error = false;
-          transformed.date_error_message = undefined;
+          console.error('Error processing dates for participant:', transformed.id, error);
         }
 
         return transformed;
       });
 
-      // Only filter by month date range if a month is selected
-      if (selectedMonth && selectedMonth.trim() !== '') {
-        try {
-          const monthDate = new Date(selectedMonth);
-          if (!isNaN(monthDate.getTime())) {
-            const monthStart = startOfMonth(monthDate);
-            const monthEnd = endOfMonth(monthDate);
-
-            const filteredData = transformedData.filter(participant => {
-              if (!participant.reception_checkin || !participant.reception_checkout) {
-                return true;
-              }
-
-              try {
-                const checkinDate = new Date(participant.reception_checkin);
-                const checkoutDate = new Date(participant.reception_checkout);
-
-                if (isNaN(checkinDate.getTime()) || isNaN(checkoutDate.getTime())) {
-                  return true;
-                }
-
-                return (
-                  (checkinDate >= monthStart && checkinDate <= monthEnd) ||
-                  (checkoutDate >= monthStart && checkoutDate <= monthEnd) ||
-                  (checkinDate <= monthEnd && checkoutDate >= monthStart)
-                );
-              } catch (error) {
-                console.error('Error filtering by date:', error);
-                return true;
-              }
-            });
-
-            setParticipants(filteredData);
-          } else {
-            setParticipants(transformedData);
-          }
-        } catch (error) {
-          console.error('Error filtering by month:', error);
-          setParticipants(transformedData);
-        }
-      } else {
-        // If no month selected, use all participants
-        setParticipants(transformedData);
-      }
+      setParticipants(transformedData);
     } catch (error) {
       console.error('Error fetching participants:', error);
       toast.error('Failed to fetch participants');
@@ -453,7 +400,7 @@ export function ParticipantsPage() {
     if (selectedMonth) {
       fetchPrograms();
     } else {
-      // Fetch all programs when month is cleared
+      // When month is cleared, fetch all programs
       fetchAllPrograms();
     }
   }, [selectedMonth]);
@@ -841,17 +788,17 @@ export function ParticipantsPage() {
                     sequence_number: index
                   };
 
-                  if (receptionCheckin) {
-                    participantData.reception_checkin = receptionCheckin;
+                  if (receptionCheckIn) {
+                    participantData.reception_checkin = receptionCheckIn;
                   }
-                  if (receptionCheckout) {
-                    participantData.reception_checkout = receptionCheckout;
+                  if (receptionCheckOut) {
+                    participantData.reception_checkout = receptionCheckOut;
                   }
-                  if (securityCheckin) {
-                    participantData.security_checkin = securityCheckin;
+                  if (securityCheckIn) {
+                    participantData.security_checkin = securityCheckIn;
                   }
-                  if (securityCheckout) {
-                    participantData.security_checkout = securityCheckout;
+                  if (securityCheckOut) {
+                    participantData.security_checkout = securityCheckOut;
                   }
 
                   return participantData;
@@ -1047,18 +994,23 @@ export function ParticipantsPage() {
     return typeCompare;
   };
 
+  // Modify the filtered participants logic
   const filteredParticipants = participants
     .filter(participant => {
       const matchesSearch = participant.attendee_name.toLowerCase().includes(searchQuery.toLowerCase());
-      const matchesProgram = selectedProgramId === 'all' || participant.program_id === selectedProgramId;
       const matchesType = selectedType === 'all' || participant.type === selectedType;
       
-      // Add error filter logic
-      const matchesError = selectedErrorFilter === 'all' || 
-        (selectedErrorFilter === 'missing' && (!participant.reception_checkin || !participant.reception_checkout)) ||
-        (selectedErrorFilter === 'incorrect' && participant.has_date_error);
+      let matchesError = true;
+      if (selectedErrorFilter !== 'all') {
+        if (selectedErrorFilter === 'missing') {
+          matchesError = !participant.reception_checkin || !participant.reception_checkout;
+        } else if (selectedErrorFilter === 'incorrect') {
+          matchesError = participant.has_date_error || 
+            (participant.attendance_status && participant.attendance_status.length > 0);
+        }
+      }
 
-      return matchesSearch && matchesProgram && matchesType && matchesError;
+      return matchesSearch && matchesType && matchesError;
     })
     .sort(sortParticipantsByType);
 
@@ -1225,7 +1177,7 @@ export function ParticipantsPage() {
         'No.': participant.id,
         'Attendee Name': participant.attendee_name,
         'Check In': format(new Date(participant.reception_checkin), 'dd-MMM-yyyy h:mm a'),
-        'Check Out': format(new Date(participant.reception_checkout), 'dd-MMM-yyyy h:mm a')
+        'Check Out': format(new Date(participant.reception_checkout), 'dd-Mmm-yyyy h:mm a')
       }));
 
       const csv = unparse(exportData);
@@ -1918,7 +1870,7 @@ export function ParticipantsPage() {
               </button>
               <button
                 onClick={handleDeleteAll}
-                disabled={isLoading}
+                               disabled={isLoading}
                 className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 disabled:opacity-50"
               >
                 {isLoading ? 'Deleting...' : 'Delete All'}
