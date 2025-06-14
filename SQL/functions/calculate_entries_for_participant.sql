@@ -102,6 +102,13 @@ BEGIN
           -- Check if participant was present during the meal slot
           (d.date_val + pr.slot_start::time)::timestamp AT TIME ZONE 'Asia/Kolkata' <= p.checkout_ist
           AND
+          -- Add 5-minute buffer for checkout time comparison with meal slot start
+          (
+            (d.date_val + pr.slot_start::time)::timestamp AT TIME ZONE 'Asia/Kolkata' - INTERVAL '5 minutes' > p.checkout_ist
+            OR
+            p.checkout_ist > (d.date_val + pr.slot_start::time)::timestamp AT TIME ZONE 'Asia/Kolkata'
+          )
+          AND
           (d.date_val + pr.slot_end::time)::timestamp AT TIME ZONE 'Asia/Kolkata' >= p.checkin_ist
         )
       WHERE
