@@ -1,0 +1,91 @@
+<style> .textmode { } </style><div>
+	<table class="datalist tblsp" cellspacing="0" rules="all" border="1" id="ContentPlaceHolder1_CheckInOutGridView" style="border-collapse:collapse;">
+		<tr>
+			<th scope="col">No.</th><th align="center" scope="col" style="width:150px;">Attendee Name</th><th align="center" scope="col" style="width:125px;">Security Check-In</th><th align="center" scope="col" style="width:125px;">Reception Check-In</th><th align="center" scope="col" style="width:125px;">Reception Check-Out</th><th align="center" scope="col" style="width:125px;">Security Check-Out</th>
+		</tr><tr>
+			<td class="textmode">
+                            1
+                        </td><td class="textmode">Pradeep Bajaj</td><td class="textmode">&nbsp;</td><td class="textmode">04/06/2025  9:00AM</td><td class="textmode">06/06/2025  5:05PM</td><td class="textmode">&nbsp;</td>
+		</tr><tr>
+			<td class="textmode">
+                            2
+                        </td><td class="textmode">Ravi Santhanam</td><td class="textmode">&nbsp;</td><td class="textmode">04/06/2025  9:00AM</td><td class="textmode">06/06/2025  4:10PM</td><td class="textmode">&nbsp;</td>
+		</tr><tr>
+			<td class="textmode">
+                            3
+                        </td><td class="textmode">Kartiki Angre</td><td class="textmode">&nbsp;</td><td class="textmode">04/06/2025  9:00AM</td><td class="textmode">06/06/2025  5:05PM</td><td class="textmode">&nbsp;</td>
+		</tr><tr>
+			<td class="textmode">
+                            4
+                        </td><td class="textmode">Mansi Singh</td><td class="textmode">&nbsp;</td><td class="textmode">04/06/2025  9:00AM</td><td class="textmode">06/06/2025  5:05PM</td><td class="textmode">&nbsp;</td>
+		</tr><tr>
+			<td class="textmode">
+                            5
+                        </td><td class="textmode">Vani Gupta</td><td class="textmode">&nbsp;</td><td class="textmode">04/06/2025  9:00AM</td><td class="textmode">06/06/2025  5:05PM</td><td class="textmode">&nbsp;</td>
+		</tr><tr>
+			<td class="textmode">
+                            6
+                        </td><td class="textmode">Chirag Rameshchandra Shah</td><td class="textmode">&nbsp;</td><td class="textmode">04/06/2025  4:15PM</td><td class="textmode">06/06/2025  3:20PM</td><td class="textmode">&nbsp;</td>
+		</tr><tr>
+			<td class="textmode">
+                            7
+                        </td><td class="textmode">Chitta Ranjan Senapati</td><td class="textmode">&nbsp;</td><td class="textmode">04/06/2025 11:30AM</td><td class="textmode">06/06/2025  3:55PM</td><td class="textmode">&nbsp;</td>
+		</tr><tr>
+			<td class="textmode">
+                            8
+                        </td><td class="textmode">Hare Ram</td><td class="textmode">&nbsp;</td><td class="textmode">04/06/2025  7:10PM</td><td class="textmode">06/06/2025  5:05PM</td><td class="textmode">&nbsp;</td>
+		</tr><tr>
+			<td class="textmode">
+                            9
+                        </td><td class="textmode">Manish Kumar Agarwal</td><td class="textmode">&nbsp;</td><td class="textmode">04/06/2025  3:23PM</td><td class="textmode">06/06/2025  4:10PM</td><td class="textmode">&nbsp;</td>
+		</tr><tr>
+			<td class="textmode">
+                            10
+                        </td><td class="textmode">Bharat Wakhlu</td><td class="textmode">&nbsp;</td><td class="textmode">04/06/2025  6:00PM</td><td class="textmode">06/06/2025  4:35PM</td><td class="textmode">&nbsp;</td>
+		</tr><tr>
+			<td class="textmode">
+                            11
+                        </td><td class="textmode">Kanika Arora</td><td class="textmode">&nbsp;</td><td class="textmode">04/06/2025  6:00PM</td><td class="textmode">06/06/2025  3:20PM</td><td class="textmode">&nbsp;</td>
+		</tr><tr>
+			<td class="textmode">
+                            12
+                        </td><td class="textmode">Nandita Shah</td><td class="textmode">&nbsp;</td><td class="textmode">04/06/2025  6:00PM</td><td class="textmode">06/06/2025  3:20PM</td><td class="textmode">&nbsp;</td>
+		</tr><tr>
+			<td class="textmode">
+                            13
+                        </td><td class="textmode">Nitin Jain</td><td class="textmode">&nbsp;</td><td class="textmode">04/06/2025  2:00PM</td><td class="textmode">06/06/2025  3:20PM</td><td class="textmode">&nbsp;</td>
+		</tr><tr>
+			<td class="textmode">
+                            14
+                        </td><td class="textmode">Oshin Bharadwaj</td><td class="textmode">&nbsp;</td><td class="textmode">04/06/2025  8:00AM</td><td class="textmode">06/06/2025  5:05PM</td><td class="textmode">&nbsp;</td>
+		</tr><tr>
+			<td class="textmode">
+                            15
+                        </td><td class="textmode">Tarang Narayan</td><td class="textmode">&nbsp;</td><td class="textmode">04/06/2025  8:00AM</td><td class="textmode">06/06/2025  5:05PM</td><td class="textmode">&nbsp;</td>
+		</tr><tr>
+			<td class="textmode">
+                            16
+                        </td><td class="textmode">Pradeep Jena</td><td class="textmode">&nbsp;</td><td class="textmode">04/06/2025  1:00PM</td><td class="textmode">06/06/2025  3:55PM</td><td class="textmode">&nbsp;</td>
+		</tr><tr>
+			<td class="textmode">
+                            17
+                        </td><td class="textmode">Rajesh Gupta</td><td class="textmode">&nbsp;</td><td class="textmode">04/06/2025  8:05PM</td><td class="textmode">06/06/2025  3:55PM</td><td class="textmode">&nbsp;</td>
+		</tr><tr>
+			<td class="textmode">
+                            18
+                        </td><td class="textmode">Rajib Chakraborty</td><td class="textmode">&nbsp;</td><td class="textmode">04/06/2025  1:00AM</td><td class="textmode">06/06/2025  4:10PM</td><td class="textmode">&nbsp;</td>
+		</tr><tr>
+			<td class="textmode">
+                            19
+                        </td><td class="textmode">Sheeja V</td><td class="textmode">&nbsp;</td><td class="textmode">05/06/2025  1:30PM</td><td class="textmode">06/06/2025  1:50PM</td><td class="textmode">&nbsp;</td>
+		</tr><tr>
+			<td class="textmode">
+                            20
+                        </td><td class="textmode">Sidhant Khullar</td><td class="textmode">&nbsp;</td><td class="textmode">&nbsp;</td><td class="textmode">&nbsp;</td><td class="textmode">&nbsp;</td>
+		</tr><tr>
+			<td class="textmode">
+                            21
+                        </td><td class="textmode">Nishath Usmani</td><td class="textmode">&nbsp;</td><td class="textmode">&nbsp;</td><td class="textmode">&nbsp;</td><td class="textmode">&nbsp;</td>
+		</tr>
+	</table>
+</div>

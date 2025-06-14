@@ -1,0 +1,55 @@
+<style> .textmode { } </style><div>
+	<table class="datalist tblsp" cellspacing="0" rules="all" border="1" id="ContentPlaceHolder1_CheckInOutGridView" style="border-collapse:collapse;">
+		<tr>
+			<th scope="col">No.</th><th align="center" scope="col" style="width:150px;">Attendee Name</th><th align="center" scope="col" style="width:125px;">Security Check-In</th><th align="center" scope="col" style="width:125px;">Reception Check-In</th><th align="center" scope="col" style="width:125px;">Reception Check-Out</th><th align="center" scope="col" style="width:125px;">Security Check-Out</th>
+		</tr><tr>
+			<td class="textmode">
+                            1
+                        </td><td class="textmode">Abhijeet Naikwade</td><td class="textmode">&nbsp;</td><td class="textmode">06/06/2025  8:50AM</td><td class="textmode">07/06/2025  4:28PM</td><td class="textmode">&nbsp;</td>
+		</tr><tr>
+			<td class="textmode">
+                            2
+                        </td><td class="textmode">Bhagwan Tambe</td><td class="textmode">&nbsp;</td><td class="textmode">06/06/2025  8:50AM</td><td class="textmode">07/06/2025  4:28PM</td><td class="textmode">&nbsp;</td>
+		</tr><tr>
+			<td class="textmode">
+                            3
+                        </td><td class="textmode">Jayashree Burhade</td><td class="textmode">&nbsp;</td><td class="textmode">06/06/2025  8:15AM</td><td class="textmode">07/06/2025  4:25PM</td><td class="textmode">&nbsp;</td>
+		</tr><tr>
+			<td class="textmode">
+                            4
+                        </td><td class="textmode">Lalasaheb Janjire</td><td class="textmode">&nbsp;</td><td class="textmode">06/06/2025  8:50AM</td><td class="textmode">07/06/2025  4:28PM</td><td class="textmode">&nbsp;</td>
+		</tr><tr>
+			<td class="textmode">
+                            5
+                        </td><td class="textmode">Mayur Rayate</td><td class="textmode">&nbsp;</td><td class="textmode">06/06/2025  8:50AM</td><td class="textmode">07/06/2025  4:28PM</td><td class="textmode">&nbsp;</td>
+		</tr><tr>
+			<td class="textmode">
+                            6
+                        </td><td class="textmode">Poonam Pathak</td><td class="textmode">&nbsp;</td><td class="textmode">06/06/2025  8:15AM</td><td class="textmode">07/06/2025  4:25PM</td><td class="textmode">&nbsp;</td>
+		</tr><tr>
+			<td class="textmode">
+                            7
+                        </td><td class="textmode">Somnath Albhar</td><td class="textmode">&nbsp;</td><td class="textmode">06/06/2025  8:50AM</td><td class="textmode">07/06/2025  4:28PM</td><td class="textmode">&nbsp;</td>
+		</tr><tr>
+			<td class="textmode">
+                            8
+                        </td><td class="textmode">Swapnil Mahamuni</td><td class="textmode">&nbsp;</td><td class="textmode">06/06/2025  8:15AM</td><td class="textmode">07/06/2025  4:19PM</td><td class="textmode">&nbsp;</td>
+		</tr><tr>
+			<td class="textmode">
+                            9
+                        </td><td class="textmode">Sachin Ghorpade</td><td class="textmode">&nbsp;</td><td class="textmode">06/06/2025  8:15AM</td><td class="textmode">07/06/2025  4:19PM</td><td class="textmode">&nbsp;</td>
+		</tr><tr>
+			<td class="textmode">
+                            10
+                        </td><td class="textmode">Suvarna Gore</td><td class="textmode">&nbsp;</td><td class="textmode">06/06/2025  8:15AM</td><td class="textmode">07/06/2025  2:00PM</td><td class="textmode">&nbsp;</td>
+		</tr><tr>
+			<td class="textmode">
+                            11
+                        </td><td class="textmode">Tanaji Kadalgekar</td><td class="textmode">&nbsp;</td><td class="textmode">06/06/2025  2:15PM</td><td class="textmode">07/06/2025  4:28PM</td><td class="textmode">&nbsp;</td>
+		</tr><tr>
+			<td class="textmode">
+                            12
+                        </td><td class="textmode">Yuvraj Kothare</td><td class="textmode">&nbsp;</td><td class="textmode">06/06/2025  2:15PM</td><td class="textmode">07/06/2025  4:28PM</td><td class="textmode">&nbsp;</td>
+		</tr>
+	</table>
+</div>

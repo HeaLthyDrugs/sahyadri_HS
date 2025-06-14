@@ -9,37 +9,6 @@ DECLARE
   checkout_timestamp TIMESTAMPTZ;
   rows_count INTEGER;
 BEGIN 
-  -- On DELETE, just delete the billing entries for the affected dates
-  IF TG_OP = 'DELETE' THEN
-    -- First determine the affected dates
-    SELECT * INTO program_record FROM programs WHERE id = OLD.program_id;
-    IF program_record IS NULL THEN
-      RETURN OLD;
-    END IF;
-    
-    -- Get the normal package ID
-    SELECT id INTO normal_package_id FROM packages WHERE type = 'Normal' LIMIT 1;
-    IF normal_package_id IS NULL THEN
-      RETURN OLD;
-    END IF;
-    
-    -- Calculate affected dates
-    WITH date_range AS (
-      SELECT generate_series(
-        date_trunc('day', OLD.reception_checkin AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata'),
-        date_trunc('day', OLD.reception_checkout AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata'),
-        '1 day'::interval
-      )::date AS day_date
-    )
-    SELECT array_agg(day_date) INTO affected_dates FROM date_range;
-    
-    -- Delete entries for the affected dates
-    DELETE FROM public.billing_entries 
-    WHERE program_id = program_record.id
-      AND package_id = normal_package_id
-      AND entry_date = ANY(affected_dates);
-    RETURN OLD;
-  END IF;
   -- Get the normal package ID (CATERING PACKAGE)
   SELECT id INTO normal_package_id FROM packages WHERE type = 'Normal' LIMIT 1;
   IF normal_package_id IS NULL THEN 
@@ -83,7 +52,6 @@ BEGIN
     checkin_ist TIMESTAMPTZ;
     checkout_ist TIMESTAMPTZ;
   BEGIN
-    -- Convert to IST for proper date determination
     checkin_ist := checkin_timestamp AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata';
     checkout_ist := checkout_timestamp AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata';
     
@@ -119,11 +87,9 @@ BEGIN
         program_id = program_record.id
         AND reception_checkin IS NOT NULL
         AND reception_checkout IS NOT NULL
-        AND reception_checkout > reception_checkin
-        -- Skip the current participant if we're deleting them
+        AND reception_checkout >= reception_checkin
         AND (TG_OP != 'DELETE' OR id != participant_id)
     ),
-    -- Generate entries for each date and product
     calculated_entries AS (
       SELECT
         d.date_val AS entry_date,
@@ -133,11 +99,10 @@ BEGIN
         unnest(affected_dates) AS d(date_val)
         CROSS JOIN products pr
         LEFT JOIN valid_participants p ON (
-          -- A participant consumed a product on a specific date if:
-          -- 1. They were checked in before the product's end time on that date
-          -- 2. They checked out after the product's start time on that date
-          p.checkin_ist <= ((d.date_val + pr.slot_end::time)::timestamp AT TIME ZONE 'Asia/Kolkata') AND
-          p.checkout_ist >= ((d.date_val + pr.slot_start::time)::timestamp AT TIME ZONE 'Asia/Kolkata')
+          -- Check if participant was present during the meal slot
+          (d.date_val + pr.slot_start::time)::timestamp AT TIME ZONE 'Asia/Kolkata' <= p.checkout_ist
+          AND
+          (d.date_val + pr.slot_end::time)::timestamp AT TIME ZONE 'Asia/Kolkata' >= p.checkin_ist
         )
       WHERE
         pr.package_id = normal_package_id
