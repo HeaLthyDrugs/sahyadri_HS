@@ -287,13 +287,21 @@ const MonthlyReport = ({
       );
     }
 
-    // Sort programs by start date
+    // Sort programs by start date and then by name
     const sortedPrograms = [...programsWithConsumption].sort((a, b) => {
       const programA = data.find(r => r.program === a.program);
       const programB = data.find(r => r.program === b.program);
       
       if (programA && programB) {
-        return new Date(programA.start_date).getTime() - new Date(programB.start_date).getTime();
+        // Compare start dates first
+        const dateComparison = new Date(programA.start_date).getTime() - new Date(programB.start_date).getTime();
+        
+        // If dates are equal, sort by program name
+        if (dateComparison === 0) {
+          return programA.program.localeCompare(programB.program);
+        }
+        
+        return dateComparison;
       }
       
       return 0;

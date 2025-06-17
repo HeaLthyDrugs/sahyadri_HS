@@ -22,6 +22,7 @@ import {
   RiArrowRightLine,
   RiKeyboardLine,
   RiCloseLine,
+  RiCheckLine,
 } from "react-icons/ri";
 import Papa from 'papaparse';
 import { CiEdit } from "react-icons/ci";
@@ -343,6 +344,8 @@ export function BillingEntriesPage() {
   const [endDate, setEndDate] = useState<string>('');
   const [isStaffMode, setIsStaffMode] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'success' | 'error'>('idle');
+  const [isSaving, setIsSaving] = useState(false);
+  const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Add ref for managing focus
   const tableRef = useRef<HTMLDivElement>(null);
@@ -581,6 +584,67 @@ export function BillingEntriesPage() {
       fetchEntries();
     }
   }, [selectedProgram, selectedPackage, dateRange, products.length]);
+
+  const handleEntryChange = (date: string, productId: string, value: string) => {
+    setEntryData(prev => {
+      const newEntryData = {
+        ...prev,
+        [date]: {
+          ...(prev[date] || {}),
+          [productId]: parseFloat(value) || 0,
+        },
+      };
+      // Clear any existing timeout
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+      }
+
+      // Set saving status
+      setIsSaving(true);
+      setSaveStatus('saving');
+
+      // Set a new timeout to save after 1 second of no changes
+      saveTimeoutRef.current = setTimeout(() => {
+        saveEntry(date, productId, parseFloat(value) || 0);
+      }, 1000);
+
+      return newEntryData;
+    });
+  };
+
+  const saveEntry = async (date: string, productId: string, quantity: number) => {
+    setIsSaving(true);
+    setSaveStatus('saving');
+    try {
+      const { data, error } = await supabase
+        .from('billing_entries')
+        .upsert(
+          {
+            program_id: selectedProgram,
+            package_id: selectedPackage,
+            product_id: productId,
+            entry_date: date,
+            quantity: quantity,
+          },
+          { onConflict: 'program_id,package_id,product_id,entry_date' }
+        )
+        .select();
+
+      if (error) throw error;
+      setSaveStatus('success');
+      toast.success('Entry saved automatically!');
+    } catch (error) {
+      console.error('Error saving entry:', error);
+      setSaveStatus('error');
+      toast.error('Failed to save entry automatically.');
+    } finally {
+      setIsSaving(false);
+      // Reset status after a short delay if successful
+      if (saveStatus === 'success') {
+        setTimeout(() => setSaveStatus('idle'), 2000);
+      }
+    }
+  };
 
   const calculateQuantityForSlot = (
     product: Product,
@@ -1368,6 +1432,33 @@ export function BillingEntriesPage() {
                   </button>
                 </div>
               </div>
+                {/* Status Indicator */}
+              <div className="flex items-center gap-2 text-sm mb-2 justify-end mr-2">
+                  {saveStatus === 'saving' && (
+                    <span className="text-amber-600 flex items-center gap-1">
+                      <div className="w-3 h-3 border-2 border-amber-200 border-t-amber-500 rounded-full animate-spin"></div>
+                      Saving...
+                    </span>
+                  )}
+                  {saveStatus === 'success' && (
+                    <span className="text-green-600 flex items-center gap-1">
+                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path></svg>
+                      Saved
+                    </span>
+                  )}
+                  {saveStatus === 'error' && (
+                    <span className="text-red-600 flex items-center gap-1">
+                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                      Error
+                    </span>
+                  )}
+                  {saveStatus === 'idle' && !isSaving && (
+                    <span className="text-green-500 flex items-center gap-1 font-bold">
+                      <RiCheckLine className="w-5 h-5" />
+                      Synced accurately
+                    </span>
+                  )}
+                </div>
             </div>
 
             {/* Table Container */}
@@ -1458,8 +1549,8 @@ export function BillingEntriesPage() {
                                 <div className="flex items-center justify-center p-1">
                                   <input
                                     type="number"
-                                    value={entryData[dateStr]?.[product.id] || 0}
-                                    onChange={(e) => handleQuantityChange(dateStr, product.id, e.target.value)}
+                                    value={entryData[dateStr]?.[product.id] || ''}
+                                    onChange={(e) => handleEntryChange(dateStr, product.id, e.target.value)}
                                     onKeyDown={(e) => handleKeyDown(e, rowIndex, colIndex)}
                                     onClick={() => showParticipantDetails(dateStr, product.id)}
                                     data-row={rowIndex}

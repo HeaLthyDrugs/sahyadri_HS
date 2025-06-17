@@ -581,8 +581,17 @@ export async function POST(request: Request) {
       console.log('Processed catering data:', cateringData);
     }
 
-    // Sort reportData by start_date
-    reportData.sort((a, b) => new Date(a.start_date).getTime() - new Date(b.start_date).getTime());
+    // Sort reportData by start_date and program name
+    reportData.sort((a, b) => {
+      const dateComparison = new Date(a.start_date).getTime() - new Date(b.start_date).getTime();
+      
+      // If dates are equal, sort by program name
+      if (dateComparison === 0) {
+        return a.program.localeCompare(b.program);
+      }
+      
+      return dateComparison;
+    });
 
     // Generate PDF if requested
     if (action === 'print' || action === 'download') {
@@ -622,4 +631,4 @@ export async function POST(request: Request) {
       { status: 500 }
     );
   }
-} 
+}
