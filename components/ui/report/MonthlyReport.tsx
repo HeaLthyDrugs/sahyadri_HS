@@ -1,6 +1,6 @@
 'use client';
 
-import { format } from "date-fns";
+import { format, endOfMonth } from "date-fns";
 import React, { useState } from "react";
 import { RiDownloadLine, RiPrinterLine } from "react-icons/ri";
 import { toast } from "react-hot-toast";
@@ -210,35 +210,55 @@ const MonthlyReport = ({
             </thead>
             <tbody className="bg-white">
               {data
-                .sort((a, b) => new Date(a.start_date).getTime() - new Date(b.start_date).getTime())
-                .map((row, index) => (
-                  <tr key={index} className="border-b border-gray-200 hover:bg-gray-50 transition-colors">
-                    <td className="p-4 text-gray-900 text-center border-r border-gray-200 bg-gray-50 font-medium print-text">
-                      {index + 1}
-                    </td>
-                    <td className="p-4 text-gray-900 border-r border-gray-200 print-text">
-                      {row.program}
-                    </td>
-                    <td className="p-4 text-gray-900 text-center border-r border-gray-200 print-text">
-                      {format(new Date(row.start_date), 'dd MMM yyyy')}
-                    </td>
-                    <td className="p-4 text-gray-900 text-center border-r border-gray-200 print-text">
-                      {format(new Date(row.end_date), 'dd MMM yyyy')}
-                    </td>
-                    <td className="p-4 text-gray-900 text-right border-r border-gray-200 print-text">
-                      ₹{row.cateringTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                    </td>
-                    <td className="p-4 text-gray-900 text-right border-r border-gray-200 print-text">
-                      ₹{row.extraTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                    </td>
-                    <td className="p-4 text-gray-900 text-right border-r border-gray-200 print-text">
-                      ₹{row.coldDrinkTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                    </td>
-                    <td className="p-4 text-gray-900 text-right print-text">
-                      ₹{row.grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                    </td>
-                  </tr>
-                ))}
+                .sort((a, b) => {
+                  // Staff row should always be last
+                  if (a.program === 'Staff') return 1;
+                  if (b.program === 'Staff') return -1;
+                  return new Date(a.start_date).getTime() - new Date(b.start_date).getTime();
+                })
+                .map((row, index) => {
+                  // Calculate proper index excluding Staff rows for numbering
+                  const sortedData = data.sort((a, b) => {
+                    if (a.program === 'Staff') return 1;
+                    if (b.program === 'Staff') return -1;
+                    return new Date(a.start_date).getTime() - new Date(b.start_date).getTime();
+                  });
+                  
+                  const programsBeforeThisRow = sortedData
+                    .slice(0, index)
+                    .filter(r => r.program !== 'Staff').length;
+                  
+                  const displayIndex = row.program === 'Staff' ? '-' : (programsBeforeThisRow + 1);
+                  
+                  return (
+                    <tr key={index} className={`border-b border-gray-200 hover:bg-gray-50 transition-colors ${row.program === 'Staff' ? 'bg-blue-50' : ''}`}>
+                      <td className="p-4 text-gray-900 text-center border-r border-gray-200 bg-gray-50 font-medium print-text">
+                        {displayIndex}
+                      </td>
+                      <td className={`p-4 text-gray-900 border-r border-gray-200 print-text ${row.program === 'Staff' ? 'font-semibold' : ''}`}>
+                        {row.program}
+                      </td>
+                      <td className="p-4 text-gray-900 text-center border-r border-gray-200 print-text">
+                        {format(new Date(row.start_date), 'dd MMM yyyy')}
+                      </td>
+                      <td className="p-4 text-gray-900 text-center border-r border-gray-200 print-text">
+                        {format(new Date(row.end_date), 'dd MMM yyyy')}
+                      </td>
+                      <td className="p-4 text-gray-900 text-right border-r border-gray-200 print-text">
+                        ₹{row.cateringTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      </td>
+                      <td className="p-4 text-gray-900 text-right border-r border-gray-200 print-text">
+                        ₹{row.extraTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      </td>
+                      <td className="p-4 text-gray-900 text-right border-r border-gray-200 print-text">
+                        ₹{row.coldDrinkTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      </td>
+                      <td className="p-4 text-gray-900 text-right print-text">
+                        ₹{row.grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      </td>
+                    </tr>
+                  );
+                })}
               <tr className="bg-gray-50 border-t-2 border-gray-200">
                 <td colSpan={4} className="p-4 text-gray-900 text-right border-r border-gray-200 font-semibold print-text">
                   TOTAL
@@ -287,8 +307,12 @@ const MonthlyReport = ({
       );
     }
 
-    // Sort programs by start date and then by name
+    // Sort programs by start date and then by name, with Staff always last
     const sortedPrograms = [...programsWithConsumption].sort((a, b) => {
+      // Staff should always be last
+      if (a.program === 'Staff') return 1;
+      if (b.program === 'Staff') return -1;
+      
       const programA = data.find(r => r.program === a.program);
       const programB = data.find(r => r.program === b.program);
       
@@ -344,83 +368,66 @@ const MonthlyReport = ({
                         <th className="p-4 font-medium text-gray-900 text-center border-b border-r border-gray-200 w-[6%] print-text">
                           No.
                         </th>
-                        <th className="p-4 font-medium text-gray-900 text-left border-b border-r border-gray-200 w-[25%] print-text">
+                        <th className="p-4 font-medium text-gray-900 text-left border-b border-r border-gray-200 w-[20%] print-text">
                           Program Name
                         </th>
-                        <th className="p-4 font-medium text-gray-900 text-center border-b border-r border-gray-200 w-[12%] print-text">
-                          From
-                        </th>
-                        <th className="p-4 font-medium text-gray-900 text-center border-b border-r border-gray-200 w-[12%] print-text">
-                          To
-                        </th>
-                        <th className="p-4 font-medium text-gray-900 text-right border-b border-r border-gray-200 w-[12%] print-text">
-                          Catering
-                        </th>
-                        <th className="p-4 font-medium text-gray-900 text-right border-b border-r border-gray-200 w-[12%] print-text">
-                          Extra
-                        </th>
-                        <th className="p-4 font-medium text-gray-900 text-right border-b border-r border-gray-200 w-[12%] print-text">
-                          Cold Drink
-                        </th>
-                        <th className="p-4 font-medium text-gray-900 text-right border-b border-gray-200 w-[12%] print-text">
+                        {chunk.map(product => (
+                          <th key={product.id} className="p-4 font-medium text-gray-900 text-center border-b border-r border-gray-200 print-text">
+                            {product.name}
+                          </th>
+                        ))}
+                        <th className="p-4 font-medium text-gray-900 text-center border-b border-gray-200 w-[10%] print-text">
                           Total
                         </th>
                       </tr>
                     </thead>
                     <tbody className="bg-white">
                       {sortedPrograms.map((program, index) => {
-                        const matchingReport = data.find(report => report.program === program.program);
-                        if (!matchingReport) return null;
-
                         const rowTotal = chunk.reduce((sum, product) => 
                           sum + (program.products[product.id] || 0), 0
                         );
 
                         if (rowTotal === 0) return null;
 
+                        // Calculate proper index excluding Staff rows for numbering
+                        const programsBeforeThisRow = sortedPrograms
+                          .slice(0, index)
+                          .filter(r => r.program !== 'Staff').length;
+                        
+                        const displayIndex = program.program === 'Staff' ? '-' : (programsBeforeThisRow + 1);
+
                         return (
-                          <tr key={index} className="border-b border-gray-200 hover:bg-gray-50 transition-colors">
+                          <tr key={index} className={`border-b border-gray-200 hover:bg-gray-50 transition-colors ${program.program === 'Staff' ? 'bg-blue-50' : ''}`}>
                             <td className="p-4 text-gray-900 text-center border-r border-gray-200 bg-gray-50 font-medium print-text">
-                              {index + 1}
+                              {displayIndex}
                             </td>
-                            <td className="p-4 text-gray-900 border-r border-gray-200 print-text">
+                            <td className={`p-4 text-gray-900 border-r border-gray-200 print-text ${program.program === 'Staff' ? 'font-semibold' : ''}`}>
                               {program.program}
                             </td>
+                            {chunk.map(product => (
+                              <td key={product.id} className="p-4 text-gray-900 text-center border-r border-gray-200 print-text">
+                                {program.products[product.id] || 0}
+                              </td>
+                            ))}
                             <td className="p-4 text-gray-900 text-center border-r border-gray-200 print-text">
-                              {format(new Date(matchingReport.start_date), 'dd MMM yyyy')}
-                            </td>
-                            <td className="p-4 text-gray-900 text-center border-r border-gray-200 print-text">
-                              {format(new Date(matchingReport.end_date), 'dd MMM yyyy')}
-                            </td>
-                            <td className="p-4 text-gray-900 text-right border-r border-gray-200 print-text">
-                              ₹{matchingReport.cateringTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                            </td>
-                            <td className="p-4 text-gray-900 text-right border-r border-gray-200 print-text">
-                              ₹{matchingReport.extraTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                            </td>
-                            <td className="p-4 text-gray-900 text-right border-r border-gray-200 print-text">
-                              ₹{matchingReport.coldDrinkTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                            </td>
-                            <td className="p-4 text-gray-900 text-right print-text">
                               {rowTotal}
                             </td>
                           </tr>
                         );
                       })}
                       <tr className="bg-gray-50 border-t-2 border-gray-200">
-                        <td colSpan={4} className="p-4 text-gray-900 text-right border-r border-gray-200 font-semibold print-text">
+                        <td className="p-4 text-gray-900 text-center border-r border-gray-200 font-semibold print-text">
+                          -
+                        </td>
+                        <td className="p-4 text-gray-900 text-left border-r border-gray-200 font-semibold print-text">
                           TOTAL
                         </td>
-                        <td className="p-4 text-gray-900 text-right border-r border-gray-200 font-semibold print-text">
-                          ₹{data.reduce((sum, row) => sum + row.cateringTotal, 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                        </td>
-                        <td className="p-4 text-gray-900 text-right border-r border-gray-200 font-semibold print-text">
-                          ₹{data.reduce((sum, row) => sum + row.extraTotal, 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                        </td>
-                        <td className="p-4 text-gray-900 text-right border-r border-gray-200 font-semibold print-text">
-                          ₹{data.reduce((sum, row) => sum + row.coldDrinkTotal, 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                        </td>
-                        <td className="p-4 text-gray-900 text-right font-semibold print-text">
+                        {chunk.map(product => (
+                          <td key={product.id} className="p-4 text-gray-900 text-center border-r border-gray-200 font-semibold print-text">
+                            {sortedPrograms.reduce((sum, program) => sum + (program.products[product.id] || 0), 0)}
+                          </td>
+                        ))}
+                        <td className="p-4 text-gray-900 text-center font-semibold print-text">
                           {sortedPrograms.reduce(
                             (sum, program) => sum + chunk.reduce(
                               (rowSum, product) => rowSum + (program.products[product.id] || 0), 

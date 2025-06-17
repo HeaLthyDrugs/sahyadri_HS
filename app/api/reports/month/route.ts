@@ -78,6 +78,23 @@ interface ProductData {
   name: string;
 }
 
+interface DatabaseStaffEntry {
+  id: string;
+  entry_date: string;
+  quantity: number;
+  package_id: string;
+  products: {
+    id: string;
+    name: string;
+    rate: number;
+  };
+  packages: {
+    id: string;
+    name: string;
+    type: string;
+  };
+}
+
 const generatePDF = async (
   data: ReportData[],
   month: string,
@@ -89,7 +106,7 @@ const generatePDF = async (
   let browser;
   try {
     if (process.env.NODE_ENV === 'production' || process.env.VERCEL_ENV === 'production') {
-      const executablePath = await chromium.executablePath('https://github.com/Sparticuz/chromium/releases/download/v133.0.0/chromium-v133.0.0-pack.tar');
+      const executablePath = await chromium.executablePath('https://github.com/Sparticuz/chromium/releases/download/v137.0.1/chromium-v137.0.1-pack.tar');
       browser = await puppeteerCore.launch({
         executablePath,
         args: chromium.args,
@@ -246,21 +263,42 @@ const generatePDF = async (
                   </tr>
                 </thead>
                 <tbody>
-                  ${data.sort((a, b) => new Date(a.start_date).getTime() - new Date(b.start_date).getTime()).map((row, index) => `
-                    <tr>
-                      <td style="text-align: center">${index + 1}</td>
-                      <td>${row.program}</td>
-                      <td style="text-align: center">${format(new Date(row.start_date), 'dd/MM/yyyy')}</td>
-                      <td style="text-align: center">${format(new Date(row.end_date), 'dd/MM/yyyy')}</td>
-                      ${packageTypes.map(pkg => {
-                        const total = pkg.type.toLowerCase() === 'normal' ? row.cateringTotal :
-                                    pkg.type.toLowerCase() === 'extra' ? row.extraTotal :
-                                    pkg.type.toLowerCase() === 'cold drink' ? row.coldDrinkTotal : 0;
-                        return `<td style="text-align: right">₹${total.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>`;
-                      }).join('')}
-                      <td style="text-align: right">₹${row.grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-                    </tr>
-                  `).join('')}
+                  ${data
+                    .sort((a, b) => {
+                      // Staff row should always be last
+                      if (a.program === 'Staff') return 1;
+                      if (b.program === 'Staff') return -1;
+                      return new Date(a.start_date).getTime() - new Date(b.start_date).getTime();
+                    })
+                    .map((row, index) => {
+                      // Calculate proper index excluding Staff rows for numbering
+                      const programsBeforeThisRow = data
+                        .sort((a, b) => {
+                          if (a.program === 'Staff') return 1;
+                          if (b.program === 'Staff') return -1;
+                          return new Date(a.start_date).getTime() - new Date(b.start_date).getTime();
+                        })
+                        .slice(0, index)
+                        .filter(r => r.program !== 'Staff').length;
+                      
+                      const displayIndex = row.program === 'Staff' ? '-' : (programsBeforeThisRow + 1);
+                      
+                      return `
+                        <tr>
+                          <td style="text-align: center">${displayIndex}</td>
+                          <td>${row.program}</td>
+                          <td style="text-align: center">${format(new Date(row.start_date), 'dd/MM/yyyy')}</td>
+                          <td style="text-align: center">${format(new Date(row.end_date), 'dd/MM/yyyy')}</td>
+                          ${packageTypes.map(pkg => {
+                            const total = pkg.type.toLowerCase() === 'normal' ? row.cateringTotal :
+                                        pkg.type.toLowerCase() === 'extra' ? row.extraTotal :
+                                        pkg.type.toLowerCase() === 'cold drink' ? row.coldDrinkTotal : 0;
+                            return `<td style="text-align: right">₹${total.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>`;
+                          }).join('')}
+                          <td style="text-align: right">₹${row.grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                        </tr>
+                      `;
+                    }).join('')}
                   <tr class="total-row">
                     <td colspan="4" style="text-align: right">TOTAL</td>
                     ${packageTypes.map(pkg => {
@@ -287,41 +325,59 @@ const generatePDF = async (
                 <table>
                   <thead>
                     <tr>
-                      <th style="width: 12%; text-align: center">Program Name</th>
+                      <th style="width: 6%; text-align: center">No.</th>
+                      <th style="width: 20%; text-align: center">Program Name</th>
                       ${chunk.map(product => `
                         <th style="text-align: center">${product.name}</th>
                       `).join('')}
-                      <th style="width: 15%; text-align: center">Total</th>
+                      <th style="width: 10%; text-align: center">Total</th>
                     </tr>
                   </thead>
                   <tbody>
                     ${(() => {
-                      // Sort cateringData by program start dates
-                      const programStartDates = new Map();
-                      data.forEach(program => {
-                        programStartDates.set(program.program, program.start_date);
-                      });
-                      
-                      return cateringData
+                      // Sort cateringData with Staff always last
+                      const sortedCateringData = cateringData
                         .sort((a, b) => {
+                          // Staff should always be last
+                          if (a.program === 'Staff') return 1;
+                          if (b.program === 'Staff') return -1;
+                          
+                          const programStartDates = new Map();
+                          data.forEach(program => {
+                            programStartDates.set(program.program, program.start_date);
+                          });
+                          
                           const dateA = programStartDates.get(a.program);
                           const dateB = programStartDates.get(b.program);
                           if (dateA && dateB) {
                             return new Date(dateA).getTime() - new Date(dateB).getTime();
                           }
                           return 0;
-                        })
-                        .map(row => `
-                          <tr>
-                            <td style="text-align: center">${row.program}</td>
-                            ${chunk.map(product => `
-                              <td style="text-align: center">${row.products[product.id] || 0}</td>
-                            `).join('')}
-                            <td style="text-align: center">${chunk.reduce((sum, product) => sum + (row.products[product.id] || 0), 0)}</td>
-                          </tr>
-                        `).join('');
+                        });
+                      
+                      return sortedCateringData
+                        .map((row, index) => {
+                          // Calculate proper index excluding Staff rows for numbering
+                          const programsBeforeThisRow = sortedCateringData
+                            .slice(0, index)
+                            .filter(r => r.program !== 'Staff').length;
+                          
+                          const displayIndex = row.program === 'Staff' ? '-' : (programsBeforeThisRow + 1);
+                          
+                          return `
+                            <tr>
+                              <td style="text-align: center">${displayIndex}</td>
+                              <td style="text-align: center">${row.program}</td>
+                              ${chunk.map(product => `
+                                <td style="text-align: center">${row.products[product.id] || 0}</td>
+                              `).join('')}
+                              <td style="text-align: center">${chunk.reduce((sum, product) => sum + (row.products[product.id] || 0), 0)}</td>
+                            </tr>
+                          `;
+                        }).join('');
                     })()}
                     <tr class="total-row">
+                      <td style="text-align: center">-</td>
                       <td style="text-align: center">TOTAL</td>
                       ${chunk.map(product => `
                         <td style="text-align: center">${cateringData.reduce((sum, row) => sum + (row.products[product.id] || 0), 0)}</td>
@@ -447,6 +503,33 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: 'Failed to fetch entries' }, { status: 500 });
       }
 
+      // Fetch staff billing entries
+      const { data: staffEntries, error: staffError } = await supabase
+        .from('staff_billing_entries')
+        .select(`
+          id,
+          entry_date,
+          quantity,
+          package_id,
+          products!inner (
+            id,
+            name,
+            rate
+          ),
+          packages!inner (
+            id,
+            name,
+            type
+          )
+        `)
+        .gte('entry_date', startDate)
+        .lte('entry_date', endDate);
+
+      if (staffError) {
+        console.error('Staff billing entries query error:', staffError);
+        return NextResponse.json({ error: 'Failed to fetch staff entries' }, { status: 500 });
+      }
+
       // Process entries and group by program
       const programTotals = (entries as unknown as DatabaseEntry[]).reduce((acc: { [key: string]: ReportData }, entry) => {
         const programName = entry.programs.name;
@@ -481,7 +564,42 @@ export async function POST(request: Request) {
         return acc;
       }, {});
 
+      // Process staff entries
+      const staffTotals = (staffEntries as unknown as DatabaseStaffEntry[]).reduce((acc: ReportData, entry) => {
+        const amount = entry.quantity * entry.products.rate;
+        const packageType = entry.packages.type.toLowerCase();
+
+        switch (packageType) {
+          case 'normal':
+            acc.cateringTotal += amount;
+            break;
+          case 'extra':
+            acc.extraTotal += amount;
+            break;
+          case 'cold drink':
+            acc.coldDrinkTotal += amount;
+            break;
+        }
+
+        acc.grandTotal += amount;
+        return acc;
+      }, {
+        program: 'Staff',
+        start_date: startDate,
+        end_date: endDate,
+        cateringTotal: 0,
+        extraTotal: 0,
+        coldDrinkTotal: 0,
+        grandTotal: 0
+      });
+
       reportData = Object.values(programTotals);
+      
+      // Add staff row at the end if there's any staff consumption
+      if (staffTotals.grandTotal > 0) {
+        reportData.push(staffTotals);
+      }
+
     } else {
       // Get package ID based on type
       const packageTypeMap = {
@@ -578,7 +696,50 @@ export async function POST(request: Request) {
 
       cateringData = Object.values(programTotals);
 
-      console.log('Processed catering data:', cateringData);
+      // Fetch staff entries for the selected package
+      const { data: staffEntries, error: staffError } = await supabase
+        .from('staff_billing_entries')
+        .select(`
+          id,
+          entry_date,
+          quantity,
+          package_id,
+          products!inner (
+            id,
+            name,
+            rate
+          )
+        `)
+        .eq('package_id', packageId)
+        .gte('entry_date', startDate)
+        .lte('entry_date', endDate);
+
+      if (staffError) {
+        console.error('Staff entries query error:', staffError);
+        return NextResponse.json({ error: 'Failed to fetch staff entries' }, { status: 500 });
+      }
+
+      // Process staff entries
+      if (staffEntries && staffEntries.length > 0) {
+        const staffData: CateringData = {
+          program: 'Staff',
+          products: {},
+          total: 0
+        };
+
+        staffEntries.forEach(entry => {
+          const productId = entry.products.id;
+          staffData.products[productId] = (staffData.products[productId] || 0) + entry.quantity;
+          staffData.total += entry.quantity;
+        });
+
+        // Add staff data at the end if there's consumption
+        if (staffData.total > 0) {
+          cateringData.push(staffData);
+        }
+      }
+
+      console.log('Processed catering data with staff:', cateringData);
     }
 
     // Sort reportData by start_date and program name

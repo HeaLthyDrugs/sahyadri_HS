@@ -288,6 +288,21 @@ const ProgramSelect = ({
   const [isOpen, setIsOpen] = useState(false);
   const selectedProgram = programs.find(p => p.id === value);
   const STAFF_ID = 'staff'; // Fixed ID for staff option
+  
+  // Extract number prefix from program name
+  const extractNumberPrefix = (name: string): number => {
+    const match = name.trim().match(/^(\d+)\s/);
+    return match ? parseInt(match[1], 10) : Infinity; // Return Infinity for names without numbers to sort them last
+  };
+
+  // Sort programs by numerical prefix
+  const sortedPrograms = [...programs].sort((a, b) => {
+    const numberA = extractNumberPrefix(a.name);
+    const numberB = extractNumberPrefix(b.name);
+    
+    // Sort by numerical prefix first
+    return numberA - numberB;
+  });
 
   return (
     <div className="relative min-w-[300px]">
@@ -334,7 +349,7 @@ const ProgramSelect = ({
           <div className="border-t border-gray-200 my-1"></div>
 
           {/* Regular Programs */}
-          {programs.map(program => (
+          {sortedPrograms.map(program => (
             <button
               key={program.id}
               type="button"
