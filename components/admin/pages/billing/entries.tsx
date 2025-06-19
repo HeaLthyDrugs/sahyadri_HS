@@ -108,7 +108,7 @@ interface ParticipantConsumption {
   attendee_name: string;
   reception_checkin: string;
   reception_checkout: string;
-  type: 'participant' | 'guest' | 'other' | 'driver';
+  type: 'participant' | 'guest' | 'other' | 'driver' | 'staff' | 'vip';
 }
 
 // Add these interfaces at the top with other interfaces
@@ -155,7 +155,8 @@ const ProgramSelect = ({
           </div>
         ) : (
           <span className="text-gray-500">Select Program</span>
-        )}
+        )
+        }
         <RiArrowDownSLine className={`w-5 h-5 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
       </button>
 
@@ -350,6 +351,10 @@ export function BillingEntriesPage() {
   // Add ref for managing focus
   const tableRef = useRef<HTMLDivElement>(null);
   const [focusedCell, setFocusedCell] = useState<{ row: number; col: number } | null>(null);
+
+  // Add save queue management
+  const saveQueueRef = useRef<Map<string, { date: string; productId: string; quantity: number }>>(new Map());
+  const isSavingQueueRef = useRef(false);
 
   // Add this function to handle keyboard navigation
   const handleKeyDown = async (e: React.KeyboardEvent<HTMLInputElement>, rowIndex: number, colIndex: number) => {
@@ -586,363 +591,322 @@ export function BillingEntriesPage() {
   }, [selectedProgram, selectedPackage, dateRange, products.length]);
 
   const handleEntryChange = (date: string, productId: string, value: string) => {
+    const quantity = parseFloat(value) || 0;
+    
+    // Update local state immediately for UI responsiveness
     setEntryData(prev => {
       const newEntryData = {
         ...prev,
         [date]: {
           ...(prev[date] || {}),
-          [productId]: parseFloat(value) || 0,
+          [productId]: quantity,
         },
       };
-      // Clear any existing timeout
-      if (saveTimeoutRef.current) {
-        clearTimeout(saveTimeoutRef.current);
-      }
-
-      // Set saving status
-      setIsSaving(true);
-      setSaveStatus('saving');
-
-      // Set a new timeout to save after 1 second of no changes
-      saveTimeoutRef.current = setTimeout(() => {
-        saveEntry(date, productId, parseFloat(value) || 0);
-      }, 1000);
-
       return newEntryData;
     });
-  };
 
-  const saveEntry = async (date: string, productId: string, quantity: number) => {
+    // Add to save queue
+    const entryKey = `${date}-${productId}`;
+    saveQueueRef.current.set(entryKey, { date, productId, quantity });
+
+    console.log('🔄 Entry queued for save:', { date, productId, quantity, queueSize: saveQueueRef.current.size });
+
+    // Clear existing timeout
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+    }
+
+    // Set status to saving
     setIsSaving(true);
     setSaveStatus('saving');
+
+    // Process queue after 500ms of no changes (reduced from 1000ms for faster response)
+    saveTimeoutRef.current = setTimeout(() => {
+      processSaveQueue();
+    }, 500);
+  };
+
+  const processSaveQueue = async () => {
+    if (isSavingQueueRef.current || saveQueueRef.current.size === 0) {
+      return;
+    }
+
+    isSavingQueueRef.current = true;
+    const entriesToSave = Array.from(saveQueueRef.current.values());
+    saveQueueRef.current.clear();
+
+    console.log('📦 Processing save queue:', entriesToSave.length, 'entries');
+
     try {
-      const { data, error } = await supabase
-        .from('billing_entries')
-        .upsert(
-          {
+      // Save all entries in parallel for better performance
+      const savePromises = entriesToSave.map(entry => 
+        saveEntryToDatabase(entry.date, entry.productId, entry.quantity)
+      );
+
+      await Promise.all(savePromises);
+      
+      setSaveStatus('success');
+      console.log('✅ All queued entries saved successfully');
+    } catch (error) {
+      console.error('❌ Error saving queued entries:', error);
+      setSaveStatus('error');
+      toast.error('Failed to save some entries. Please try again.');
+    } finally {
+      isSavingQueueRef.current = false;
+      setIsSaving(false);
+      
+      // Reset status after 2 seconds
+      setTimeout(() => {
+        setSaveStatus('idle');
+      }, 2000);
+    }
+  };
+
+  const saveEntryToDatabase = async (date: string, productId: string, quantity: number) => {
+    console.log('💾 Saving entry to database:', { date, productId, quantity, isStaffMode });
+
+    try {
+      if (isStaffMode) {
+        // For staff mode, first delete existing entry, then insert new one if quantity > 0
+        const { error: deleteError } = await supabase
+          .from('staff_billing_entries')
+          .delete()
+          .eq('package_id', selectedPackage)
+          .eq('product_id', productId)
+          .eq('entry_date', date);
+
+        if (deleteError) {
+          console.error('❌ Staff delete error:', deleteError);
+          throw deleteError;
+        }
+
+        // Only insert if quantity is greater than 0
+        if (quantity > 0) {
+          const staffEntry = {
+            package_id: selectedPackage,
+            product_id: productId,
+            entry_date: date,
+            quantity: quantity,
+          };
+
+          const { error: insertError } = await supabase
+            .from('staff_billing_entries')
+            .insert(staffEntry);
+
+          if (insertError) {
+            console.error('❌ Staff insert error:', insertError);
+            throw insertError;
+          }
+        }
+      } else {
+        // For program mode
+        if (quantity > 0) {
+          const programEntry = {
             program_id: selectedProgram,
             package_id: selectedPackage,
             product_id: productId,
             entry_date: date,
             quantity: quantity,
-          },
-          { onConflict: 'program_id,package_id,product_id,entry_date' }
-        )
-        .select();
+          };
 
-      if (error) throw error;
-      setSaveStatus('success');
-      toast.success('Entry saved automatically!');
-    } catch (error) {
-      console.error('Error saving entry:', error);
-      setSaveStatus('error');
-      toast.error('Failed to save entry automatically.');
-    } finally {
-      setIsSaving(false);
-      // Reset status after a short delay if successful
-      if (saveStatus === 'success') {
-        setTimeout(() => setSaveStatus('idle'), 2000);
+          const { error } = await supabase
+            .from('billing_entries')
+            .upsert(programEntry, { 
+              onConflict: 'program_id,package_id,product_id,entry_date' 
+            });
+
+          if (error) {
+            console.error('❌ Program upsert error:', error);
+            throw error;
+          }
+        } else {
+          // Delete entry if quantity is 0
+          const { error } = await supabase
+            .from('billing_entries')
+            .delete()
+            .eq('program_id', selectedProgram)
+            .eq('package_id', selectedPackage)
+            .eq('product_id', productId)
+            .eq('entry_date', date);
+
+          if (error) {
+            console.error('❌ Program delete error:', error);
+            throw error;
+          }
+        }
       }
+    } catch (error) {
+      console.error('❌ Database save error:', error);
+      throw error;
     }
   };
 
-  const calculateQuantityForSlot = (
-    product: Product,
-    date: Date,
-    participants: Participant[]
-  ): number => {
-    // Convert slot times to Date objects for comparison
-    const slotStart = new Date(date);
-    const [startHours, startMinutes] = product.slot_start?.split(':') || ['00', '00'];
-    slotStart.setHours(parseInt(startHours), parseInt(startMinutes), 0);
-
-    const slotEnd = new Date(date);
-    const [endHours, endMinutes] = product.slot_end?.split(':') || ['00', '00'];
-    slotEnd.setHours(parseInt(endHours), parseInt(endMinutes), 0);
-
-    // Count participants present during this slot
-    const count = participants.filter(participant => {
-      const checkin = new Date(participant.reception_checkin);
-      const checkout = new Date(participant.reception_checkout);
-
-      // Check if participant was present during the slot
-      const isPresent = (
-        format(date, 'yyyy-MM-dd') === format(checkin, 'yyyy-MM-dd') &&
-        checkin.getTime() <= slotEnd.getTime() &&
-        checkout.getTime() >= slotStart.getTime()
-      );
-
-      // Debug logs
-      console.log({
-        product: product.name,
-        date: format(date, 'yyyy-MM-dd'),
-        participant: participant.attendee_name,
-        checkin: format(checkin, 'yyyy-MM-dd HH:mm'),
-        checkout: format(checkout, 'yyyy-MM-dd HH:mm'),
-        slotStart: format(slotStart, 'yyyy-MM-dd HH:mm'),
-        slotEnd: format(slotEnd, 'yyyy-MM-dd HH:mm'),
-        isPresent
-      });
-
-      return isPresent;
-    }).length;
-
-    return count;
+  // Keep the old saveEntry function for backward compatibility but mark it as deprecated
+  const saveEntry = async (date: string, productId: string, quantity: number) => {
+    console.warn('⚠️ Using deprecated saveEntry function. This should not be called anymore.');
+    return saveEntryToDatabase(date, productId, quantity);
   };
 
-  const fetchEntries = async () => {
+  // Add the missing handleSave function
+  const handleSave = async () => {
+    console.log('🚀 Manual save triggered');
+    console.log('📊 Current state:', {
+      isStaffMode,
+      selectedProgram,
+      selectedPackage,
+      entryDataKeys: Object.keys(entryData),
+      entryDataSample: Object.entries(entryData).slice(0, 2)
+    });
+
+    setSaveStatus('saving');
+    setIsLoading(true);
+    
     try {
-      setIsLoading(true);
+      // No participant checking - just save the entries
 
-      // Debug logs
-      console.log('Fetching entries with params:', {
-        programId: selectedProgram,
-        packageId: selectedPackage,
-        dateRange: dateRange.map(d => format(d, 'yyyy-MM-dd'))
-      });
-
-      // If in staff mode, don't check for participants
-      if (!isStaffMode) {
-        // Check if there are any participants in this program first
-        const { data: programParticipants, error: participantsError } = await supabase
-          .from('participants')
-          .select('id, reception_checkin, reception_checkout')
-          .eq('program_id', selectedProgram)
-          .not('reception_checkin', 'is', null)
-          .not('reception_checkout', 'is', null);
-          
-        if (participantsError) throw participantsError;
+      if (isStaffMode) {
+        console.log('📝 Processing staff mode bulk save...');
         
-        // If there are no participants with valid check-in/out times, just return zeros for all entries
-        if (!programParticipants || programParticipants.length === 0) {
-          console.log('No participants with valid check-in/out times found for this program');
-          setEntryData({});
+        // For staff mode - handle each entry individually due to lack of unique constraint
+        const dateKeys = Object.keys(entryData);
+        console.log('📅 Date range for staff entries:', dateKeys);
+        
+        if (dateKeys.length === 0) {
+          console.warn('⚠️ No entry data found for staff mode');
+          toast.error('No entries to save');
+          setSaveStatus('error');
           setIsLoading(false);
           return;
         }
-      }
 
-      // Get the full date range for the program
-      const startDate = format(dateRange[0], 'yyyy-MM-dd');
-      const endDate = format(dateRange[dateRange.length - 1], 'yyyy-MM-dd');
+        const startDeleteDate = dateKeys[0];
+        const endDeleteDate = dateKeys[dateKeys.length - 1];
 
-      // Initialize entry data structure with all zeros
-      const newEntryData: EntryData = {};
-      dateRange.forEach(date => {
-        const dateStr = format(date, 'yyyy-MM-dd');
-        newEntryData[dateStr] = {};
-        products.forEach(product => {
-          newEntryData[dateStr][product.id] = 0;
-        });
-      });
+        console.log('🗑️ Deleting existing staff entries from', startDeleteDate, 'to', endDeleteDate);
 
-      // Fetch entries based on mode
-      if (isStaffMode) {
-        const { data: staffEntries, error: entriesError } = await supabase
+        // Delete all existing entries for the date range and package
+        const { error: deleteError } = await supabase
           .from('staff_billing_entries')
-          .select(`
-            *,
-            products!staff_billing_entries_product_id_fkey (
-              id,
-              name,
-              rate,
-              package_id
-            )
-          `)
+          .delete()
           .eq('package_id', selectedPackage)
-          .gte('entry_date', startDate)
-          .lte('entry_date', endDate);
+          .gte('entry_date', startDeleteDate)
+          .lte('entry_date', endDeleteDate);
 
-        if (entriesError) throw entriesError;
-
-        // Fill in the actual quantities from staff entries
-        staffEntries?.forEach(entry => {
-          const dateStr = format(new Date(entry.entry_date), 'yyyy-MM-dd');
-          if (newEntryData[dateStr] && entry.product_id) {
-            newEntryData[dateStr][entry.product_id] = entry.quantity;
-          }
-        });
-      } else {
-        const { data: billingEntries, error: entriesError } = await supabase
-          .from('billing_entries')
-          .select(`
-            *,
-            products!billing_entries_product_id_fkey (
-              id,
-              name,
-              rate,
-              package_id
-            )
-          `)
-          .eq('program_id', selectedProgram)
-          .eq('package_id', selectedPackage);
-
-        if (entriesError) throw entriesError;
-
-        // Fill in the actual quantities from billing entries
-        billingEntries?.forEach(entry => {
-          const dateStr = format(new Date(entry.entry_date), 'yyyy-MM-dd');
-          if (newEntryData[dateStr] && entry.product_id) {
-            newEntryData[dateStr][entry.product_id] = entry.quantity;
-          }
-        });
-      }
-
-      setEntryData(newEntryData);
-    } catch (error) {
-      console.error('Error fetching entries:', error);
-      toast.error('Failed to fetch entries');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // Add this function to handle quantity changes
-  const handleQuantityChange = async (date: string, productId: string, value: string) => {
-    try {
-      const newValue = value === '' ? '0' : value;
-      const numericValue = parseInt(newValue, 10);
-
-      if (isNaN(numericValue)) {
-        return;
-      }
-
-      // Update local state for immediate feedback
-      setEntryData(prev => ({
-        ...prev,
-        [date]: {
-          ...(prev[date] || {}),
-          [productId]: numericValue
+        if (deleteError) {
+          console.error('❌ Staff bulk delete error:', deleteError);
+          throw deleteError;
         }
-      }));
-    } catch (error) {
-      console.error('Error updating quantity:', error);
-    }
-  };
 
-  // Modify showParticipantDetails to do nothing when cell is clicked
-  const showParticipantDetails = async (date: string, productId: string) => {
-    // Remove the participant details display functionality
-    return;
-  };
+        console.log('✅ Staff entries deleted successfully');
 
-  // Modify the keyboard shortcuts effect
-  useEffect(() => {
-    const handleKeyboardShortcuts = (e: KeyboardEvent) => {
-      if (isFullScreenMode && e.key === 'Escape') {
-        e.preventDefault();
-        setIsFullScreenMode(false);
-      }
-    };
+        // Prepare staff entries (only include entries with quantity > 0)
+        const staffEntries = Object.entries(entryData).flatMap(([date, products]) =>
+          Object.entries(products)
+            .filter(([_, quantity]) => quantity > 0)
+            .map(([productId, quantity]) => ({
+              package_id: selectedPackage,
+              product_id: productId,
+              entry_date: date,
+              quantity: quantity,
+            }))
+        );
 
-    window.addEventListener('keydown', handleKeyboardShortcuts);
-    return () => window.removeEventListener('keydown', handleKeyboardShortcuts);
-  }, [isFullScreenMode]);
+        console.log('📦 Prepared staff entries for insert:', staffEntries.length, 'entries');
+        console.log('📝 Sample staff entries:', staffEntries.slice(0, 3));
 
-  // Modify the handleSave function
-  const handleSave = async () => {
-    setSaveStatus('saving');
-    setIsLoading(true);
-    try {
-      // For regular program entries, check if there are participants before saving
-      if (!isStaffMode) {
-        // Check if there are any participants in this program
-        const { data: programParticipants, error: participantsError } = await supabase
-          .from('participants')
-          .select('id, reception_checkin, reception_checkout')
-          .eq('program_id', selectedProgram)
-          .not('reception_checkin', 'is', null)
-          .not('reception_checkout', 'is', null);
-          
-        if (participantsError) throw participantsError;
+        // Insert new staff entries if any
+        if (staffEntries.length > 0) {
+          const { data: insertData, error: insertError } = await supabase
+            .from('staff_billing_entries')
+            .insert(staffEntries)
+            .select();
+
+          if (insertError) {
+            console.error('❌ Staff bulk insert error:', insertError);
+            throw insertError;
+          }
+
+          console.log('✅ Staff entries inserted successfully:', insertData?.length || 0, 'entries');
+        } else {
+          console.log('⚪ No staff entries to insert (all quantities are 0)');
+        }
+      } else {
+        console.log('👥 Processing program mode bulk save...');
         
-        // If there are no participants with valid check-in/out times, warn the user
-        if (!programParticipants || programParticipants.length === 0) {
-          toast.error('Cannot save entries: No participants with valid check-in/out times in this program');
-          setSaveStatus('error');
-          return;
-        }
-      }
-
-      // Create entries array with different structures for staff and program entries
-      const entries = Object.entries(entryData).flatMap(([date, products]) =>
-        Object.entries(products)
-          .filter(([_, quantity]) => quantity > 0)
-          .map(([productId, quantity]) => {
-            if (isStaffMode) {
-              // Simplified staff entry structure without staff_id
-              return {
-                id: crypto.randomUUID(),
-                package_id: selectedPackage,
-                product_id: productId,
-                entry_date: date,
-                quantity: quantity
-              };
-            } else {
-              // Program entry structure
-              return {
-                id: crypto.randomUUID(),
-                program_id: selectedProgram,
-                package_id: selectedPackage,
-                product_id: productId,
-                entry_date: date,
-                quantity: quantity
-              };
-            }
-          })
-      );
-
-      if (entries.length === 0) {
-        toast.error('No entries to save');
-        setSaveStatus('error');
-        return;
-      }
-
-      // Delete existing entries
-      if (isStaffMode) {
-        const { error: deleteError } = await supabase
-          .from('staff_billing_entries')
-          .delete()
-          .eq('package_id', selectedPackage)
-          .gte('entry_date', startDate)
-          .lte('entry_date', endDate);
-
-        if (deleteError) throw deleteError;
-
-        // Insert new staff entries
-        const { error: insertError } = await supabase
-          .from('staff_billing_entries')
-          .insert(entries);
-
-        if (insertError) throw insertError;
-      } else {
-        // For regular program entries
+        // For program mode - use the existing logic
+        console.log('🗑️ Deleting existing program entries for program:', selectedProgram, 'package:', selectedPackage);
+        
+        // Delete all existing entries for this program and package
         const { error: deleteError } = await supabase
           .from('billing_entries')
           .delete()
           .eq('program_id', selectedProgram)
           .eq('package_id', selectedPackage);
 
-        if (deleteError) throw deleteError;
+        if (deleteError) {
+          console.error('❌ Program bulk delete error:', deleteError);
+          throw deleteError;
+        }
 
-        const { error: insertError } = await supabase
-          .from('billing_entries')
-          .insert(entries);
+        console.log('✅ Program entries deleted successfully');
 
-        if (insertError) throw insertError;
+        // Prepare program entries (only include entries with quantity > 0)
+        const programEntries = Object.entries(entryData).flatMap(([date, products]) =>
+          Object.entries(products)
+            .filter(([_, quantity]) => quantity > 0)
+            .map(([productId, quantity]) => ({
+              program_id: selectedProgram,
+              package_id: selectedPackage,
+              product_id: productId,
+              entry_date: date,
+              quantity: quantity,
+            }))
+        );
+
+        console.log('📦 Prepared program entries for insert:', programEntries.length, 'entries');
+        console.log('📝 Sample program entries:', programEntries.slice(0, 3));
+
+        // Insert new program entries if any
+        if (programEntries.length > 0) {
+          const { data: insertData, error: insertError } = await supabase
+            .from('billing_entries')
+            .insert(programEntries)
+            .select();
+
+          if (insertError) {
+            console.error('❌ Program bulk insert error:', insertError);
+            throw insertError;
+          }
+
+          console.log('✅ Program entries inserted successfully:', insertData?.length || 0, 'entries');
+        } else {
+          console.log('⚪ No program entries to insert (all quantities are 0)');
+        }
       }
 
       setSaveStatus('success');
       toast.success('Entries saved successfully');
+      console.log('🎉 Manual save completed successfully');
       
       // Reset save status after 3 seconds
       setTimeout(() => {
         setSaveStatus('idle');
       }, 3000);
     } catch (error: any) {
-      console.error('Error saving entries:', error);
-      toast.error(error.message || 'Failed to save entries');
+      console.error('❌ Manual save failed:', error);
+      console.error('Error details:', {
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+        code: error.code
+      });
+      
+      toast.error(`Failed to save entries: ${error.message || 'Unknown error'}`);
       setSaveStatus('error');
+      // Reset error status after 5 seconds
+      setTimeout(() => {
+        setSaveStatus('idle');
+      }, 5000);
     } finally {
       setIsLoading(false);
     }
@@ -1021,7 +985,92 @@ export function BillingEntriesPage() {
     }
   };
 
-  // Function to calculate summary statistics
+  // Add cleanup on unmount
+  useEffect(() => {
+    return () => {
+      // Save any remaining entries in queue when component unmounts
+      if (saveQueueRef.current.size > 0) {
+        processSaveQueue();
+      }
+      // Clear timeout
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  // Add effect to handle fast saving when leaving the page
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      if (saveQueueRef.current.size > 0) {
+        // Force immediate save of remaining entries
+        processSaveQueue();
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, []);
+
+  // Add this effect to show keyboard guide only once
+  useEffect(() => {
+    const showGuide = async () => {
+      const hasShown = localStorage.getItem('keyboardGuideShown');
+      if (!hasShown) {
+        setShowKeyboardGuide(true);
+        // Wait for 10 seconds before hiding the guide
+        setTimeout(() => {
+          setShowKeyboardGuide(false);
+          localStorage.setItem('keyboardGuideShown', 'true');
+        }, 10000);
+      }
+    };
+
+    showGuide();
+  }, []);
+
+  // Add this function to handle keyboard shortcuts
+  const handleKeyboardShortcuts = (e: KeyboardEvent) => {
+    // Ctrl + S to save
+    if (e.ctrlKey && e.key === 's') {
+      e.preventDefault();
+      handleSave();
+    }
+    // Ctrl + Shift + S to export
+    else if (e.ctrlKey && e.shiftKey && e.key === 's') {
+      e.preventDefault();
+      handleExport();
+    }
+    // Ctrl + I to import
+    else if (e.ctrlKey && e.key === 'i') {
+      e.preventDefault();
+      document.getElementById('import-file-input')?.click();
+    }
+    // Ctrl + H to toggle history
+    else if (e.ctrlKey && e.key === 'h') {
+      e.preventDefault();
+      setShowHistory(prev => !prev);
+    }
+    // Ctrl + Shift + C to calculate
+    else if (e.ctrlKey && e.shiftKey && e.key === 'c') {
+      e.preventDefault();
+      // Trigger calculation for all entries
+      Object.keys(entryData).forEach(date => {
+        Object.keys(entryData[date]).forEach(productId => {
+          handleEntryChange(date, productId, String(entryData[date][productId]));
+        });
+      });
+    }
+  };
+
+  // Add this effect to listen for keyboard shortcuts
+  useEffect(() => {
+    window.addEventListener('keydown', handleKeyboardShortcuts);
+    return () => {
+      window.removeEventListener('keydown', handleKeyboardShortcuts);
+    };
+  }, [entryData]);
+
   const calculateSummary = (productId: string): EntrySummary => {
     const quantities = Object.values(entryData)
       .map(dateData => dateData[productId] || 0)
@@ -1189,6 +1238,13 @@ export function BillingEntriesPage() {
       const newDateRange = eachDayOfInterval({ start, end });
       setDateRange(newDateRange);
 
+      // Wait for products to be loaded if not already
+      if (products.length === 0) {
+        console.log('Products not loaded yet, waiting...');
+        setIsLoading(false);
+        return;
+      }
+
       // Initialize entry data structure
       const newEntryData: EntryData = {};
       newDateRange.forEach(date => {
@@ -1202,18 +1258,14 @@ export function BillingEntriesPage() {
       // Fetch existing staff entries
       const { data: staffEntries, error } = await supabase
         .from('staff_billing_entries')
-        .select(`
-          id,
-          package_id,
-          product_id,
-          entry_date,
-          quantity
-        `)
+        .select('*')
         .eq('package_id', selectedPackage)
         .gte('entry_date', startDate)
         .lte('entry_date', endDate);
 
       if (error) throw error;
+
+      console.log('Fetched staff entries for date range:', staffEntries);
 
       // Fill in the actual quantities from staff entries
       staffEntries?.forEach(entry => {
@@ -1232,19 +1284,135 @@ export function BillingEntriesPage() {
     }
   };
 
+  // Update the useEffect for fetching entries when products are loaded
+  useEffect(() => {
+    if (selectedProgram && selectedPackage && dateRange.length > 0 && products.length > 0) {
+      fetchEntries();
+    }
+  }, [selectedProgram, selectedPackage, dateRange, products.length]);
+
+  // Add a separate useEffect for staff mode to refetch when products are loaded
+  useEffect(() => {
+    if (isStaffMode && selectedPackage && startDate && endDate && products.length > 0 && dateRange.length > 0) {
+      fetchStaffEntries();
+    }
+  }, [isStaffMode, selectedPackage, startDate, endDate, products.length]);
+
+  const fetchEntries = async () => {
+    try {
+      setIsLoading(true);
+
+      console.log('🔍 Fetching entries with params:', {
+        programId: selectedProgram,
+        packageId: selectedPackage,
+        dateRange: dateRange.map(d => format(d, 'yyyy-MM-dd')),
+        isStaffMode,
+        productsCount: products.length
+      });
+
+      if (!dateRange.length || !products.length) {
+        console.log('⚠️ Missing requirements - dateRange:', dateRange.length, 'products:', products.length);
+        setEntryData({});
+        setIsLoading(false);
+        return;
+      }
+
+      // Get the full date range
+      const startDate = format(dateRange[0], 'yyyy-MM-dd');
+      const endDate = format(dateRange[dateRange.length - 1], 'yyyy-MM-dd');
+
+      console.log('📅 Date range for fetch:', startDate, 'to', endDate);
+
+      // Initialize entry data structure with all zeros
+      const newEntryData: EntryData = {};
+      dateRange.forEach(date => {
+        const dateStr = format(date, 'yyyy-MM-dd');
+        newEntryData[dateStr] = {};
+        products.forEach(product => {
+          newEntryData[dateStr][product.id] = 0;
+        });
+      });
+
+      console.log('📊 Initialized entry data structure for', Object.keys(newEntryData).length, 'dates and', products.length, 'products');
+
+      // Fetch entries based on mode
+      if (isStaffMode) {
+        console.log('📝 Fetching staff entries...');
+        
+        const { data: staffEntries, error: entriesError } = await supabase
+          .from('staff_billing_entries')
+          .select('*')
+          .eq('package_id', selectedPackage)
+          .gte('entry_date', startDate)
+          .lte('entry_date', endDate);
+
+        if (entriesError) {
+          console.error('❌ Staff entries fetch error:', entriesError);
+          throw entriesError;
+        }
+
+        console.log('📝 Fetched staff entries:', staffEntries?.length || 0);
+
+        // Fill in the actual quantities from staff entries
+        staffEntries?.forEach(entry => {
+          const dateStr = format(new Date(entry.entry_date), 'yyyy-MM-dd');
+          if (newEntryData[dateStr] && entry.product_id) {
+            newEntryData[dateStr][entry.product_id] = entry.quantity;
+          }
+        });
+      } else {
+        console.log('👥 Fetching program entries...');
+        
+        const { data: billingEntries, error: entriesError } = await supabase
+          .from('billing_entries')
+          .select('*')
+          .eq('program_id', selectedProgram)
+          .eq('package_id', selectedPackage);
+
+        if (entriesError) {
+          console.error('❌ Program entries fetch error:', entriesError);
+          throw entriesError;
+        }
+
+        console.log('👥 Fetched program entries:', billingEntries?.length || 0);
+
+        // Fill in the actual quantities from billing entries
+        billingEntries?.forEach(entry => {
+          const dateStr = format(new Date(entry.entry_date), 'yyyy-MM-dd');
+          if (newEntryData[dateStr] && entry.product_id) {
+            newEntryData[dateStr][entry.product_id] = entry.quantity;
+          }
+        });
+      }
+
+      console.log('✅ Entry data populated successfully');
+      setEntryData(newEntryData);
+    } catch (error) {
+      console.error('❌ Fetch entries failed:', error);
+      toast.error('Failed to fetch entries');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   // Modify the useEffect that handles program selection
   useEffect(() => {
+    console.log('🔄 Program selection changed:', selectedProgram);
+    
     if (selectedProgram === 'staff') {
+      console.log('📝 Switching to staff mode');
       setIsStaffMode(true);
       setStartDate('');
       setEndDate('');
       setDateRange([]);
       setEntryData({});
     } else {
+      console.log('👥 Switching to program mode');
       setIsStaffMode(false);
       if (selectedProgram) {
         const program = programs.find(p => p.id === selectedProgram);
         if (program) {
+          console.log('📅 Setting date range for program:', program.name, 'from', program.start_date, 'to', program.end_date);
           const dates = eachDayOfInterval({
             start: new Date(program.start_date),
             end: new Date(program.end_date)
@@ -1254,6 +1422,35 @@ export function BillingEntriesPage() {
       }
     }
   }, [selectedProgram, programs]);
+
+  // Add this function to handle quantity changes
+  const handleQuantityChange = async (date: string, productId: string, value: string) => {
+    try {
+      const newValue = value === '' ? '0' : value;
+      const numericValue = parseInt(newValue, 10);
+
+      if (isNaN(numericValue)) {
+        return;
+      }
+
+      // Update local state for immediate feedback
+      setEntryData(prev => ({
+        ...prev,
+        [date]: {
+          ...(prev[date] || {}),
+          [productId]: numericValue
+        }
+      }));
+    } catch (error) {
+      console.error('Error updating quantity:', error);
+    }
+  };
+
+  // Modify showParticipantDetails to do nothing when cell is clicked
+  const showParticipantDetails = async (date: string, productId: string) => {
+    // Remove the participant details display functionality
+    return;
+  };
 
   // Helper function to check if a date is outside program dates but has participants
   const isExtraDate = (date: Date, program: Program | undefined): boolean => {
@@ -1298,7 +1495,12 @@ export function BillingEntriesPage() {
     // If no date range, return empty array
     if (!dateRange.length) return [];
     
-    // For dates within program range, always show them
+    // For staff mode, show all dates in the selected range
+    if (isStaffMode) {
+      return dateRange;
+    }
+    
+    // For program mode, show dates within program range and extra dates with data
     const program = programs.find(p => p.id === selectedProgram);
     if (!program) return dateRange;
     
