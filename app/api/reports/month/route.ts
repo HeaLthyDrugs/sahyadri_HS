@@ -8,8 +8,10 @@ import chromium from '@sparticuz/chromium-min';
 
 interface ReportData {
   program: string;
+  customer_name: string;
   start_date: string;
   end_date: string;
+  total_participants: number;
   cateringTotal: number;
   extraTotal: number;
   coldDrinkTotal: number;
@@ -24,6 +26,8 @@ interface CateringProduct {
 
 interface CateringData {
   program: string;
+  customer_name?: string;
+  total_participants?: number;
   products: { [key: string]: number };
   total: number;
 }
@@ -54,6 +58,8 @@ interface DatabaseEntry {
     name: string;
     start_date: string;
     end_date: string;
+    customer_name: string;
+    total_participants: number;
   };
 }
 
@@ -70,6 +76,8 @@ interface DatabaseEntryWithoutPackages {
   programs: {
     id: number;
     name: string;
+    customer_name: string;
+    total_participants: number;
   };
 }
 
@@ -162,7 +170,7 @@ const generatePDF = async (
             th, td { 
               border: 1px solid #dee2e6; 
               padding: 4px;
-              font-size: 9px;
+              font-size: 8px;
               text-align: center;
               overflow: hidden;
               text-overflow: ellipsis;
@@ -185,6 +193,7 @@ const generatePDF = async (
               background-color: #fff;
               font-weight: 600;
               color: #1a1a1a;
+              font-size: 8px;
             }
             .total-row { 
               background-color: #fff;
@@ -252,14 +261,19 @@ const generatePDF = async (
               <table>
                 <thead>
                   <tr>
-                    <th style="width: 6%; text-align: center">No.</th>
-                    <th style="width: 25%; text-align: left">Program Name</th>
-                    <th style="width: 12%; text-align: center">From</th>
-                    <th style="width: 12%; text-align: center">To</th>
-                    ${packageTypes.map(pkg => `
-                      <th style="width: 11%; text-align: right">${pkg.name}</th>
-                    `).join('')}
-                    <th style="width: 12%; text-align: right">Gr. Total</th>
+                    <th style="width: 4%; text-align: center">No.</th>
+                    <th style="width: 16%; text-align: left">Customer Name</th>
+                    <th style="width: 18%; text-align: left">Program Name</th>
+                    <th style="width: 7%; text-align: center">Participants</th>
+                    <th style="width: 7%; text-align: center">From</th>
+                    <th style="width: 7%; text-align: center">To</th>
+                    ${packageTypes.map(pkg => {
+                      const shortName = pkg.type.toLowerCase() === 'normal' ? 'CATERING' :
+                                      pkg.type.toLowerCase() === 'extra' ? 'EXTRA' :
+                                      pkg.type.toLowerCase() === 'cold drink' ? 'COLD DRINKS' : pkg.name;
+                      return `<th style="width: 10%; text-align: right; font-size: 8px;">${shortName}</th>`;
+                    }).join('')}
+                    <th style="width: 11%; text-align: right">Gr. Total</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -268,27 +282,43 @@ const generatePDF = async (
                       // Staff row should always be last
                       if (a.program === 'Staff') return 1;
                       if (b.program === 'Staff') return -1;
-                      return new Date(a.start_date).getTime() - new Date(b.start_date).getTime();
-                    })
-                    .map((row, index) => {
-                      // Calculate proper index excluding Staff rows for numbering
-                      const programsBeforeThisRow = data
-                        .sort((a, b) => {
-                          if (a.program === 'Staff') return 1;
-                          if (b.program === 'Staff') return -1;
-                          return new Date(a.start_date).getTime() - new Date(b.start_date).getTime();
-                        })
-                        .slice(0, index)
-                        .filter(r => r.program !== 'Staff').length;
                       
-                      const displayIndex = row.program === 'Staff' ? '-' : (programsBeforeThisRow + 1);
+                      // Extract sequence numbers from program names
+                      const getSequenceNumber = (programName: string) => {
+                        const match = programName.match(/^(\\d+)\\s/);
+                        return match ? parseInt(match[1]) : 999; // Programs without numbers go to end
+                      };
+                      
+                      const seqA = getSequenceNumber(a.program);
+                      const seqB = getSequenceNumber(b.program);
+                      
+                      // Sort by sequence number first
+                      if (seqA !== seqB) {
+                        return seqA - seqB;
+                      }
+                      
+                      // If no sequence numbers or same sequence numbers, sort by program name
+                      return a.program.localeCompare(b.program);
+                    })
+                    .map((row, index, sortedArray) => {
+                      // Calculate sequence numbers properly for non-Staff programs only
+                      let sequenceNumber = 0;
+                      for (let i = 0; i < index; i++) {
+                        if (sortedArray[i].program !== 'Staff') {
+                          sequenceNumber++;
+                        }
+                      }
+                      
+                      const displayIndex = row.program === 'Staff' ? '-' : (sequenceNumber + 1);
                       
                       return `
                         <tr>
                           <td style="text-align: center">${displayIndex}</td>
-                          <td>${row.program}</td>
-                          <td style="text-align: center">${format(new Date(row.start_date), 'dd/MM/yyyy')}</td>
-                          <td style="text-align: center">${format(new Date(row.end_date), 'dd/MM/yyyy')}</td>
+                          <td style="text-align: left">${row.program === 'Staff' ? '-' : (row.customer_name || '-')}</td>
+                          <td style="text-align: left">${row.program}</td>
+                          <td style="text-align: center">${row.program === 'Staff' ? '-' : (row.total_participants || 0)}</td>
+                          <td style="text-align: center">${format(new Date(row.start_date), 'dd MMM')}</td>
+                          <td style="text-align: center">${format(new Date(row.end_date), 'dd MMM')}</td>
                           ${packageTypes.map(pkg => {
                             const total = pkg.type.toLowerCase() === 'normal' ? row.cateringTotal :
                                         pkg.type.toLowerCase() === 'extra' ? row.extraTotal :
@@ -300,7 +330,7 @@ const generatePDF = async (
                       `;
                     }).join('')}
                   <tr class="total-row">
-                    <td colspan="4" style="text-align: right">TOTAL</td>
+                    <td colspan="6" style="text-align: right">TOTAL</td>
                     ${packageTypes.map(pkg => {
                       const total = data.reduce((sum, row) => {
                         const rowTotal = pkg.type.toLowerCase() === 'normal' ? row.cateringTotal :
@@ -325,12 +355,14 @@ const generatePDF = async (
                 <table>
                   <thead>
                     <tr>
-                      <th style="width: 6%; text-align: center">No.</th>
-                      <th style="width: 20%; text-align: center">Program Name</th>
+                      <th style="width: 5%; text-align: center">No.</th>
+                      <th style="width: 15%; text-align: left">Customer Name</th>
+                      <th style="width: 18%; text-align: left">Program Name</th>
+                      <th style="width: 7%; text-align: center">Participants</th>
                       ${chunk.map(product => `
                         <th style="text-align: center">${product.name}</th>
                       `).join('')}
-                      <th style="width: 10%; text-align: center">Total</th>
+                      <th style="width: 8%; text-align: center">Total</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -342,32 +374,42 @@ const generatePDF = async (
                           if (a.program === 'Staff') return 1;
                           if (b.program === 'Staff') return -1;
                           
-                          const programStartDates = new Map();
-                          data.forEach(program => {
-                            programStartDates.set(program.program, program.start_date);
-                          });
+                          // Extract sequence numbers from program names
+                          const getSequenceNumber = (programName: string) => {
+                            const match = programName.match(/^(\\d+)\\s/);
+                            return match ? parseInt(match[1]) : 999; // Programs without numbers go to end
+                          };
                           
-                          const dateA = programStartDates.get(a.program);
-                          const dateB = programStartDates.get(b.program);
-                          if (dateA && dateB) {
-                            return new Date(dateA).getTime() - new Date(dateB).getTime();
+                          const seqA = getSequenceNumber(a.program);
+                          const seqB = getSequenceNumber(b.program);
+                          
+                          // Sort by sequence number first
+                          if (seqA !== seqB) {
+                            return seqA - seqB;
                           }
-                          return 0;
+                          
+                          // If no sequence numbers or same sequence numbers, sort by program name
+                          return a.program.localeCompare(b.program);
                         });
                       
                       return sortedCateringData
                         .map((row, index) => {
-                          // Calculate proper index excluding Staff rows for numbering
-                          const programsBeforeThisRow = sortedCateringData
-                            .slice(0, index)
-                            .filter(r => r.program !== 'Staff').length;
+                          // Calculate sequence numbers properly for non-Staff programs only
+                          let sequenceNumber = 0;
+                          for (let i = 0; i < index; i++) {
+                            if (sortedCateringData[i].program !== 'Staff') {
+                              sequenceNumber++;
+                            }
+                          }
                           
-                          const displayIndex = row.program === 'Staff' ? '-' : (programsBeforeThisRow + 1);
+                          const displayIndex = row.program === 'Staff' ? '-' : (sequenceNumber + 1);
                           
                           return `
                             <tr>
                               <td style="text-align: center">${displayIndex}</td>
-                              <td style="text-align: center">${row.program}</td>
+                              <td style="text-align: left">${row.program === 'Staff' ? '-' : (row.customer_name || '-')}</td>
+                              <td style="text-align: left">${row.program}</td>
+                              <td style="text-align: center">${row.program === 'Staff' ? '-' : (row.total_participants || 0)}</td>
                               ${chunk.map(product => `
                                 <td style="text-align: center">${row.products[product.id] || 0}</td>
                               `).join('')}
@@ -378,7 +420,7 @@ const generatePDF = async (
                     })()}
                     <tr class="total-row">
                       <td style="text-align: center">-</td>
-                      <td style="text-align: center">TOTAL</td>
+                      <td colspan="3" style="text-align: center">TOTAL</td>
                       ${chunk.map(product => `
                         <td style="text-align: center">${cateringData.reduce((sum, row) => sum + (row.products[product.id] || 0), 0)}</td>
                       `).join('')}
@@ -487,7 +529,9 @@ export async function POST(request: Request) {
             id,
             name,
             start_date,
-            end_date
+            end_date,
+            customer_name,
+            total_participants
           ),
           packages!inner (
             id,
@@ -536,8 +580,10 @@ export async function POST(request: Request) {
         if (!acc[programName]) {
           acc[programName] = {
             program: programName,
+            customer_name: entry.programs.customer_name,
             start_date: entry.programs.start_date,
             end_date: entry.programs.end_date,
+            total_participants: entry.programs.total_participants,
             cateringTotal: 0,
             extraTotal: 0,
             coldDrinkTotal: 0,
@@ -585,8 +631,10 @@ export async function POST(request: Request) {
         return acc;
       }, {
         program: 'Staff',
+        customer_name: '-',
         start_date: startDate,
         end_date: endDate,
+        total_participants: 0,
         cateringTotal: 0,
         extraTotal: 0,
         coldDrinkTotal: 0,
@@ -663,7 +711,9 @@ export async function POST(request: Request) {
           ),
           programs!inner (
             id,
-            name
+            name,
+            customer_name,
+            total_participants
           )
         `)
         .eq('package_id', packageId)
@@ -683,6 +733,8 @@ export async function POST(request: Request) {
         if (!acc[programName]) {
           acc[programName] = {
             program: programName,
+            customer_name: entry.programs.customer_name,
+            total_participants: entry.programs.total_participants,
             products: {},
             total: 0
           };
@@ -727,8 +779,8 @@ export async function POST(request: Request) {
           total: 0
         };
 
-        staffEntries.forEach(entry => {
-          const productId = entry.products.id;
+        staffEntries.forEach((entry: any) => {
+          const productId = (entry.products as any).id;
           staffData.products[productId] = (staffData.products[productId] || 0) + entry.quantity;
           staffData.total += entry.quantity;
         });
