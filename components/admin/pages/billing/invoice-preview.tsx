@@ -89,6 +89,7 @@ export default function InvoicePreview({ invoiceData, invoiceConfig }: InvoicePr
         body: JSON.stringify({
           packageId: invoiceData.packageDetails.id,
           month: invoiceData.month,
+          isStaffInvoice: invoiceData.isStaffInvoice,
         }),
       });
 
@@ -131,6 +132,7 @@ export default function InvoicePreview({ invoiceData, invoiceConfig }: InvoicePr
         body: JSON.stringify({
           packageId: invoiceData.packageDetails.id,
           month: invoiceData.month,
+          isStaffInvoice: invoiceData.isStaffInvoice,
         }),
       });
 
@@ -244,7 +246,7 @@ export default function InvoicePreview({ invoiceData, invoiceConfig }: InvoicePr
         {/* Billing Details */}
         <div className="grid grid-cols-2 gap-4 my-4">
           <div className="space-y-1">
-            <h3 className="text-lg font-semibold">Ship to:</h3>
+            <h3 className="text-lg font-semibold">Ship to :</h3>
             <div className="text-gray-600 text-sm">
               {invoiceConfig.from_address.map((line, index) => (
                 <p key={index}>{line}</p>
@@ -252,7 +254,7 @@ export default function InvoicePreview({ invoiceData, invoiceConfig }: InvoicePr
             </div>
           </div>
           <div className="space-y-1">
-            <h3 className="text-lg font-semibold">Bill to:</h3>
+            <h3 className="text-lg font-semibold">Bill to :</h3>
             <div className="text-gray-600 text-sm">
               {invoiceConfig.bill_to_address.map((line, index) => (
                 <p key={index}>{line}</p>

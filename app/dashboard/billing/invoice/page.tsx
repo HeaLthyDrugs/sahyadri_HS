@@ -1,8 +1,12 @@
-import { createServerComponentClient } from '@supabase/auth-helpers-nextjs';
-import { cookies } from 'next/headers';
+'use client';
+
+import { useState, useEffect } from 'react';
 import { format } from 'date-fns';
+import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import InvoiceForm from '@/components/admin/pages/billing/invoice-form';
 import InvoicePreview from '@/components/admin/pages/billing/invoice-preview';
+import { toast } from 'react-hot-toast';
+import { RiUserLine, RiTeamLine } from 'react-icons/ri';
 
 interface Product {
   id: string;
@@ -25,212 +29,232 @@ interface BillingEntry {
   products: Product;
 }
 
-interface PageProps {
-  searchParams: {
-    packageId?: string;
-    month?: string;
-    type?: string;
-  };
+interface StaffBillingEntry {
+  id: string;
+  entry_date: string;
+  quantity: number;
+  staff_id: number;
+  products: Product;
 }
 
-export default async function InvoicePage({ searchParams }: PageProps) {
-  const supabase = createServerComponentClient({ cookies });
+interface Package {
+  id: string;
+  name: string;
+  type: string;
+}
+
+interface InvoiceConfig {
+  id: string;
+  company_name: string;
+  from_address: string[];
+  bill_to_address: string[];
+  address: string[];
+  gstin: string;
+  pan: string;
+  footer_note: string;
+  logo_url: string;
+}
+
+interface InvoiceData {
+  packageDetails: Package;
+  month: string;
+  entries: BillingEntry[] | StaffBillingEntry[];
+  totalAmount: number;
+  isStaffInvoice: boolean;
+}
+
+export default function InvoicePage() {
+  const supabase = createClientComponentClient();
   const currentMonth = format(new Date(), 'yyyy-MM');
 
-  // Fetch packages for the form
-  const { data: packages } = await supabase
-    .from('packages')
-    .select('*')
-    .order('name');
+  // State management
+  const [packages, setPackages] = useState<Package[]>([]);
+  const [selectedPackage, setSelectedPackage] = useState<string>('');
+  const [selectedMonth, setSelectedMonth] = useState<string>(currentMonth);
+  const [isStaffMode, setIsStaffMode] = useState<boolean>(false);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [invoiceData, setInvoiceData] = useState<InvoiceData | null>(null);
+  const [invoiceConfig, setInvoiceConfig] = useState<InvoiceConfig | null>(null);
+  const [error, setError] = useState<string>('');
 
-  // If no search params are provided, just render the form
-  if (!searchParams.packageId || !searchParams.month) {
-    return (
-      <div className="space-y-6">
-        <InvoiceForm
-          packages={packages || []}
-          currentMonth={currentMonth}
-          selectedPackage={searchParams.packageId}
-          selectedMonth={searchParams.month || currentMonth}
-        />
-      </div>
-    );
-  }
-
-  // Get all required data in parallel
-  const [packageResponse, configResponse] = await Promise.all([
-    supabase
-      .from('packages')
-      .select('*')
-      .eq('id', searchParams.packageId)
-      .single(),
-    supabase
-      .from('invoice_config')
-      .select('*')
-      .single()
-  ]);
-
-  const packageData = packageResponse.data;
-  const invoiceConfig = configResponse.data;
-
-  // Get programs that belong to this billing month
-  const { data: programsData, error: programsError } = await supabase
-    .from('program_month_mappings')
-    .select(`
-      program_id,
-      programs:program_id (
-        id,
-        name,
-        customer_name,
-        start_date,
-        end_date
-      )
-    `)
-    .eq('billing_month', searchParams.month);
-
-  if (programsError) {
-    console.error('Error fetching programs:', programsError);
-    return (
-      <div className="space-y-6">
-        <InvoiceForm
-          packages={packages || []}
-          currentMonth={currentMonth}
-          selectedPackage={searchParams.packageId}
-          selectedMonth={searchParams.month || currentMonth}
-        />
-        <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded-lg">
-          Error fetching programs for this billing month.
-        </div>
-      </div>
-    );
-  }
-  
-  // If no programs found for this month, show an error
-  if (!programsData || programsData.length === 0) {
-    return (
-      <div className="space-y-6">
-        <InvoiceForm
-          packages={packages || []}
-          currentMonth={currentMonth}
-          selectedPackage={searchParams.packageId}
-          selectedMonth={searchParams.month || currentMonth}
-        />
-        <div className="bg-amber-50 border border-amber-200 text-amber-800 px-4 py-3 rounded-lg">
-          No programs found for billing month {format(new Date(searchParams.month + '-01'), 'MMMM yyyy')}.
-        </div>
-      </div>
-    );
-  }
-  
-  // Extract program IDs
-  const programIds = programsData.map(p => p.program_id);
-  
-  // Get all billing entries for these programs, regardless of entry date
-  const { data: entriesData, error: entriesError } = await supabase
-    .from('billing_entries')
-    .select(`
-      id,
-      entry_date,
-      quantity,
-      programs:program_id (
-        id,
-        name,
-        customer_name
-      ),
-      products:product_id (
-        id,
-        name,
-        rate,
-        index
-      )
-    `)
-    .eq('package_id', searchParams.packageId)
-    .in('program_id', programIds)
-    .order('products(index)', { ascending: true });
-
-  if (entriesError) {
-    console.error('Error fetching entries:', entriesError);
-    return (
-      <div className="space-y-6">
-        <InvoiceForm
-          packages={packages || []}
-          currentMonth={currentMonth}
-          selectedPackage={searchParams.packageId}
-          selectedMonth={searchParams.month || currentMonth}
-        />
-        <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded-lg">
-          Error fetching billing entries.
-        </div>
-      </div>
-    );
-  }
-
-  // Show form with message if no entries found
-  if (!entriesData || entriesData.length === 0) {
-    return (
-      <div className="space-y-6">
-        <InvoiceForm
-          packages={packages || []}
-          currentMonth={currentMonth}
-          selectedPackage={searchParams.packageId}
-          selectedMonth={searchParams.month || currentMonth}
-        />
-        <div className="bg-amber-50 border border-amber-200 text-amber-800 px-4 py-3 rounded-lg">
-          No entries found for package {packageData?.name} in billing month {format(new Date(searchParams.month + '-01'), 'MMMM yyyy')}.
-        </div>
-      </div>
-    );
-  }
-
-  // Transform and aggregate entries
-  const transformedEntries = entriesData.reduce((acc: BillingEntry[], entry: any) => {
-    if (!entry.products || !entry.programs) return acc;
-
-    const existingEntry = acc.find(e => e.products.id === entry.products.id);
-    if (existingEntry) {
-      existingEntry.quantity += entry.quantity || 0;
-    } else {
-      acc.push({
-        id: entry.id,
-        entry_date: entry.entry_date,
-        quantity: entry.quantity || 0,
-        programs: entry.programs,
-        products: entry.products
-      });
-    }
-    return acc;
+  // Fetch packages on component mount
+  useEffect(() => {
+    fetchPackages();
+    fetchInvoiceConfig();
   }, []);
 
-  // Sort entries by product index
-  transformedEntries.sort((a, b) => (a.products.index || 0) - (b.products.index || 0));
+  const fetchPackages = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('packages')
+        .select('*')
+        .order('name');
 
-  // Calculate total
-  const totalAmount = transformedEntries.reduce((sum, entry) => {
-    const rate = entry.products.rate || 0;
-    const quantity = entry.quantity || 0;
-    return sum + (rate * quantity);
-  }, 0);
+      if (error) throw error;
+      setPackages(data || []);
+    } catch (error) {
+      console.error('Error fetching packages:', error);
+      toast.error('Failed to fetch packages');
+    }
+  };
 
-  const invoiceData = {
-    packageDetails: packageData,
-    month: searchParams.month,
-    entries: transformedEntries,
-    totalAmount,
-    isStaffInvoice: searchParams.type === 'staff'
+  const fetchInvoiceConfig = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('invoice_config')
+        .select('*')
+        .single();
+
+      if (error) throw error;
+      setInvoiceConfig(data);
+    } catch (error) {
+      console.error('Error fetching invoice config:', error);
+      toast.error('Failed to fetch invoice configuration');
+    }
+  };
+
+  const generateInvoice = async () => {
+    if (!selectedPackage || !selectedMonth) {
+      toast.error('Please select both package and month');
+      return;
+    }
+
+    setIsLoading(true);
+    setError('');
+    setInvoiceData(null);
+
+    try {
+      const response = await fetch('/api/invoice', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          packageId: selectedPackage,
+          month: selectedMonth,
+          type: isStaffMode ? 'staff' : 'program'
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to generate invoice');
+      }
+
+      const data = await response.json();
+
+      setInvoiceData({
+        packageDetails: data.packageDetails,
+        month: selectedMonth,
+        entries: data.entries,
+        totalAmount: data.totalAmount,
+        isStaffInvoice: isStaffMode
+      });
+
+      toast.success(`${isStaffMode ? 'Staff' : 'Program'} invoice generated successfully`);
+    } catch (error) {
+      console.error('Error generating invoice:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Failed to generate invoice';
+      setError(errorMessage);
+      toast.error(errorMessage);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
     <div className="space-y-6">
-      <InvoiceForm
-        packages={packages || []}
-        currentMonth={currentMonth}
-        selectedPackage={searchParams.packageId}
-        selectedMonth={searchParams.month || currentMonth}
-      />
-      <InvoicePreview
-        invoiceData={invoiceData}
-        invoiceConfig={invoiceConfig}
-      />
+      {/* Page Header with Toggle */}
+      <div className="bg-white rounded-lg shadow p-6">
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">Invoice Generator</h1>
+            <p className="text-gray-600 mt-1">Generate invoices for programs or staff billing</p>
+          </div>
+          
+          {/* Toggle Switch */}
+          <div className="flex items-center bg-gray-100 rounded-lg p-1">
+            <button
+              onClick={() => setIsStaffMode(false)}
+              className={`flex items-center gap-2 px-4 py-2 rounded-md font-medium transition-all ${
+                !isStaffMode
+                  ? 'bg-white text-amber-600 shadow-sm'
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              <RiTeamLine className="w-4 h-4" />
+              PROGRAM
+            </button>
+            <button
+              onClick={() => setIsStaffMode(true)}
+              className={`flex items-center gap-2 px-4 py-2 rounded-md font-medium transition-all ${
+                isStaffMode
+                  ? 'bg-white text-amber-600 shadow-sm'
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              <RiUserLine className="w-4 h-4" />
+              STAFF
+            </button>
+          </div>
+        </div>
+
+        {/* Invoice Form */}
+        <InvoiceForm
+          packages={packages}
+          currentMonth={currentMonth}
+          selectedPackage={selectedPackage}
+          selectedMonth={selectedMonth}
+          isStaffMode={isStaffMode}
+          onPackageChange={setSelectedPackage}
+          onMonthChange={setSelectedMonth}
+          onGenerateInvoice={generateInvoice}
+          isLoading={isLoading}
+        />
+      </div>
+
+      {/* Error Display */}
+      {error && (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+          <div className="flex">
+            <div className="flex-shrink-0">
+              <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+              </svg>
+            </div>
+            <div className="ml-3">
+              <h3 className="text-sm font-medium text-red-800">
+                Error generating invoice
+              </h3>
+              <div className="mt-2 text-sm text-red-700">
+                <p>{error}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Invoice Preview */}
+      {invoiceData && invoiceConfig && (
+        <InvoicePreview
+          invoiceData={invoiceData}
+          invoiceConfig={invoiceConfig}
+        />
+      )}
+
+      {/* Loading State */}
+      {isLoading && (
+        <div className="bg-white rounded-lg shadow p-6">
+          <div className="flex items-center justify-center py-8">
+            <div className="flex items-center gap-3">
+              <div className="w-6 h-6 border-4 border-amber-200 border-t-amber-500 rounded-full animate-spin"></div>
+              <span className="text-sm font-medium text-amber-700">
+                Generating {isStaffMode ? 'staff' : 'program'} invoice...
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -1,7 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useState } from 'react';
 import { format } from 'date-fns';
 import { toast } from 'react-hot-toast';
 import { RiLoader4Line, RiFileTextLine, RiAlertLine } from 'react-icons/ri';
@@ -15,57 +14,30 @@ interface Package {
 interface InvoiceFormProps {
   packages: Package[];
   currentMonth: string;
-  selectedPackage?: string;
-  selectedMonth?: string;
-  isStaffMode?: boolean;
-  onStaffModeChange?: (isStaff: boolean) => void;
+  selectedPackage: string;
+  selectedMonth: string;
+  isStaffMode: boolean;
+  onPackageChange: (packageId: string) => void;
+  onMonthChange: (month: string) => void;
+  onGenerateInvoice: () => void;
+  isLoading: boolean;
 }
 
 export default function InvoiceForm({ 
   packages, 
   currentMonth,
-  selectedPackage = '',
+  selectedPackage,
   selectedMonth,
-  isStaffMode = false,
-  onStaffModeChange
+  isStaffMode,
+  onPackageChange,
+  onMonthChange,
+  onGenerateInvoice,
+  isLoading
 }: InvoiceFormProps) {
-  const router = useRouter();
-  const searchParams = useSearchParams();
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [currentType, setCurrentType] = useState(isStaffMode);
   const [formErrors, setFormErrors] = useState<{
     packageId?: string;
     month?: string;
   }>({});
-
-  // Reset form state when URL params change
-  useEffect(() => {
-    setIsGenerating(false);
-    setFormErrors({});
-  }, [searchParams]);
-
-  // Update currentType when URL type parameter changes
-  useEffect(() => {
-    const type = searchParams.get('type');
-    setCurrentType(type === 'staff');
-  }, [searchParams]);
-
-  const handleTypeChange = (e: React.MouseEvent, type: boolean) => {
-    e.preventDefault(); // Prevent form submission
-    setCurrentType(type);
-    
-    // Update URL params regardless of callback
-    const params = new URLSearchParams(searchParams.toString());
-    params.delete('packageId');
-    params.delete('month');
-    params.set('type', type ? 'staff' : 'program');
-    router.push(`?${params.toString()}`);
-
-    // Call the callback if provided
-    if (onStaffModeChange) {
-      onStaffModeChange(type);
-    }
-  };
 
   const validateForm = (packageId: string, month: string) => {
     const errors: {packageId?: string; month?: string} = {};
@@ -90,86 +62,19 @@ export default function InvoiceForm({
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    const formData = new FormData(e.currentTarget);
-    const packageId = formData.get('packageId') as string;
-    const month = formData.get('month') as string;
-
-    if (!validateForm(packageId, month)) {
+    
+    if (!validateForm(selectedPackage, selectedMonth)) {
       Object.values(formErrors).forEach(error => {
         if (error) toast.error(error);
       });
       return;
     }
 
-    setIsGenerating(true);
-    const loadingToast = toast.loading('Generating invoice...', { id: 'invoice-generation' });
-
-    try {
-      // Make API call to fetch invoice data based on type
-      const response = await fetch('/api/invoice/generate', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          packageId,
-          month,
-          type: currentType ? 'staff' : 'program'
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to generate invoice');
-      }
-
-      // Update URL with parameters after successful generation
-      const params = new URLSearchParams(searchParams);
-      params.set('packageId', packageId);
-      params.set('month', month);
-      params.set('type', currentType ? 'staff' : 'program');
-      router.push(`?${params.toString()}`);
-
-      toast.success('Invoice generated successfully');
-    } catch (error) {
-      console.error('Error generating invoice:', error);
-      toast.error('Failed to generate invoice');
-    } finally {
-      setIsGenerating(false);
-      toast.dismiss(loadingToast);
-    }
+    onGenerateInvoice();
   };
 
   return (
-    <form onSubmit={handleSubmit} className="print:hidden flex flex-col gap-4 bg-white p-4 rounded-lg shadow">
-      {/* Invoice Type Toggle */}
-      {/* <div className="flex items-center gap-4 pb-4 border-b">
-        <label className="text-sm font-medium text-gray-700">Invoice Type:</label>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={(e) => handleTypeChange(e, false)}
-            className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
-              !currentType 
-                ? 'bg-amber-100 text-amber-800 border border-amber-200' 
-                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-            }`}
-          >
-            Program
-          </button>
-          <button
-            type="button"
-            onClick={(e) => handleTypeChange(e, true)}
-            className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
-              currentType 
-                ? 'bg-amber-100 text-amber-800 border border-amber-200' 
-                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-            }`}
-          >
-            Staff
-          </button>
-        </div>
-      </div> */}
-
+    <form onSubmit={handleSubmit} className="flex flex-col gap-4">
       <div className="flex flex-col sm:flex-row gap-4">
         <div className="flex-1 space-y-2">
           <label htmlFor="packageId" className="block text-sm font-medium text-gray-700">
@@ -179,25 +84,31 @@ export default function InvoiceForm({
             <select
               id="packageId"
               name="packageId"
-              defaultValue={selectedPackage}
-              className={`w-full rounded-md border ${formErrors.packageId ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : 'border-gray-300 focus:border-amber-500 focus:ring-amber-500'} px-3 py-2`}
-              disabled={isGenerating}
-              onChange={() => setFormErrors(prev => ({ ...prev, packageId: undefined }))}
+              value={selectedPackage}
+              onChange={(e) => {
+                onPackageChange(e.target.value);
+                setFormErrors(prev => ({ ...prev, packageId: undefined }));
+              }}
+              className={`w-full rounded-md border ${formErrors.packageId ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : 'border-gray-300 focus:border-amber-500 focus:ring-amber-500'} px-3 py-2 pr-10`}
+              disabled={isLoading}
             >
-              <option value="">Choose a package</option>
-              {packages.map((pkg) => (
+              <option value="">Select a Package</option>
+              {packages.map(pkg => (
                 <option key={pkg.id} value={pkg.id}>
                   {pkg.name} ({pkg.type})
                 </option>
               ))}
             </select>
-            {formErrors.packageId && (
-              <div className="text-red-500 text-xs mt-1 flex items-center gap-1">
-                <RiAlertLine className="w-3 h-3" />
-                {formErrors.packageId}
-              </div>
-            )}
+            <div className="absolute inset-y-0 right-0 flex items-center pr-2 pointer-events-none">
+              <RiFileTextLine className="w-5 h-5 text-gray-400" />
+            </div>
           </div>
+          {formErrors.packageId && (
+            <p className="text-sm text-red-600 flex items-center gap-1">
+              <RiAlertLine className="w-4 h-4" />
+              {formErrors.packageId}
+            </p>
+          )}
         </div>
 
         <div className="flex-1 space-y-2">
@@ -209,36 +120,39 @@ export default function InvoiceForm({
               type="month"
               id="month"
               name="month"
-              defaultValue={selectedMonth}
+              value={selectedMonth}
+              onChange={(e) => {
+                onMonthChange(e.target.value);
+                setFormErrors(prev => ({ ...prev, month: undefined }));
+              }}
               max={currentMonth}
               className={`w-full rounded-md border ${formErrors.month ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : 'border-gray-300 focus:border-amber-500 focus:ring-amber-500'} px-3 py-2`}
-              disabled={isGenerating}
-              onChange={() => setFormErrors(prev => ({ ...prev, month: undefined }))}
+              disabled={isLoading}
             />
-            {formErrors.month && (
-              <div className="text-red-500 text-xs mt-1 flex items-center gap-1">
-                <RiAlertLine className="w-3 h-3" />
-                {formErrors.month}
-              </div>
-            )}
           </div>
+          {formErrors.month && (
+            <p className="text-sm text-red-600 flex items-center gap-1">
+              <RiAlertLine className="w-4 h-4" />
+              {formErrors.month}
+            </p>
+          )}
         </div>
 
         <div className="flex items-end space-x-2">
           <button
             type="submit"
-            className="px-4 py-2 bg-amber-600 text-white rounded-md hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 transition-all duration-200 ease-in-out"
-            disabled={isGenerating}
+            disabled={isLoading || !selectedPackage || !selectedMonth}
+            className="px-6 py-2 bg-amber-600 hover:bg-amber-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-medium rounded-md transition-colors flex items-center gap-2"
           >
-            {isGenerating ? (
+            {isLoading ? (
               <>
-                <RiLoader4Line className="w-5 h-5 animate-spin" />
+                <RiLoader4Line className="w-4 h-4 animate-spin" />
                 Generating...
               </>
             ) : (
               <>
-                <RiFileTextLine className="w-5 h-5" />
-                Generate Invoice
+                <RiFileTextLine className="w-4 h-4" />
+                Generate {isStaffMode ? 'Staff' : 'Program'} Invoice
               </>
             )}
           </button>

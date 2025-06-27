@@ -26,7 +26,7 @@ interface StaffBillingEntry {
   id: string;
   entry_date: string;
   quantity: number;
-  staff: Staff;
+  staff_id: number;
   products: Product;
 }
 
@@ -103,10 +103,6 @@ export async function POST(request: Request) {
           id,
           entry_date,
           quantity,
-          staff:staff_id (
-            id,
-            name
-          ),
           products:product_id (
             id,
             name,
@@ -131,13 +127,13 @@ export async function POST(request: Request) {
         }, { status: 404 });
       }
 
-      entries = (staffEntries as unknown as StaffBillingResponse[]).map(entry => ({
+      entries = (staffEntries as any[]).map(entry => ({
         id: entry.id,
         entry_date: entry.entry_date,
         quantity: entry.quantity || 0,
-        staff: entry.staff,
+        staff_id: 1, // Default staff ID for aggregated entries
         products: entry.products
-      }));
+      })) as StaffBillingEntry[];
     } else {
       // Fetch program mappings for the month
       const { data: programMappings, error: mappingsError } = await supabase
