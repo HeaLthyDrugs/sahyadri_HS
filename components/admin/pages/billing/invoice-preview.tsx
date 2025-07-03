@@ -235,9 +235,9 @@ export default function InvoicePreview({ invoiceData, invoiceConfig }: InvoicePr
               }
             </div>
           </div>
-          {/* <div className="text-right">
+          <div className="text-right">
             <h2 className="text-3xl font-bold text-amber-600">INVOICE</h2>
-          </div> */}
+          </div>
         </div>
 
         {/* Billing Details */}
@@ -260,11 +260,11 @@ export default function InvoicePreview({ invoiceData, invoiceConfig }: InvoicePr
           </div>
         </div>
 
-        {/* Invoice Title */}
+        {/* Invoice Summary */}
         <div className="bg-gray-50 p-4 rounded-lg mb-6">
           <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
             <RiFileTextLine className="w-4 h-4 text-amber-600" />
-            COMBINED INVOICE for {format(new Date(invoiceData.month), 'MMMM yyyy')} - {invoiceData.packageDetails.name}
+            INVOICE for {format(new Date(invoiceData.month), 'MMMM yyyy')} - {invoiceData.packageDetails.name}
           </h3>
         </div>
 

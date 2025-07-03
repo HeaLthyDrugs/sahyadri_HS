@@ -91,135 +91,48 @@ export async function POST(request: Request) {
       }, { status: 500 });
     }
 
-    // Set up date range for staff entries
-    const startDate = new Date(month + '-01');
-    const endDate = new Date(startDate.getFullYear(), startDate.getMonth() + 1, 0);
+    // Set up date range for staff entries - exactly like monthly report
+    const parsedDate = new Date(month + '-01');
+    const startDate = format(parsedDate, 'yyyy-MM-dd');
+    const endDate = format(new Date(parsedDate.getFullYear(), parsedDate.getMonth() + 1, 0), 'yyyy-MM-dd');
 
     console.log('Invoice debug - Fetching data with parameters:', {
       packageId,
       month,
       type,
-      startDate: startDate.toISOString(),
-      endDate: endDate.toISOString()
+      startDate,
+      endDate
     });
 
-    // Get the package information to determine the type
-    const { data: selectedPackage, error: packageError } = await supabase
-      .from('packages')
-      .select('*')
-      .eq('id', packageId)
-      .single();
+    console.log('Invoice debug - Selected package:', packageData.name, packageData.type);
 
-    if (packageError || !selectedPackage) {
-      return NextResponse.json({ 
-        error: 'Invalid package ID' 
-      }, { status: 400 });
-    }
-
-    console.log('Invoice debug - Selected package:', selectedPackage.name, selectedPackage.type);
-
-    // Initialize aggregated product totals
+    // Initialize aggregated product totals - exactly like Monthly Report
     const productTotals: { [productId: string]: { product: Product, quantity: number } } = {};
 
-    if (type === 'combined' || type === 'program') {
-      // Use program_month_mappings to get the correct programs for this billing month
-      // This matches exactly what the monthly report does
-      const { data: programMappings, error: mappingsError } = await supabase
-        .from('program_month_mappings')
-        .select('program_id')
-        .eq('billing_month', month);
+    // Use program_month_mappings to get the correct programs for this billing month
+    // This matches exactly what the monthly report does
+    const { data: programMappings, error: mappingsError } = await supabase
+      .from('program_month_mappings')
+      .select('program_id')
+      .eq('billing_month', month);
 
-      if (mappingsError) {
-        console.error('Error fetching program mappings:', mappingsError);
-        return NextResponse.json({ 
-          error: 'Failed to fetch program mappings' 
-        }, { status: 500 });
-      }
-
-      console.log('Invoice debug - Program mappings found:', programMappings?.length || 0);
-
-      // Extract program IDs
-      const programIds = programMappings?.map(p => p.program_id) || [];
-
-      // Get all packages of the same type as the selected package
-      // This matches the monthly report's approach of aggregating by package type
-      const { data: packagesOfSameType, error: packagesError } = await supabase
-        .from('packages')
-        .select('id')
-        .eq('type', selectedPackage.type);
-
-      if (packagesError) {
-        console.error('Error fetching packages of same type:', packagesError);
-        return NextResponse.json({ 
-          error: 'Failed to fetch packages' 
-        }, { status: 500 });
-      }
-
-      const packageIds = packagesOfSameType?.map(p => p.id) || [packageId];
-      console.log('Invoice debug - Packages of same type:', packageIds.length);
-
-      // Fetch program billing entries using program IDs from billing month mapping
-      // AND all packages of the same type - this matches monthly report logic
-      if (programIds.length > 0) {
-        const { data: programEntries, error: programError } = await supabase
-          .from('billing_entries')
-          .select(`
-            id,
-            entry_date,
-            quantity,
-            products!inner (
-              id,
-              name,
-              rate,
-              index
-            )
-          `)
-          .in('package_id', packageIds)
-          .in('program_id', programIds);
-
-        if (programError) {
-          console.error('Program billing entries error:', programError);
-        } else {
-          // Aggregate program entries by product
-          for (const entry of programEntries || []) {
-            const product = Array.isArray(entry.products) ? entry.products[0] : entry.products;
-            if (product) {
-              const amount = (entry.quantity || 0) * (product.rate || 0);
-              console.log(`Invoice debug - Program entry: ${product.name}, quantity: ${entry.quantity}, rate: ${product.rate}, amount: ${amount}`);
-              
-              if (!productTotals[product.id]) {
-                productTotals[product.id] = {
-                  product,
-                  quantity: 0
-                };
-              }
-              productTotals[product.id].quantity += entry.quantity || 0;
-            }
-          }
-          console.log('Invoice debug - Program entries processed:', programEntries?.length || 0);
-        }
-      }
+    if (mappingsError) {
+      console.error('Error fetching program mappings:', mappingsError);
+      return NextResponse.json({ 
+        error: 'Failed to fetch program mappings' 
+      }, { status: 500 });
     }
 
-    if (type === 'combined' || type === 'staff') {
-      // Get all packages of the same type for staff entries too
-      const { data: packagesOfSameType, error: packagesError } = await supabase
-        .from('packages')
-        .select('id')
-        .eq('type', selectedPackage.type);
+    console.log('Invoice debug - Program mappings found:', programMappings?.length || 0);
 
-      if (packagesError) {
-        console.error('Error fetching packages of same type for staff:', packagesError);
-        return NextResponse.json({ 
-          error: 'Failed to fetch packages for staff' 
-        }, { status: 500 });
-      }
+    // Extract program IDs
+    const programIds = programMappings?.map(p => p.program_id) || [];
 
-      const packageIds = packagesOfSameType?.map(p => p.id) || [packageId];
-
-      // Fetch staff billing entries using date range (not program mapping)
-      const { data: staffEntries, error: staffError } = await supabase
-        .from('staff_billing_entries')
+    // Fetch program billing entries using program IDs from billing month mapping
+    // Use only the specific package ID for invoice (not all packages of same type like monthly report)
+    if (programIds.length > 0) {
+      const { data: programEntries, error: programError } = await supabase
+        .from('billing_entries')
         .select(`
           id,
           entry_date,
@@ -229,21 +142,25 @@ export async function POST(request: Request) {
             name,
             rate,
             index
+          ),
+          programs!inner (
+            id,
+            name,
+            customer_name
           )
         `)
-        .in('package_id', packageIds)
-        .gte('entry_date', startDate.toISOString())
-        .lte('entry_date', endDate.toISOString());
+        .eq('package_id', packageId)
+        .in('program_id', programIds);
 
-      if (staffError) {
-        console.error('Staff billing entries error:', staffError);
+      if (programError) {
+        console.error('Program billing entries error:', programError);
       } else {
-        // Aggregate staff entries by product
-        for (const entry of staffEntries || []) {
+        // Aggregate program entries by product - exactly like Monthly Report
+        for (const entry of programEntries || []) {
           const product = Array.isArray(entry.products) ? entry.products[0] : entry.products;
           if (product) {
             const amount = (entry.quantity || 0) * (product.rate || 0);
-            console.log(`Invoice debug - Staff entry: ${product.name}, quantity: ${entry.quantity}, rate: ${product.rate}, amount: ${amount}`);
+            console.log(`Invoice debug - Program entry: ${product.name}, quantity: ${entry.quantity}, rate: ${product.rate}, amount: ${amount}`);
             
             if (!productTotals[product.id]) {
               productTotals[product.id] = {
@@ -254,8 +171,49 @@ export async function POST(request: Request) {
             productTotals[product.id].quantity += entry.quantity || 0;
           }
         }
-        console.log('Invoice debug - Staff entries processed:', staffEntries?.length || 0);
+        console.log('Invoice debug - Program entries processed:', programEntries?.length || 0);
       }
+    }
+
+    // Fetch staff billing entries using date range (not program mapping) - exactly like Monthly Report
+    // Use only the specific package ID for invoice
+    const { data: staffEntries, error: staffError } = await supabase
+      .from('staff_billing_entries')
+      .select(`
+        id,
+        entry_date,
+        quantity,
+        products!inner (
+          id,
+          name,
+          rate,
+          index
+        )
+      `)
+      .eq('package_id', packageId)
+      .gte('entry_date', startDate)
+      .lte('entry_date', endDate);
+
+    if (staffError) {
+      console.error('Staff billing entries error:', staffError);
+    } else {
+      // Aggregate staff entries by product - exactly like Monthly Report
+      for (const entry of staffEntries || []) {
+        const product = Array.isArray(entry.products) ? entry.products[0] : entry.products;
+        if (product) {
+          const amount = (entry.quantity || 0) * (product.rate || 0);
+          console.log(`Invoice debug - Staff entry: ${product.name}, quantity: ${entry.quantity}, rate: ${product.rate}, amount: ${amount}`);
+          
+          if (!productTotals[product.id]) {
+            productTotals[product.id] = {
+              product,
+              quantity: 0
+            };
+          }
+          productTotals[product.id].quantity += entry.quantity || 0;
+        }
+      }
+      console.log('Invoice debug - Staff entries processed:', staffEntries?.length || 0);
     }
 
     // Convert aggregated totals to the expected format
@@ -495,8 +453,11 @@ function generateInvoiceHTML({ packageDetails, month, entries, totalAmount, conf
 
         <div style="background-color: #ffffff; padding: 16px; border-radius: 8px; margin: 16px 0;">
           <h3 style="margin: 0; font-size: 14px;">
-            ● COMBINED INVOICE for ${format(new Date(month), 'MMMM yyyy')} - ${packageDetails.name}
+            ● INVOICE for ${format(new Date(month), 'MMMM yyyy')} - ${packageDetails.name}
           </h3>
+          <p style="margin: 4px 0 0 0; font-size: 11px; color: #6b7280;">
+            Data sourced from program month mapping and staff entries for the selected billing month
+          </p>
         </div>
 
         <table>

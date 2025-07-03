@@ -69,7 +69,6 @@ export default function InvoicePage() {
   const [packages, setPackages] = useState<Package[]>([]);
   const [selectedPackage, setSelectedPackage] = useState<string>('');
   const [selectedMonth, setSelectedMonth] = useState<string>(currentMonth);
-  const [dataSource, setDataSource] = useState<'program' | 'staff' | 'combined'>('combined');
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [invoiceData, setInvoiceData] = useState<InvoiceData | null>(null);
   const [invoiceConfig, setInvoiceConfig] = useState<InvoiceConfig | null>(null);
@@ -130,7 +129,7 @@ export default function InvoicePage() {
         body: JSON.stringify({
           packageId: selectedPackage,
           month: selectedMonth,
-          type: dataSource
+          type: 'combined' // Always use combined data like monthly report
         }),
       });
 
@@ -166,21 +165,7 @@ export default function InvoicePage() {
         <div className="flex items-center justify-between mb-6">
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Invoice</h1>
-            <p className="text-gray-600 mt-1">Generate invoices for billing Month</p>
-          </div>
-          
-          {/* Data Source Toggle */}
-          <div className="flex items-center gap-2">
-            <label className="text-sm font-medium text-gray-700">Data Source:</label>
-            <select
-              value={dataSource}
-              onChange={(e) => setDataSource(e.target.value as 'program' | 'staff' | 'combined')}
-              className="px-3 py-1.5 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
-            >
-              <option value="combined">Combined (Program + Staff)</option>
-              <option value="program">Program Only</option>
-              <option value="staff">Staff Only</option>
-            </select>
+            <p className="text-gray-600 mt-1">Generate invoices based on Monthly Report data (program month mapping + staff entries)</p>
           </div>
         </div>
 
