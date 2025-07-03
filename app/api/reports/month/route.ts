@@ -512,39 +512,59 @@ export async function POST(request: Request) {
     });
 
     if (type === 'all') {
-      // Fetch all entries for the month
-      const { data: entries, error } = await supabase
-        .from('billing_entries')
-        .select(`
-          id,
-          entry_date,
-          quantity,
-          package_id,
-          products!inner (
-            id,
-            name,
-            rate
-          ),
-          programs!inner (
-            id,
-            name,
-            start_date,
-            end_date,
-            customer_name,
-            total_participants
-          ),
-          packages!inner (
-            id,
-            name,
-            type
-          )
-        `)
-        .gte('entry_date', startDate)
-        .lte('entry_date', endDate);
+      // Use program_month_mappings to get the correct programs for this billing month
+      const { data: programMappings, error: mappingsError } = await supabase
+        .from('program_month_mappings')
+        .select('program_id')
+        .eq('billing_month', month);
 
-      if (error) {
-        console.error('Database query error:', error);
-        return NextResponse.json({ error: 'Failed to fetch entries' }, { status: 500 });
+      if (mappingsError) {
+        console.error('Error fetching program mappings:', mappingsError);
+        return NextResponse.json({ error: 'Failed to fetch program mappings' }, { status: 500 });
+      }
+
+      console.log('Monthly report - Program mappings found:', programMappings?.length || 0);
+
+      // Extract program IDs
+      const programIds = programMappings?.map(p => p.program_id) || [];
+
+      // Fetch program billing entries using program IDs from billing month mapping
+      let entries: any[] = [];
+      if (programIds.length > 0) {
+        const { data: programEntries, error } = await supabase
+          .from('billing_entries')
+          .select(`
+            id,
+            entry_date,
+            quantity,
+            package_id,
+            products!inner (
+              id,
+              name,
+              rate
+            ),
+            programs!inner (
+              id,
+              name,
+              start_date,
+              end_date,
+              customer_name,
+              total_participants
+            ),
+            packages!inner (
+              id,
+              name,
+              type
+            )
+          `)
+          .in('program_id', programIds);
+
+        if (error) {
+          console.error('Database query error:', error);
+          return NextResponse.json({ error: 'Failed to fetch entries' }, { status: 500 });
+        }
+
+        entries = programEntries || [];
       }
 
       // Fetch staff billing entries
@@ -696,33 +716,53 @@ export async function POST(request: Request) {
 
       console.log('Fetched products:', products);
 
-      // Fetch entries for the selected package
-      const { data: entries, error } = await supabase
-        .from('billing_entries')
-        .select(`
-          id,
-          entry_date,
-          quantity,
-          package_id,
-          products!inner (
-            id,
-            name,
-            rate
-          ),
-          programs!inner (
-            id,
-            name,
-            customer_name,
-            total_participants
-          )
-        `)
-        .eq('package_id', packageId)
-        .gte('entry_date', startDate)
-        .lte('entry_date', endDate);
+      // Use program_month_mappings to get the correct programs for this billing month
+      const { data: programMappings, error: mappingsError } = await supabase
+        .from('program_month_mappings')
+        .select('program_id')
+        .eq('billing_month', month);
 
-      if (error) {
-        console.error('Database query error:', error);
-        return NextResponse.json({ error: 'Failed to fetch entries' }, { status: 500 });
+      if (mappingsError) {
+        console.error('Error fetching program mappings:', mappingsError);
+        return NextResponse.json({ error: 'Failed to fetch program mappings' }, { status: 500 });
+      }
+
+      console.log('Monthly report - Program mappings found for specific package:', programMappings?.length || 0);
+
+      // Extract program IDs
+      const programIds = programMappings?.map(p => p.program_id) || [];
+
+      // Fetch entries for the selected package using program IDs
+      let entries: any[] = [];
+      if (programIds.length > 0) {
+        const { data: programEntries, error } = await supabase
+          .from('billing_entries')
+          .select(`
+            id,
+            entry_date,
+            quantity,
+            package_id,
+            products!inner (
+              id,
+              name,
+              rate
+            ),
+            programs!inner (
+              id,
+              name,
+              customer_name,
+              total_participants
+            )
+          `)
+          .eq('package_id', packageId)
+          .in('program_id', programIds);
+
+        if (error) {
+          console.error('Database query error:', error);
+          return NextResponse.json({ error: 'Failed to fetch entries' }, { status: 500 });
+        }
+
+        entries = programEntries || [];
       }
 
       console.log('Fetched entries:', entries);

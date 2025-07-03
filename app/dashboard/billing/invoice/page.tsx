@@ -6,7 +6,6 @@ import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import InvoiceForm from '@/components/admin/pages/billing/invoice-form';
 import InvoicePreview from '@/components/admin/pages/billing/invoice-preview';
 import { toast } from 'react-hot-toast';
-import { RiUserLine, RiTeamLine } from 'react-icons/ri';
 
 interface Product {
   id: string;
@@ -60,7 +59,6 @@ interface InvoiceData {
   month: string;
   entries: BillingEntry[] | StaffBillingEntry[];
   totalAmount: number;
-  isStaffInvoice: boolean;
 }
 
 export default function InvoicePage() {
@@ -71,7 +69,7 @@ export default function InvoicePage() {
   const [packages, setPackages] = useState<Package[]>([]);
   const [selectedPackage, setSelectedPackage] = useState<string>('');
   const [selectedMonth, setSelectedMonth] = useState<string>(currentMonth);
-  const [isStaffMode, setIsStaffMode] = useState<boolean>(false);
+  const [dataSource, setDataSource] = useState<'program' | 'staff' | 'combined'>('combined');
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [invoiceData, setInvoiceData] = useState<InvoiceData | null>(null);
   const [invoiceConfig, setInvoiceConfig] = useState<InvoiceConfig | null>(null);
@@ -132,7 +130,7 @@ export default function InvoicePage() {
         body: JSON.stringify({
           packageId: selectedPackage,
           month: selectedMonth,
-          type: isStaffMode ? 'staff' : 'program'
+          type: dataSource
         }),
       });
 
@@ -147,11 +145,10 @@ export default function InvoicePage() {
         packageDetails: data.packageDetails,
         month: selectedMonth,
         entries: data.entries,
-        totalAmount: data.totalAmount,
-        isStaffInvoice: isStaffMode
+        totalAmount: data.totalAmount
       });
 
-      toast.success(`${isStaffMode ? 'Staff' : 'Program'} invoice generated successfully`);
+      toast.success('Invoice generated successfully');
     } catch (error) {
       console.error('Error generating invoice:', error);
       const errorMessage = error instanceof Error ? error.message : 'Failed to generate invoice';
@@ -164,38 +161,26 @@ export default function InvoicePage() {
 
   return (
     <div className="space-y-6">
-      {/* Page Header with Toggle */}
+      {/* Page Header */}
       <div className="bg-white rounded-lg shadow p-6">
         <div className="flex items-center justify-between mb-6">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Invoice Generator</h1>
-            <p className="text-gray-600 mt-1">Generate invoices for programs or staff billing</p>
+            <h1 className="text-2xl font-bold text-gray-900">Invoice</h1>
+            <p className="text-gray-600 mt-1">Generate invoices for billing Month</p>
           </div>
           
-          {/* Toggle Switch */}
-          <div className="flex items-center bg-gray-100 rounded-lg p-1">
-            <button
-              onClick={() => setIsStaffMode(false)}
-              className={`flex items-center gap-2 px-4 py-2 rounded-md font-medium transition-all ${
-                !isStaffMode
-                  ? 'bg-white text-amber-600 shadow-sm'
-                  : 'text-gray-600 hover:text-gray-900'
-              }`}
+          {/* Data Source Toggle */}
+          <div className="flex items-center gap-2">
+            <label className="text-sm font-medium text-gray-700">Data Source:</label>
+            <select
+              value={dataSource}
+              onChange={(e) => setDataSource(e.target.value as 'program' | 'staff' | 'combined')}
+              className="px-3 py-1.5 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
             >
-              <RiTeamLine className="w-4 h-4" />
-              PROGRAM
-            </button>
-            <button
-              onClick={() => setIsStaffMode(true)}
-              className={`flex items-center gap-2 px-4 py-2 rounded-md font-medium transition-all ${
-                isStaffMode
-                  ? 'bg-white text-amber-600 shadow-sm'
-                  : 'text-gray-600 hover:text-gray-900'
-              }`}
-            >
-              <RiUserLine className="w-4 h-4" />
-              STAFF
-            </button>
+              <option value="combined">Combined (Program + Staff)</option>
+              <option value="program">Program Only</option>
+              <option value="staff">Staff Only</option>
+            </select>
           </div>
         </div>
 
@@ -205,7 +190,6 @@ export default function InvoicePage() {
           currentMonth={currentMonth}
           selectedPackage={selectedPackage}
           selectedMonth={selectedMonth}
-          isStaffMode={isStaffMode}
           onPackageChange={setSelectedPackage}
           onMonthChange={setSelectedMonth}
           onGenerateInvoice={generateInvoice}
@@ -249,7 +233,7 @@ export default function InvoicePage() {
             <div className="flex items-center gap-3">
               <div className="w-6 h-6 border-4 border-amber-200 border-t-amber-500 rounded-full animate-spin"></div>
               <span className="text-sm font-medium text-amber-700">
-                Generating {isStaffMode ? 'staff' : 'program'} invoice...
+                Generating invoice...
               </span>
             </div>
           </div>

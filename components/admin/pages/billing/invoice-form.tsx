@@ -16,7 +16,6 @@ interface InvoiceFormProps {
   currentMonth: string;
   selectedPackage: string;
   selectedMonth: string;
-  isStaffMode: boolean;
   onPackageChange: (packageId: string) => void;
   onMonthChange: (month: string) => void;
   onGenerateInvoice: () => void;
@@ -28,7 +27,6 @@ export default function InvoiceForm({
   currentMonth,
   selectedPackage,
   selectedMonth,
-  isStaffMode,
   onPackageChange,
   onMonthChange,
   onGenerateInvoice,
@@ -152,7 +150,7 @@ export default function InvoiceForm({
             ) : (
               <>
                 <RiFileTextLine className="w-4 h-4" />
-                Generate {isStaffMode ? 'Staff' : 'Program'} Invoice
+                Generate Invoice
               </>
             )}
           </button>

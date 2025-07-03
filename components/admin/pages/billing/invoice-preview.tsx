@@ -51,7 +51,6 @@ interface InvoiceData {
   month: string;
   entries: BillingEntry[] | StaffBillingEntry[];
   totalAmount: number;
-  isStaffInvoice?: boolean;
 }
 
 interface InvoiceConfig {
@@ -89,7 +88,6 @@ export default function InvoicePreview({ invoiceData, invoiceConfig }: InvoicePr
         body: JSON.stringify({
           packageId: invoiceData.packageDetails.id,
           month: invoiceData.month,
-          isStaffInvoice: invoiceData.isStaffInvoice,
         }),
       });
 
@@ -132,7 +130,6 @@ export default function InvoicePreview({ invoiceData, invoiceConfig }: InvoicePr
         body: JSON.stringify({
           packageId: invoiceData.packageDetails.id,
           month: invoiceData.month,
-          isStaffInvoice: invoiceData.isStaffInvoice,
         }),
       });
 
@@ -267,7 +264,7 @@ export default function InvoicePreview({ invoiceData, invoiceConfig }: InvoicePr
         <div className="bg-gray-50 p-4 rounded-lg mb-6">
           <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
             <RiFileTextLine className="w-4 h-4 text-amber-600" />
-            {invoiceData.isStaffInvoice ? 'STAFF ' : ''}INVOICE for {format(new Date(invoiceData.month), 'MMMM yyyy')} - {invoiceData.packageDetails.name}
+            COMBINED INVOICE for {format(new Date(invoiceData.month), 'MMMM yyyy')} - {invoiceData.packageDetails.name}
           </h3>
         </div>
 
