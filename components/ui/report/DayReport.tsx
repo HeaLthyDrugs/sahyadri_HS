@@ -74,9 +74,9 @@ const getProductChunksForGroup = (activeProducts: ProductEntry[], packageType: s
   const chunks: ProductEntry[][] = [];
   for (let i = 0; i < activeProducts.length; i += chunkSize) {
     const chunk = activeProducts.slice(i, i + chunkSize);
-    // Only add chunk if it has any data
-    if (chunk.some(product => 
-      activeDates.some(date => (reportData[date]?.[product.id] || 0) > 0)
+    // Only add chunk if it has data for at least some dates
+    if (chunk.length > 0 && activeDates.some(date => 
+      chunk.some(product => (reportData[date]?.[product.id] || 0) > 0)
     )) {
       chunks.push(chunk);
     }
@@ -131,16 +131,43 @@ const DayReport: React.FC<DayReportProps> = ({ selectedMonth, selectedPackage })
     return sortedProducts.filter(product => hasProductConsumption(product.id));
   }, [products, reportData, packageType]);
 
-  // Filter out dates with no consumption
+  // Show only dates that have consumption data (filter out empty rows)
   const activeDates = useMemo(() => {
-    if (!dates.length || !Object.keys(reportData).length) return [];
-    return dates.filter(hasRowConsumption);
+    if (!dates.length) {
+      console.log('activeDates: no dates available');
+      return [];
+    }
+    
+    // Filter dates to only show those that have actual consumption data
+    const datesWithData = dates.filter(date => {
+      const dateData = reportData[date] || {};
+      // Check if any product has consumption greater than 0 for this date
+      return Object.values(dateData).some(quantity => quantity > 0);
+    }).sort();
+    
+    console.log('activeDates calculation:', {
+      totalDates: dates.length,
+      datesWithData: datesWithData.length,
+      emptyDatesFiltered: dates.length - datesWithData.length,
+      sampleDate: datesWithData[0],
+      sampleDateConsumption: datesWithData[0] && reportData[datesWithData[0]] ? Object.values(reportData[datesWithData[0]]).reduce((sum, qty) => sum + qty, 0) : 0,
+      activeDatesRange: {
+        first: datesWithData[0],
+        last: datesWithData[datesWithData.length - 1]
+      },
+      // Specific June 2025 debugging
+      isJune2025: datesWithData[0]?.startsWith('2025-06'),
+      june30thIncluded: datesWithData.includes('2025-06-30')
+    });
+    
+    return datesWithData;
   }, [dates, reportData]);
 
-  // Function to check if a chunk has any data
+  // Function to check if a chunk has any data (check if any date has data for any product in chunk)
   const hasChunkData = (chunk: ProductEntry[], dates: string[]): boolean => {
-    return chunk.some(product => 
-      dates.some(date => (reportData[date]?.[product.id] || 0) > 0)
+    // Check if any date has data for any product in this chunk
+    return dates.some(date => 
+      chunk.some(product => (reportData[date]?.[product.id] || 0) > 0)
     );
   };
 
@@ -149,7 +176,7 @@ const DayReport: React.FC<DayReportProps> = ({ selectedMonth, selectedPackage })
     return chunk.some(product => (reportData[date]?.[product.id] || 0) > 0);
   };
 
-  // Split products into chunks with optimized chunk size and filter empty chunks
+  // Split products into chunks with optimized chunk size and only show chunks with data
   const productChunks = useMemo(() => {
     if (!activeProducts.length) return [];
     
@@ -163,8 +190,10 @@ const DayReport: React.FC<DayReportProps> = ({ selectedMonth, selectedPackage })
     const chunks: ProductEntry[][] = [];
     for (let i = 0; i < activeProducts.length; i += chunkSize) {
       const chunk = activeProducts.slice(i, i + chunkSize);
-      // Only add chunk if it has any data
-      if (hasChunkData(chunk, activeDates)) {
+      // Only add chunk if it has data for at least some active dates
+      if (chunk.length > 0 && activeDates.some(date => 
+        chunk.some(product => (reportData[date]?.[product.id] || 0) > 0)
+      )) {
         chunks.push(chunk);
       }
     }
@@ -228,18 +257,47 @@ const DayReport: React.FC<DayReportProps> = ({ selectedMonth, selectedPackage })
         const allDates = new Set<string>();
 
         // Calculate date range once
-        const startDate = new Date(`${selectedMonth}-01`);
-        const endDate = new Date(startDate.getFullYear(), startDate.getMonth() + 1, 0);
-        const startDateStr = startDate.toISOString().split('T')[0];
-        const endDateStr = endDate.toISOString().split('T')[0];
+        const [year, month] = selectedMonth.split('-').map(Number);
+        const startDate = new Date(year, month - 1, 1); // month - 1 because Date months are 0-indexed
+        const endDate = new Date(year, month, 0); // Day 0 of next month = last day of current month
+        
+        // Use string formatting to avoid timezone issues
+        const startDateStr = `${year}-${month.toString().padStart(2, '0')}-01`;
+        const endDateStr = `${year}-${month.toString().padStart(2, '0')}-${endDate.getDate().toString().padStart(2, '0')}`;
+
+        console.log('Date range calculation (All Packages):', {
+          selectedMonth,
+          year,
+          month,
+          startDate: startDate.toISOString(),
+          endDate: endDate.toISOString(),
+          startDateStr,
+          endDateStr,
+          daysInMonth: endDate.getDate()
+        });
 
         // Initialize all dates in the month with empty data
         for (let d = 1; d <= endDate.getDate(); d++) {
-          const currentDate = new Date(startDate.getFullYear(), startDate.getMonth(), d);
-          const dateStr = currentDate.toISOString().split('T')[0];
+          // Use local timezone to avoid timezone conversion issues
+          const dateStr = `${year}-${month.toString().padStart(2, '0')}-${d.toString().padStart(2, '0')}`;
           allDates.add(dateStr);
           allReportData[dateStr] = {};
         }
+
+        console.log('All Packages - Date initialization verification:', {
+          selectedMonth,
+          year,
+          month,
+          startDate: startDate.toISOString(),
+          endDate: endDate.toISOString(),
+          daysInMonth: endDate.getDate(),
+          generatedDates: Array.from(allDates).sort(),
+          sampleDateCheck: {
+            day1: `${year}-${month.toString().padStart(2, '0')}-01`,
+            day15: `${year}-${month.toString().padStart(2, '0')}-15`,
+            lastDay: `${year}-${month.toString().padStart(2, '0')}-${endDate.getDate().toString().padStart(2, '0')}`
+          }
+        });
 
         // Fetch data for each package type
         for (const type of packageTypes) {
@@ -275,25 +333,73 @@ const DayReport: React.FC<DayReportProps> = ({ selectedMonth, selectedPackage })
               products: sortedProducts
             });
 
-            // Fetch billing entries for this package
-            const { data: entriesData, error: entriesError } = await supabase
-              .from('billing_entries')
-              .select('entry_date, quantity, product_id')
-              .eq('package_id', packageData.id)
-              .gte('entry_date', startDateStr)
-              .lte('entry_date', endDateStr)
-              .order('entry_date');
+            // Fetch billing entries for this package (both program and staff entries)
+            const [programEntriesResponse, staffEntriesResponse] = await Promise.all([
+              supabase
+                .from('billing_entries')
+                .select('entry_date, quantity, product_id')
+                .eq('package_id', packageData.id)
+                .gte('entry_date', startDateStr)
+                .lte('entry_date', endDateStr)
+                .order('entry_date'),
+              supabase
+                .from('staff_billing_entries')
+                .select('entry_date, quantity, product_id')
+                .eq('package_id', packageData.id)
+                .gte('entry_date', startDateStr)
+                .lte('entry_date', endDateStr)
+                .order('entry_date')
+            ]);
 
-            if (entriesError) throw entriesError;
+            if (programEntriesResponse.error) throw programEntriesResponse.error;
+            if (staffEntriesResponse.error) throw staffEntriesResponse.error;
 
-            // Process entries data
-            if (entriesData) {
-              entriesData.forEach(entry => {
+            console.log(`Package ${type} (${packageData.id}) data:`, {
+              programEntries: programEntriesResponse.data?.length || 0,
+              staffEntries: staffEntriesResponse.data?.length || 0,
+              dateRange: { startDateStr, endDateStr },
+              packageId: packageData.id,
+              packageType: packageData.type,
+              packageName: packageData.name
+            });
+
+            // Add detailed June 2025 debugging for this package
+            const june2025ProgramEntries = programEntriesResponse.data?.filter(entry => 
+              entry.entry_date.startsWith('2025-06')
+            ) || [];
+            const june2025StaffEntries = staffEntriesResponse.data?.filter(entry => 
+              entry.entry_date.startsWith('2025-06')
+            ) || [];
+            
+            console.log(`Package ${type} June 2025 data:`, {
+              packageId: packageData.id,
+              june2025ProgramEntries: june2025ProgramEntries.length,
+              june2025StaffEntries: june2025StaffEntries.length,
+              june2025ProgramTotal: june2025ProgramEntries.reduce((sum, entry) => sum + entry.quantity, 0),
+              june2025StaffTotal: june2025StaffEntries.reduce((sum, entry) => sum + entry.quantity, 0),
+              june2025CombinedTotal: june2025ProgramEntries.reduce((sum, entry) => sum + entry.quantity, 0) + 
+                                   june2025StaffEntries.reduce((sum, entry) => sum + entry.quantity, 0)
+            });
+
+            // Process program entries data
+            if (programEntriesResponse.data) {
+              programEntriesResponse.data.forEach(entry => {
                 const dateStr = entry.entry_date;
                 if (!allReportData[dateStr]) {
                   allReportData[dateStr] = {};
                 }
-                allReportData[dateStr][entry.product_id] = entry.quantity;
+                allReportData[dateStr][entry.product_id] = (allReportData[dateStr][entry.product_id] || 0) + entry.quantity;
+              });
+            }
+
+            // Process staff entries data (add to existing quantities)
+            if (staffEntriesResponse.data) {
+              staffEntriesResponse.data.forEach(entry => {
+                const dateStr = entry.entry_date;
+                if (!allReportData[dateStr]) {
+                  allReportData[dateStr] = {};
+                }
+                allReportData[dateStr][entry.product_id] = (allReportData[dateStr][entry.product_id] || 0) + entry.quantity;
               });
             }
           }
@@ -305,11 +411,66 @@ const DayReport: React.FC<DayReportProps> = ({ selectedMonth, selectedPackage })
         setPackageType('all');
         setProducts([]); // Clear products as we're using package groups
 
-        console.log('Fetched Data:', {
+        console.log('Fetched Data (All Packages):', {
           packageGroups: allProducts,
           reportData: allReportData,
           dates: Array.from(allDates).sort(),
-          packageType: 'all'
+          packageType: 'all',
+          totalEntries: Object.values(allReportData).reduce((total, dateData) => 
+            total + Object.values(dateData).reduce((sum, qty) => sum + qty, 0), 0
+          ),
+          monthTotal: Object.values(allReportData).reduce((total, dateData) => 
+            total + Object.values(dateData).reduce((sum, qty) => sum + qty, 0), 0
+          ),
+          detailedBreakdown: {
+            byDate: Object.entries(allReportData).map(([date, data]) => ({
+              date,
+              total: Object.values(data).reduce((sum, qty) => sum + qty, 0)
+            })),
+            byProduct: (() => {
+              const productTotals: { [key: string]: number } = {};
+              Object.values(allReportData).forEach(dateData => {
+                Object.entries(dateData).forEach(([productId, qty]) => {
+                  productTotals[productId] = (productTotals[productId] || 0) + qty;
+                });
+              });
+              return productTotals;
+            })()
+          },
+          // Add June 2025 specific calculation for comparison with LifeTime Report
+          june2025Verification: {
+            monthKey: '2025-06',
+            june2025DayReportTotal: Object.entries(allReportData)
+              .filter(([date]) => date.startsWith('2025-06'))
+              .reduce((total, [date, dateData]) => 
+                total + Object.values(dateData).reduce((sum, qty) => sum + qty, 0), 0
+              ),
+            june2025DateBreakdown: Object.entries(allReportData)
+              .filter(([date]) => date.startsWith('2025-06'))
+              .map(([date, dateData]) => ({
+                date,
+                total: Object.values(dateData).reduce((sum, qty) => sum + qty, 0)
+              }))
+              .sort((a, b) => a.date.localeCompare(b.date)),
+            expectedLifeTimeReportMatch: 19670,
+            calculationMatches: Object.entries(allReportData)
+              .filter(([date]) => date.startsWith('2025-06'))
+              .reduce((total, [date, dateData]) => 
+                total + Object.values(dateData).reduce((sum, qty) => sum + qty, 0), 0
+              ) === 19670,
+            // Show all June dates to verify June 30th is included
+            allJuneDates: Object.keys(allReportData)
+              .filter(date => date.startsWith('2025-06'))
+              .sort(),
+            totalJuneDates: Object.keys(allReportData)
+              .filter(date => date.startsWith('2025-06')).length,
+            june30thIncluded: Object.keys(allReportData).includes('2025-06-30'),
+            june30thTotal: Object.values(allReportData['2025-06-30'] || {}).reduce((sum, qty) => sum + qty, 0)
+          },
+          programEntries: packageTypes.map(type => {
+            const pkg = packagesByType[type];
+            return { type, hasPackage: !!pkg };
+          })
         });
 
       } else {
@@ -351,19 +512,56 @@ const DayReport: React.FC<DayReportProps> = ({ selectedMonth, selectedPackage })
         }]);
 
         // Calculate date range
-        const startDate = new Date(`${selectedMonth}-01`);
-        const endDate = new Date(startDate.getFullYear(), startDate.getMonth() + 1, 0);
+        const [year, month] = selectedMonth.split('-').map(Number);
+        const startDate = new Date(year, month - 1, 1); // month - 1 because Date months are 0-indexed
+        const endDate = new Date(year, month, 0); // Day 0 of next month = last day of current month
 
-        // Fetch billing entries
-        const { data: entriesData, error: entriesError } = await supabase
-          .from('billing_entries')
-          .select('entry_date, quantity, product_id')
-          .eq('package_id', packageData.id)
-          .gte('entry_date', startDate.toISOString().split('T')[0])
-          .lte('entry_date', endDate.toISOString().split('T')[0])
-          .order('entry_date');
+        // Use string formatting to avoid timezone issues
+        const startDateStr = `${year}-${month.toString().padStart(2, '0')}-01`;
+        const endDateStr = `${year}-${month.toString().padStart(2, '0')}-${endDate.getDate().toString().padStart(2, '0')}`;
 
-        if (entriesError) throw entriesError;
+        console.log('Date range calculation (Single Package):', {
+          selectedMonth,
+          year,
+          month,
+          startDate: startDate.toISOString(),
+          endDate: endDate.toISOString(),
+          startDateStr,
+          endDateStr,
+          daysInMonth: endDate.getDate()
+        });
+
+        // Fetch billing entries (both program and staff entries)
+        const [programEntriesResponse, staffEntriesResponse] = await Promise.all([
+          supabase
+            .from('billing_entries')
+            .select('entry_date, quantity, product_id')
+            .eq('package_id', packageData.id)
+            .gte('entry_date', startDateStr)
+            .lte('entry_date', endDateStr)
+            .order('entry_date'),
+          supabase
+            .from('staff_billing_entries')
+            .select('entry_date, quantity, product_id')
+            .eq('package_id', packageData.id)
+            .gte('entry_date', startDateStr)
+            .lte('entry_date', endDateStr)
+            .order('entry_date')
+        ]);
+
+        if (programEntriesResponse.error) throw programEntriesResponse.error;
+        if (staffEntriesResponse.error) throw staffEntriesResponse.error;
+
+        console.log('Single package data fetch:', {
+          packageId: packageData.id,
+          packageType: packageData.type,
+          programEntries: programEntriesResponse.data?.length || 0,
+          staffEntries: staffEntriesResponse.data?.length || 0,
+          dateRange: { 
+            start: startDateStr, 
+            end: endDateStr 
+          }
+        });
 
         // Process data into the required format
         const processedData: ReportData = {};
@@ -371,25 +569,49 @@ const DayReport: React.FC<DayReportProps> = ({ selectedMonth, selectedPackage })
 
         // Initialize all dates in the month with empty data
         for (let d = 1; d <= endDate.getDate(); d++) {
-          const currentDate = new Date(startDate.getFullYear(), startDate.getMonth(), d);
-          const dateStr = currentDate.toISOString().split('T')[0];
+          // Use local timezone to avoid timezone conversion issues
+          const dateStr = `${year}-${month.toString().padStart(2, '0')}-${d.toString().padStart(2, '0')}`;
           datesSet.add(dateStr);
           processedData[dateStr] = {};
         }
 
-        // Fill in the actual data
-        entriesData?.forEach(entry => {
+        console.log('Single Package - Date initialization verification:', {
+          selectedMonth,
+          year,
+          month,
+          startDate: startDate.toISOString(),
+          endDate: endDate.toISOString(),
+          daysInMonth: endDate.getDate(),
+          generatedDates: Array.from(datesSet).sort(),
+          sampleDateCheck: {
+            day1: `${year}-${month.toString().padStart(2, '0')}-01`,
+            day15: `${year}-${month.toString().padStart(2, '0')}-15`,
+            lastDay: `${year}-${month.toString().padStart(2, '0')}-${endDate.getDate().toString().padStart(2, '0')}`
+          }
+        });
+
+        // Fill in the actual data from program entries
+        programEntriesResponse.data?.forEach(entry => {
           const date = entry.entry_date;
           if (!processedData[date]) {
             processedData[date] = {};
           }
-          processedData[date][entry.product_id] = entry.quantity;
+          processedData[date][entry.product_id] = (processedData[date][entry.product_id] || 0) + entry.quantity;
+        });
+
+        // Fill in the actual data from staff entries (add to existing quantities)
+        staffEntriesResponse.data?.forEach(entry => {
+          const date = entry.entry_date;
+          if (!processedData[date]) {
+            processedData[date] = {};
+          }
+          processedData[date][entry.product_id] = (processedData[date][entry.product_id] || 0) + entry.quantity;
         });
 
         setDates(Array.from(datesSet).sort());
         setReportData(processedData);
 
-        console.log('Fetched Data:', {
+        console.log('Fetched Data (Single Package):', {
           products: sortedProducts,
           packageGroups: [{
             type: packageData.type,
@@ -398,7 +620,33 @@ const DayReport: React.FC<DayReportProps> = ({ selectedMonth, selectedPackage })
           }],
           reportData: processedData,
           dates: Array.from(datesSet).sort(),
-          packageType: packageData.type
+          packageType: packageData.type,
+          totalEntries: Object.values(processedData).reduce((total, dateData) => 
+            total + Object.values(dateData).reduce((sum, qty) => sum + qty, 0), 0
+          ),
+          programEntriesCount: programEntriesResponse.data?.length || 0,
+          staffEntriesCount: staffEntriesResponse.data?.length || 0,
+          dateRange: {
+            start: startDateStr,
+            end: endDateStr,
+            totalDaysInMonth: endDate.getDate(),
+            datesInitialized: Array.from(datesSet).length
+          },
+          // June 2025 specific debugging
+          june2025Verification: selectedMonth === '2025-06' ? {
+            june2025Total: Object.entries(processedData)
+              .filter(([date]) => date.startsWith('2025-06'))
+              .reduce((total, [date, dateData]) => 
+                total + Object.values(dateData).reduce((sum, qty) => sum + qty, 0), 0
+              ),
+            allJuneDates: Object.keys(processedData)
+              .filter(date => date.startsWith('2025-06'))
+              .sort(),
+            totalJuneDates: Object.keys(processedData)
+              .filter(date => date.startsWith('2025-06')).length,
+            june30thIncluded: Object.keys(processedData).includes('2025-06-30'),
+            june30thTotal: Object.values(processedData['2025-06-30'] || {}).reduce((sum, qty) => sum + qty, 0)
+          } : null
         });
       }
     } catch (err) {
@@ -546,22 +794,26 @@ const DayReport: React.FC<DayReportProps> = ({ selectedMonth, selectedPackage })
 
   // Modify the hasAnyData check to handle both single package and all packages cases
   const hasAnyData = useMemo(() => {
+    console.log('hasAnyData calculation:', {
+      selectedPackage,
+      packageGroupsLength: packageGroups.length,
+      reportDataKeys: Object.keys(reportData).length,
+      reportDataValues: Object.values(reportData).length,
+      activeDatesLength: activeDates.length
+    });
+
     if (selectedPackage === 'all') {
-      // For all packages, check if any package group has data
-      return packageGroups.some(group => 
-        group.products.some(product => 
-          Object.values(reportData).some(dateData => 
-            (dateData[product.id] || 0) > 0
-          )
-        )
-      );
+      // For all packages, check if we have package groups and active dates with data
+      const hasData = packageGroups.length > 0 && activeDates.length > 0;
+      console.log('All packages hasData:', hasData);
+      return hasData;
     } else {
-      // For single package, check if there's any consumption data
-      return Object.values(reportData).some(dateData => 
-        Object.values(dateData).some(quantity => quantity > 0)
-      );
+      // For single package, check if we have active dates with data
+      const hasData = activeDates.length > 0;
+      console.log('Single package hasData:', hasData);
+      return hasData;
     }
-  }, [selectedPackage, packageGroups, reportData]);
+  }, [selectedPackage, packageGroups, reportData, activeDates]);
 
   // Add a debug effect to monitor state changes
   useEffect(() => {
@@ -640,7 +892,15 @@ const DayReport: React.FC<DayReportProps> = ({ selectedMonth, selectedPackage })
           </h2>
         </div>
 
-        {activeDates.length > 0 ? (
+        {(() => {
+          console.log('Rendering report:', {
+            activeDatesWithData: activeDates.length,
+            totalDatesInMonth: dates.length,
+            processedPackageGroups: processedPackageGroups.length,
+            emptyDatesFiltered: dates.length - activeDates.length
+          });
+          return activeDates.length > 0;
+        })() ? (
           <div className="space-y-8">
             {processedPackageGroups.map((packageGroup, groupIndex) => (
               <div key={groupIndex} className="space-y-6">
@@ -648,12 +908,35 @@ const DayReport: React.FC<DayReportProps> = ({ selectedMonth, selectedPackage })
                   {packageGroup.name} ({packageGroup.type})
                 </h3>
                 {packageGroup.productChunks?.map((productChunk, chunkIndex) => {
-                  // Filter dates that have data for this chunk
+                  // Show only dates with data for this chunk (filter out empty rows)
+                  console.log('Processing chunk', chunkIndex, 'with products:', productChunk.map(p => ({ id: p.id, name: p.name })));
+                  console.log('Sample reportData for first active date:', activeDates[0], reportData[activeDates[0]]);
+                  
+                  // Use only dates that have data for this chunk
                   const chunkDates = activeDates.filter(date => 
                     productChunk.some(product => (reportData[date]?.[product.id] || 0) > 0)
                   );
 
-                  if (chunkDates.length === 0) return null;
+                  console.log('ChunkDates for chunk', chunkIndex, ':', chunkDates.length, 'dates with data');
+                  console.log('Date range:', chunkDates[0], 'to', chunkDates[chunkDates.length - 1]);
+                  
+                  // Don't render chunk if no dates have data
+                  if (chunkDates.length === 0) {
+                    console.log('Skipping chunk', chunkIndex, 'as no dates have data');
+                    return null;
+                  }
+                  
+                  // Specific verification for June 2025
+                  if (chunkDates[0]?.startsWith('2025-06')) {
+                    console.log('June 2025 verification (filtered dates):', {
+                      totalDatesInChunk: chunkDates.length,
+                      originalActiveDates: activeDates.length,
+                      june30thIncluded: chunkDates.includes('2025-06-30'),
+                      firstDate: chunkDates[0],
+                      lastDate: chunkDates[chunkDates.length - 1],
+                      june30thData: reportData['2025-06-30'] ? Object.values(reportData['2025-06-30']).reduce((sum, qty) => sum + qty, 0) : 0
+                    });
+                  }
 
                   return (
                     <div key={chunkIndex} className="relative overflow-x-auto">
@@ -698,10 +981,16 @@ const DayReport: React.FC<DayReportProps> = ({ selectedMonth, selectedPackage })
                                 })}
                                 <td className="px-1.5 py-1 border-r border-gray-200 text-center text-gray-900">
                                   {(() => {
+                                    const nonZeroProducts = productChunk.filter(product => 
+                                      (reportData[date]?.[product.id] || 0) > 0
+                                    );
                                     const sum = productChunk.reduce((acc, product) => 
                                       acc + (reportData[date]?.[product.id] || 0), 0
                                     );
-                                    const avg = Math.round(sum / productChunk.length);
+                                    
+                                    // Calculate average only for products with data (non-zero)
+                                    if (nonZeroProducts.length === 0) return '-';
+                                    const avg = Math.round(sum / nonZeroProducts.length);
                                     return avg > 0 ? avg : '-';
                                   })()}
                                 </td>
@@ -727,13 +1016,20 @@ const DayReport: React.FC<DayReportProps> = ({ selectedMonth, selectedPackage })
                               })}
                               <td className="px-1.5 py-1 border-r border-gray-200 text-center text-amber-900">
                                 {(() => {
-                                  const totalSum = productChunk.reduce((acc, product) => 
-                                    acc + chunkDates.reduce((sum, date) => 
+                                  // Calculate the average of totals (total for each product divided by number of dates)
+                                  const productTotals = productChunk.map(product => 
+                                    chunkDates.reduce((sum, date) => 
                                       sum + (reportData[date]?.[product.id] || 0), 0
-                                    ), 0
+                                    )
                                   );
-                                  const totalAvg = Math.round(totalSum / (productChunk.length * chunkDates.length));
-                                  return totalAvg > 0 ? totalAvg : '-';
+                                  
+                                  const nonZeroTotals = productTotals.filter(total => total > 0);
+                                  if (nonZeroTotals.length === 0) return '-';
+                                  
+                                  const averageOfTotals = Math.round(
+                                    nonZeroTotals.reduce((sum, total) => sum + total, 0) / nonZeroTotals.length
+                                  );
+                                  return averageOfTotals > 0 ? averageOfTotals : '-';
                                 })()}
                               </td>
                             </tr>
@@ -748,9 +1044,15 @@ const DayReport: React.FC<DayReportProps> = ({ selectedMonth, selectedPackage })
           </div>
         ) : (
           <div className="text-center py-8 bg-gray-50 rounded-lg border border-gray-200">
-            <p className="text-gray-500">
+            <p className="text-gray-500 mb-2">
               No data found for {format(new Date(selectedMonth), 'MMMM yyyy')}
             </p>
+            <div className="text-sm text-gray-400 space-y-1">
+              <p>Package Groups: {packageGroups.length}</p>
+              <p>Total Date Entries: {Object.keys(reportData).length}</p>
+              <p>Dates With Data: {activeDates.length}</p>
+              <p>Has Any Data: {hasAnyData.toString()}</p>
+            </div>
           </div>
         )}
       </div>

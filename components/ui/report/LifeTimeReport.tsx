@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { format, parse } from 'date-fns';
 import { RiDownloadLine, RiPrinterLine } from 'react-icons/ri';
 import { toast } from 'react-hot-toast';
@@ -82,6 +82,51 @@ export default function LifeTimeReport({
 }: LifeTimeReportProps) {
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
   const [actionType, setActionType] = useState<'print' | 'download' | null>(null);
+
+  // Add debug logging for the data
+  useEffect(() => {
+    const june2025Total = packageData.products.reduce((sum, p) => sum + (p.monthlyQuantities['2025-06'] || 0), 0);
+    const june2025ProductBreakdown = packageData.products
+      .filter(p => (p.monthlyQuantities['2025-06'] || 0) > 0)
+      .map(p => ({
+        name: p.name,
+        june2025Quantity: p.monthlyQuantities['2025-06'] || 0
+      }));
+
+    console.log('LifeTimeReport Data:', {
+      packageData,
+      months,
+      productsWithData: packageData.products.filter(p => p.total > 0).length,
+      totalConsumption: packageData.products.reduce((sum, p) => sum + p.total, 0),
+      sampleProduct: packageData.products.find(p => p.total > 0),
+      monthlyBreakdown: months.reduce((acc, month) => {
+        acc[month] = packageData.products.reduce((sum, p) => sum + (p.monthlyQuantities[month] || 0), 0);
+        return acc;
+      }, {} as { [key: string]: number }),
+      comparisonData: {
+        totalForJune2025: june2025Total,
+        productCountWithJuneData: packageData.products.filter(p => (p.monthlyQuantities['2025-06'] || 0) > 0).length,
+        june2025ProductBreakdown: june2025ProductBreakdown,
+        expectedDayReportMatch: 19670,
+        calculationMatches: june2025Total === 19670
+      }
+    });
+
+    // Additional verification - sum all individual product quantities for June 2025
+    const manualJune2025Sum = packageData.products.reduce((total, product) => {
+      const juneQuantity = product.monthlyQuantities['2025-06'] || 0;
+      console.log(`Product: ${product.name}, June 2025: ${juneQuantity}`);
+      return total + juneQuantity;
+    }, 0);
+
+    console.log('Manual June 2025 calculation verification:', {
+      automaticSum: june2025Total,
+      manualSum: manualJune2025Sum,
+      sumsMatch: june2025Total === manualJune2025Sum,
+      dayReportExpected: 19670,
+      matchesDayReport: manualJune2025Sum === 19670
+    });
+  }, [packageData, months]);
 
   // Filter out months with no consumption
   const monthsWithConsumption = months.filter(month => 

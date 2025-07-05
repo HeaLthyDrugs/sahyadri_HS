@@ -961,60 +961,16 @@ export default function ReportPage() {
       setIsLoading(true);
       setReportType('day');
 
-      // Clear any existing data
+      // Clear any existing data from other report types
       setDayReportData(null);
       setReportData([]);
 
-      const startDate = `${selectedMonth}-01`;
-      const endDate = new Date(selectedMonth + '-01');
-      endDate.setMonth(endDate.getMonth() + 1);
-      endDate.setDate(endDate.getDate() - 1);
-      const endDateStr = format(endDate, 'yyyy-MM-dd');
-
-      // Build query for billing entries
-      let query = supabase
-        .from('billing_entries')
-        .select(`
-          entry_date,
-          quantity,
-          packages:packages!inner (id, name, type),
-          products:products!inner (id, name, rate)
-        `)
-        .gte('entry_date', startDate)
-        .lte('entry_date', endDateStr)
-        .order('entry_date', { ascending: true });
-
-      // Add package filter if not 'all'
-      if (selectedPackage !== 'all') {
-        query = query.eq('package_id', selectedPackage);
-      }
-
-      const { data: billingData, error: billingError } = await query;
-
-      if (billingError) throw billingError;
-
-      if (!billingData || billingData.length === 0) {
-        toast.success('No data found for the selected period');
-        return;
-      }
-
-      // Process the data and set it
-      setReportData([{
-        date: selectedMonth,
-        program: 'Day Report',
-        start_date: startDate,
-        end_date: endDateStr,
-        cateringTotal: 0,
-        extraTotal: 0,
-        coldDrinkTotal: 0,
-        grandTotal: 0
-      }]);
-
-      // Success message
-      toast.success('Day report generated successfully');
+      // For day reports, the DayReport component handles its own data fetching
+      // We just need to set the report type and let the component do the work
+      toast.success('Day report ready to display');
     } catch (error) {
-      console.error('Error generating day report:', error);
-      toast.error('Failed to generate report');
+      console.error('Error setting up day report:', error);
+      toast.error('Failed to setup day report');
       setReportData([]);
     } finally {
       setIsLoading(false);
@@ -1063,6 +1019,12 @@ export default function ReportPage() {
       const { data } = await response.json();
 
       console.log('Received response data:', data);
+      console.log('Combined data debug:', {
+        programEntriesProcessed: data.debug?.programEntriesProcessed || 0,
+        staffEntriesProcessed: data.debug?.staffEntriesProcessed || 0,
+        totalProductsWithData: data.package?.products?.filter((p: any) => p.total > 0).length || 0,
+        totalConsumption: data.package?.products?.reduce((sum: number, p: any) => sum + (p.total || 0), 0) || 0
+      });
 
       if (!data || !data.package) {
         throw new Error('Invalid response data structure');
@@ -1445,7 +1407,7 @@ export default function ReportPage() {
   const shouldShowReport = (() => {
     switch (reportType) {
       case 'day':
-        return selectedMonth && selectedPackage && !isLoading && reportData.length > 0;
+        return selectedMonth && selectedPackage && !isLoading;
       case 'monthly':
         return reportData.length > 0;
       case 'program':

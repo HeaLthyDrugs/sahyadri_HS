@@ -292,7 +292,7 @@ export async function POST(request: Request) {
 
     // Fetch package details
     let packageData;
-    if (packageId && packageId !== 'all') {
+    if (packageId && packageId !== 'all' && packageId !== null) {
       const { data, error } = await supabase
         .from('packages')
         .select('*')
@@ -314,9 +314,29 @@ export async function POST(request: Request) {
     }
 
     // Fetch products based on package
-    let productsQuery = supabase.from('products').select('id, name');
-    if (packageId && packageId !== 'all') {
+    let productsQuery = supabase.from('products').select('id, name, package_id');
+    if (packageId && packageId !== 'all' && packageId !== null) {
       productsQuery = productsQuery.eq('package_id', packageId);
+    } else {
+      // For 'all' packages, only fetch products from the main package types
+      // First get the package IDs for Normal, Extra, and Cold Drink types
+      const { data: mainPackages, error: mainPackagesError } = await supabase
+        .from('packages')
+        .select('id, type')
+        .in('type', ['Normal', 'Extra', 'Cold Drink']);
+      
+      if (mainPackagesError) {
+        console.error('Error fetching main packages:', mainPackagesError);
+        return NextResponse.json({ error: 'Failed to fetch main packages' }, { status: 500 });
+      }
+      
+      const mainPackageIds = mainPackages.map(pkg => pkg.id);
+      console.log('LifeTime Report - All packages mode:', {
+        mainPackages: mainPackages.map(pkg => ({ id: pkg.id, type: pkg.type })),
+        mainPackageIds,
+        willQueryThesePackageIds: mainPackageIds
+      });
+      productsQuery = productsQuery.in('package_id', mainPackageIds);
     }
     const { data: products, error: productsError } = await productsQuery;
 
@@ -333,8 +353,8 @@ export async function POST(request: Request) {
       total: 0
     }));
 
-    // Fetch billing entries
-    let entriesQuery = supabase
+    // Fetch billing entries from both tables
+    let programEntriesQuery = supabase
       .from('billing_entries')
       .select(`
         entry_date,
@@ -344,19 +364,107 @@ export async function POST(request: Request) {
       .gte('entry_date', format(startOfMonth(startDate), 'yyyy-MM-dd'))
       .lte('entry_date', format(endOfMonth(endDate), 'yyyy-MM-dd'));
 
-    if (packageId && packageId !== 'all') {
-      entriesQuery = entriesQuery.eq('package_id', packageId);
+    let staffEntriesQuery = supabase
+      .from('staff_billing_entries')
+      .select(`
+        entry_date,
+        quantity,
+        product_id
+      `)
+      .gte('entry_date', format(startOfMonth(startDate), 'yyyy-MM-dd'))
+      .lte('entry_date', format(endOfMonth(endDate), 'yyyy-MM-dd'));
+
+    if (packageId && packageId !== 'all' && packageId !== null) {
+      programEntriesQuery = programEntriesQuery.eq('package_id', packageId);
+      staffEntriesQuery = staffEntriesQuery.eq('package_id', packageId);
+    } else {
+      // For 'all' packages, filter by the main package types
+      const { data: mainPackages, error: mainPackagesError } = await supabase
+        .from('packages')
+        .select('id, type')
+        .in('type', ['Normal', 'Extra', 'Cold Drink']);
+      
+      if (mainPackagesError) {
+        console.error('Error fetching main packages for entries:', mainPackagesError);
+        return NextResponse.json({ error: 'Failed to fetch main packages for entries' }, { status: 500 });
+      }
+      
+      const mainPackageIds = mainPackages.map(pkg => pkg.id);
+      programEntriesQuery = programEntriesQuery.in('package_id', mainPackageIds);
+      staffEntriesQuery = staffEntriesQuery.in('package_id', mainPackageIds);
     }
 
-    const { data: entries, error: entriesError } = await entriesQuery;
+    const [programEntriesResponse, staffEntriesResponse] = await Promise.all([
+      programEntriesQuery,
+      staffEntriesQuery
+    ]);
 
-    if (entriesError) {
-      console.error('Error fetching entries:', entriesError);
-      return NextResponse.json({ error: 'Failed to fetch entries' }, { status: 500 });
+    if (programEntriesResponse.error) {
+      console.error('Error fetching program entries:', programEntriesResponse.error);
+      return NextResponse.json({ error: 'Failed to fetch program entries' }, { status: 500 });
     }
 
-    // Process entries
-    entries.forEach(entry => {
+    if (staffEntriesResponse.error) {
+      console.error('Error fetching staff entries:', staffEntriesResponse.error);
+      return NextResponse.json({ error: 'Failed to fetch staff entries' }, { status: 500 });
+    }
+
+    console.log('Lifetime Report data fetch:', {
+      packageId,
+      originalDateRange: { startMonth, endMonth },
+      parsedDateRange: { startDate: startDate.toISOString(), endDate: endDate.toISOString() },
+      actualQueryRange: { 
+        start: format(startOfMonth(startDate), 'yyyy-MM-dd'), 
+        end: format(endOfMonth(endDate), 'yyyy-MM-dd') 
+      },
+      programEntries: programEntriesResponse.data?.length || 0,
+      staffEntries: staffEntriesResponse.data?.length || 0,
+      monthsInRange: months,
+      queryingAllPackages: packageId === 'all' || packageId === null,
+      selectedPackageId: packageId
+    });
+
+    // Add detailed June 2025 raw data analysis
+    const june2025ProgramEntries = programEntriesResponse.data?.filter(entry => 
+      entry.entry_date.startsWith('2025-06')
+    ) || [];
+    const june2025StaffEntries = staffEntriesResponse.data?.filter(entry => 
+      entry.entry_date.startsWith('2025-06')
+    ) || [];
+
+    console.log('LifeTime Report June 2025 Raw Data Analysis:', {
+      june2025ProgramCount: june2025ProgramEntries.length,
+      june2025StaffCount: june2025StaffEntries.length,
+      june2025ProgramTotal: june2025ProgramEntries.reduce((sum, entry) => sum + entry.quantity, 0),
+      june2025StaffTotal: june2025StaffEntries.reduce((sum, entry) => sum + entry.quantity, 0),
+      june2025CombinedTotal: june2025ProgramEntries.reduce((sum, entry) => sum + entry.quantity, 0) + 
+                            june2025StaffEntries.reduce((sum, entry) => sum + entry.quantity, 0),
+      june2025ProgramDates: [...new Set(june2025ProgramEntries.map(e => e.entry_date))].sort(),
+      june2025StaffDates: [...new Set(june2025StaffEntries.map(e => e.entry_date))].sort(),
+      june2025ProductBreakdown: (() => {
+        const breakdown: { [key: string]: number } = {};
+        june2025ProgramEntries.forEach(entry => {
+          breakdown[entry.product_id] = (breakdown[entry.product_id] || 0) + entry.quantity;
+        });
+        june2025StaffEntries.forEach(entry => {
+          breakdown[entry.product_id] = (breakdown[entry.product_id] || 0) + entry.quantity;
+        });
+        return breakdown;
+      })()
+    });
+
+    // Process program entries
+    programEntriesResponse.data?.forEach(entry => {
+      const month = format(new Date(entry.entry_date), 'yyyy-MM');
+      const product = productConsumption.find(p => p.id === entry.product_id);
+      if (product) {
+        product.monthlyQuantities[month] = (product.monthlyQuantities[month] || 0) + entry.quantity;
+        product.total += entry.quantity;
+      }
+    });
+
+    // Process staff entries (add to existing quantities)
+    staffEntriesResponse.data?.forEach(entry => {
       const month = format(new Date(entry.entry_date), 'yyyy-MM');
       const product = productConsumption.find(p => p.id === entry.product_id);
       if (product) {
@@ -376,7 +484,34 @@ export async function POST(request: Request) {
       months,
       productCount: productConsumption.length,
       monthCount: months.length,
-      sampleProduct: productConsumption[0]
+      sampleProduct: productConsumption[0],
+      totalConsumption: productConsumption.reduce((sum, p) => sum + p.total, 0),
+      detailedBreakdown: {
+        byProduct: productConsumption.filter(p => p.total > 0).map(p => ({
+          id: p.id,
+          name: p.name,
+          total: p.total,
+          monthlyQuantities: p.monthlyQuantities
+        })),
+        byMonth: months.reduce((acc, month) => {
+          acc[month] = productConsumption.reduce((sum, p) => sum + (p.monthlyQuantities[month] || 0), 0);
+          return acc;
+        }, {} as { [key: string]: number })
+      },
+      // Add specific calculation verification for June 2025
+      june2025Verification: {
+        monthKey: '2025-06',
+        june2025Total: productConsumption.reduce((sum, p) => sum + (p.monthlyQuantities['2025-06'] || 0), 0),
+        productBreakdown: productConsumption.filter(p => (p.monthlyQuantities['2025-06'] || 0) > 0).map(p => ({
+          name: p.name,
+          june2025Quantity: p.monthlyQuantities['2025-06'] || 0
+        })),
+        dataSourceVerification: {
+          programEntriesCount: programEntriesResponse.data?.length || 0,
+          staffEntriesCount: staffEntriesResponse.data?.length || 0,
+          combinedEntriesCount: (programEntriesResponse.data?.length || 0) + (staffEntriesResponse.data?.length || 0)
+        }
+      }
     });
 
     // Generate PDF if requested
@@ -401,7 +536,8 @@ export async function POST(request: Request) {
         debug: {
           productCount: productConsumption.length,
           monthCount: months.length,
-          entriesProcessed: entries.length
+          programEntriesProcessed: programEntriesResponse.data?.length || 0,
+          staffEntriesProcessed: staffEntriesResponse.data?.length || 0
         }
       }
     });
