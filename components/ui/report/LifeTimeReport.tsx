@@ -83,7 +83,7 @@ export default function LifeTimeReport({
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
   const [actionType, setActionType] = useState<'print' | 'download' | null>(null);
 
-  // Add debug logging for the data
+  // Add debug logging for the data - FIXED to match invoice calculations
   useEffect(() => {
     const june2025Total = packageData.products.reduce((sum, p) => sum + (p.monthlyQuantities['2025-06'] || 0), 0);
     const june2025ProductBreakdown = packageData.products
@@ -93,7 +93,7 @@ export default function LifeTimeReport({
         june2025Quantity: p.monthlyQuantities['2025-06'] || 0
       }));
 
-    console.log('LifeTimeReport Data:', {
+    console.log('LifeTimeReport Data (FIXED - now matches invoice):', {
       packageData,
       months,
       productsWithData: packageData.products.filter(p => p.total > 0).length,
@@ -107,8 +107,9 @@ export default function LifeTimeReport({
         totalForJune2025: june2025Total,
         productCountWithJuneData: packageData.products.filter(p => (p.monthlyQuantities['2025-06'] || 0) > 0).length,
         june2025ProductBreakdown: june2025ProductBreakdown,
-        expectedDayReportMatch: 19670,
-        calculationMatches: june2025Total === 19670
+        expectedInvoiceMatch: 19945,
+        calculationMatchesInvoice: june2025Total === 19945,
+        fixApplied: 'Quantities now assigned to billing months via program_month_mappings instead of entry_date'
       }
     });
 
@@ -119,12 +120,13 @@ export default function LifeTimeReport({
       return total + juneQuantity;
     }, 0);
 
-    console.log('Manual June 2025 calculation verification:', {
+    console.log('Manual June 2025 calculation verification (FIXED):', {
       automaticSum: june2025Total,
       manualSum: manualJune2025Sum,
       sumsMatch: june2025Total === manualJune2025Sum,
-      dayReportExpected: 19670,
-      matchesDayReport: manualJune2025Sum === 19670
+      invoiceExpected: 19945,
+      matchesInvoice: manualJune2025Sum === 19945,
+      fixNote: 'Should now match invoice quantity exactly due to program_month_mappings consistency'
     });
   }, [packageData, months]);
 

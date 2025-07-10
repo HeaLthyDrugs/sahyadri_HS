@@ -285,7 +285,7 @@ const generatePDF = async (
                       
                       // Extract sequence numbers from program names
                       const getSequenceNumber = (programName: string) => {
-                        const match = programName.match(/^(\\d+)\\s/);
+                        const match = programName.match(/^(\d+)\s/);
                         return match ? parseInt(match[1]) : 999; // Programs without numbers go to end
                       };
                       
@@ -376,7 +376,7 @@ const generatePDF = async (
                           
                           // Extract sequence numbers from program names
                           const getSequenceNumber = (programName: string) => {
-                            const match = programName.match(/^(\\d+)\\s/);
+                            const match = programName.match(/^(\d+)\s/);
                             return match ? parseInt(match[1]) : 999; // Programs without numbers go to end
                           };
                           
