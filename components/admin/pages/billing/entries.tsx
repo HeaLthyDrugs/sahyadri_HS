@@ -590,6 +590,17 @@ export function BillingEntriesPage() {
     }
   }, [selectedProgram, selectedPackage, dateRange, products.length]);
 
+  // Update date range when both program and package are selected (to include early arrivals/late departures)
+  useEffect(() => {
+    if (selectedProgram && selectedPackage && !isStaffMode) {
+      console.log('🔄 Updating date range for program + package selection');
+      getActualDateRange(selectedProgram, selectedPackage).then(dates => {
+        console.log('📅 Setting expanded date range with', dates.length, 'days');
+        setDateRange(dates);
+      });
+    }
+  }, [selectedProgram, selectedPackage, isStaffMode]);
+
   const handleEntryChange = (date: string, productId: string, value: string) => {
     const quantity = parseFloat(value) || 0;
     
@@ -1363,6 +1374,8 @@ export function BillingEntriesPage() {
       } else {
         console.log('👥 Fetching program entries...');
         
+        // Fetch ALL billing entries for this program/package combination
+        // Don't filter by date range since we want to capture early arrivals and late departures
         const { data: billingEntries, error: entriesError } = await supabase
           .from('billing_entries')
           .select('*')
@@ -1379,8 +1392,12 @@ export function BillingEntriesPage() {
         // Fill in the actual quantities from billing entries
         billingEntries?.forEach(entry => {
           const dateStr = format(new Date(entry.entry_date), 'yyyy-MM-dd');
+          // Only add to entry data if the date is within our current date range
           if (newEntryData[dateStr] && entry.product_id) {
             newEntryData[dateStr][entry.product_id] = entry.quantity;
+            console.log('📅 Added entry for date:', dateStr, 'product:', entry.product_id, 'quantity:', entry.quantity);
+          } else if (!newEntryData[dateStr]) {
+            console.log('⚠️ Entry date', dateStr, 'not in current date range, skipping');
           }
         });
       }
@@ -1392,6 +1409,61 @@ export function BillingEntriesPage() {
       toast.error('Failed to fetch entries');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  // Function to get the actual date range including early arrivals and late departures
+  const getActualDateRange = async (programId: string, packageId: string) => {
+    try {
+      console.log('🔍 Fetching actual date range for program entries...');
+      
+      // Fetch all billing entries for this program/package to see what dates have data
+      const { data: billingEntries, error } = await supabase
+        .from('billing_entries')
+        .select('entry_date')
+        .eq('program_id', programId)
+        .eq('package_id', packageId);
+
+      if (error) {
+        console.error('❌ Error fetching billing entries for date range:', error);
+        throw error;
+      }
+
+      console.log('📊 Found billing entries for', billingEntries?.length || 0, 'entries');
+
+      if (!billingEntries || billingEntries.length === 0) {
+        // If no entries exist, use program dates as fallback
+        const program = programs.find(p => p.id === programId);
+        if (program) {
+          console.log('📅 No entries found, using program dates as fallback');
+          return eachDayOfInterval({
+            start: new Date(program.start_date),
+            end: new Date(program.end_date)
+          });
+        }
+        return [];
+      }
+
+      // Get all unique dates from billing entries
+      const entryDates = billingEntries.map(entry => new Date(entry.entry_date));
+      const minDate = new Date(Math.min(...entryDates.map(d => d.getTime())));
+      const maxDate = new Date(Math.max(...entryDates.map(d => d.getTime())));
+
+      console.log('📅 Actual date range from entries:', format(minDate, 'yyyy-MM-dd'), 'to', format(maxDate, 'yyyy-MM-dd'));
+
+      // Create date range including all days between min and max dates
+      return eachDayOfInterval({ start: minDate, end: maxDate });
+    } catch (error) {
+      console.error('❌ Error getting actual date range:', error);
+      // Fallback to program dates
+      const program = programs.find(p => p.id === programId);
+      if (program) {
+        return eachDayOfInterval({
+          start: new Date(program.start_date),
+          end: new Date(program.end_date)
+        });
+      }
+      return [];
     }
   };
 
@@ -1409,10 +1481,17 @@ export function BillingEntriesPage() {
     } else {
       console.log('👥 Switching to program mode');
       setIsStaffMode(false);
-      if (selectedProgram) {
+      if (selectedProgram && selectedPackage) {
+        // Get actual date range including early arrivals and late departures
+        getActualDateRange(selectedProgram, selectedPackage).then(dates => {
+          console.log('📅 Setting actual date range with', dates.length, 'days');
+          setDateRange(dates);
+        });
+      } else if (selectedProgram) {
+        // If package not selected yet, use program dates as initial range
         const program = programs.find(p => p.id === selectedProgram);
         if (program) {
-          console.log('📅 Setting date range for program:', program.name, 'from', program.start_date, 'to', program.end_date);
+          console.log('📅 Setting initial date range for program:', program.name);
           const dates = eachDayOfInterval({
             start: new Date(program.start_date),
             end: new Date(program.end_date)
@@ -1421,7 +1500,7 @@ export function BillingEntriesPage() {
         }
       }
     }
-  }, [selectedProgram, programs]);
+  }, [selectedProgram, selectedPackage, programs]);
 
   // Add this function to handle quantity changes
   const handleQuantityChange = async (date: string, productId: string, value: string) => {
@@ -1452,11 +1531,11 @@ export function BillingEntriesPage() {
     return;
   };
 
-  // Helper function to check if a date is outside program dates but has participants
+  // Helper function to check if a date is outside program dates
   const isExtraDate = (date: Date, program: Program | undefined): boolean => {
     if (!program) return false;
     
-    // Convert program dates to YYYY-MM-DD format for proper comparison
+    // Convert program dates for proper comparison
     const programStart = new Date(program.start_date);
     programStart.setHours(0, 0, 0, 0);
     
@@ -1467,17 +1546,20 @@ export function BillingEntriesPage() {
     const compareDate = new Date(date);
     compareDate.setHours(0, 0, 0, 0);
     
-    // Check if any participants were present on this date
-    const hasParticipantsOnDate = participants.some(p => {
-      const checkin = new Date(p.reception_checkin);
-      const checkout = new Date(p.reception_checkout);
-      checkin.setHours(0, 0, 0, 0);
-      checkout.setHours(23, 59, 59, 999);
-      return checkin <= compareDate && compareDate <= checkout;
-    });
+    // A date is "extra" if it's outside the program dates
+    // This will work regardless of whether entryData is populated yet
+    const isOutsideProgramDates = compareDate < programStart || compareDate > programEnd;
     
-    // It's an extra date if it's outside program dates but has participants
-    return hasParticipantsOnDate && (compareDate < programStart || compareDate > programEnd);
+    // If entryData is available, also check if it has billing data
+    const dateStr = format(date, 'yyyy-MM-dd');
+    if (entryData[dateStr]) {
+      const hasBillingData = Object.values(entryData[dateStr]).some(value => value > 0);
+      return isOutsideProgramDates && hasBillingData;
+    }
+    
+    // If entryData is not available yet, just return true for dates outside program range
+    // that are in our dateRange (meaning they have billing data)
+    return isOutsideProgramDates;
   };
 
   // Add this function to check if a column should be shown (has non-zero values)
@@ -1500,28 +1582,49 @@ export function BillingEntriesPage() {
       return dateRange;
     }
     
-    // For program mode, show dates within program range and extra dates with data
-    const program = programs.find(p => p.id === selectedProgram);
-    if (!program) return dateRange;
+    // For program mode, we need to determine if we should show all dates or only dates with data
+    const currentPackage = packages.find(pkg => pkg.id === selectedPackage);
     
-    const programStart = new Date(program.start_date);
-    programStart.setHours(0, 0, 0, 0);
+    if (!currentPackage) {
+      // If package not found, show all dates as fallback
+      return dateRange;
+    }
     
-    const programEnd = new Date(program.end_date);
-    programEnd.setHours(23, 59, 59, 999);
+    // Determine if this package requires showing all dates for manual entry
+    const isManualEntryPackage = (
+      // Check package type - Extra, Additional, Manual, etc.
+      currentPackage.type.toLowerCase().includes('extra') ||
+      currentPackage.type.toLowerCase().includes('additional') ||
+      currentPackage.type.toLowerCase().includes('manual') ||
+      currentPackage.type.toLowerCase().includes('supplement') ||
+      
+      // Check package name - Extra catering, Cold drinks, Additional items, etc.
+      currentPackage.name.toLowerCase().includes('extra') ||
+      currentPackage.name.toLowerCase().includes('cold') ||
+      currentPackage.name.toLowerCase().includes('drinks') ||
+      currentPackage.name.toLowerCase().includes('additional') ||
+      currentPackage.name.toLowerCase().includes('supplement') ||
+      currentPackage.name.toLowerCase().includes('beverage') ||
+      currentPackage.name.toLowerCase().includes('snack') ||
+      
+      // Any package that is not the main "Normal" or "Catering" type
+      (!currentPackage.type.toLowerCase().includes('normal') && 
+       !currentPackage.type.toLowerCase().includes('catering') &&
+       !currentPackage.type.toLowerCase().includes('main'))
+    );
     
-    // Filter the date range
+    if (isManualEntryPackage) {
+      console.log('📅 Showing all dates for manual entry package:', currentPackage.name, 'type:', currentPackage.type);
+      return dateRange;
+    }
+    
+    console.log('📅 Filtering dates with data for main package:', currentPackage.name, 'type:', currentPackage.type);
+    
+    // For main catering packages, show only dates that have billing data
     return dateRange.filter(date => {
-      const compareDate = new Date(date);
-      compareDate.setHours(0, 0, 0, 0);
-      
-      // If date is within program range, always show it
-      if (compareDate >= programStart && compareDate <= programEnd) {
-        return true;
-      }
-      
-      // For extra dates, only show if they have non-zero values
-      return shouldShowColumn(date);
+      const dateStr = format(date, 'yyyy-MM-dd');
+      // Show date if it has any billing data (non-zero values)
+      return entryData[dateStr] && Object.values(entryData[dateStr]).some(value => value > 0);
     });
   };
 
@@ -1601,8 +1704,8 @@ export function BillingEntriesPage() {
             ${isFullScreenMode ? 'flex-1 flex flex-col h-full overflow-hidden p-2 sm:p-4' : ''}
           `}>
             {/* Search Component - Sticky in full screen mode */}
-            <div className={`
-              ${isFullScreenMode ? 'sticky top-14 bg-white z-[400] py-2 sm:py-4 border-b' : ''}
+            <div            className={`
+              ${isFullScreenMode ? 'sticky top-0 bg-white z-[60] py-2 sm:py-4 border-b' : ''}
               relative
             `}>
               <div className="flex items-start justify-between gap-4">
@@ -1635,7 +1738,42 @@ export function BillingEntriesPage() {
                 </div>
               </div>
                 {/* Status Indicator */}
-              <div className="flex items-center gap-2 text-sm mb-2 justify-end mr-2">
+              <div className="flex items-center justify-between text-sm mb-2">
+                <div className="flex items-center gap-4 text-xs text-gray-600">
+                  {(() => {
+                    const program = programs.find(p => p.id === selectedProgram);
+                    if (!program || !dateRange.length) return null;
+                    
+                    const earlyArrivalDays = getFilteredDateRange().filter(date => 
+                      isExtraDate(date, program) && date < new Date(program.start_date)
+                    ).length;
+                    
+                    const lateDepartureDays = getFilteredDateRange().filter(date => 
+                      isExtraDate(date, program) && date > new Date(program.end_date)
+                    ).length;
+                    
+                    const regularDays = getFilteredDateRange().length - earlyArrivalDays - lateDepartureDays;
+                    
+                    return (
+                      <div className="flex items-center gap-4">
+                        <span className="flex items-center gap-1">
+                          📅 <strong>{regularDays}</strong> regular days
+                        </span>
+                        {earlyArrivalDays > 0 && (
+                          <span className="flex items-center gap-1 text-blue-700">
+                            🔵 <strong>{earlyArrivalDays}</strong> early arrival days
+                          </span>
+                        )}
+                        {lateDepartureDays > 0 && (
+                          <span className="flex items-center gap-1 text-orange-700">
+                            🟠 <strong>{lateDepartureDays}</strong> late departure days
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })()}
+                </div>
+                <div className="flex items-center gap-2">
                   {saveStatus === 'saving' && (
                     <span className="text-amber-600 flex items-center gap-1">
                       <div className="w-3 h-3 border-2 border-amber-200 border-t-amber-500 rounded-full animate-spin"></div>
@@ -1661,6 +1799,7 @@ export function BillingEntriesPage() {
                     </span>
                   )}
                 </div>
+              </div>
             </div>
 
             {/* Table Container */}
@@ -1674,7 +1813,7 @@ export function BillingEntriesPage() {
                   <thead>
                     <tr>
                       <th
-                        className="border bg-gray-50 sticky top-0 left-0 z-[60] min-w-[160px] sm:min-w-[200px] max-w-[300px] text-sm sm:text-base shadow-[2px_2px_4px_-2px_rgba(0,0,0,0.1)]"
+                        className="border bg-gray-50 sticky top-0 left-0 z-[80] min-w-[160px] sm:min-w-[200px] max-w-[300px] text-sm sm:text-base shadow-[2px_2px_4px_-2px_rgba(0,0,0,0.1)]"
                         style={{ minHeight: '64px' }}
                       >
                         <div className="truncate p-2">Product Name</div>
@@ -1691,7 +1830,13 @@ export function BillingEntriesPage() {
                         return (
                           <th
                             key={date.toISOString()}
-                            className={`border bg-gray-50 sticky top-0 z-[50] min-w-[70px] sm:min-w-[80px] max-w-[100px] text-xs sm:text-sm whitespace-nowrap shadow-[0_2px_4px_-2px_rgba(0,0,0,0.1)] ${isExtra ? 'bg-amber-50' : ''}`}
+                            className={`border sticky top-0 z-[70] min-w-[70px] sm:min-w-[80px] max-w-[100px] text-xs sm:text-sm whitespace-nowrap shadow-[0_2px_4px_-2px_rgba(0,0,0,0.1)] ${
+                              isExtra && program
+                                ? date < new Date(program.start_date) 
+                                  ? 'bg-blue-50 border-blue-200' // Early arrival - blue theme
+                                  : 'bg-orange-50 border-orange-200' // Late departure - orange theme
+                                : 'bg-gray-50'
+                            }`}
                             style={{ minHeight: '64px' }}
                           >
                             {isFirstOfMonth && (
@@ -1699,12 +1844,21 @@ export function BillingEntriesPage() {
                                 {monthName}
                               </div>
                             )}
-                            <div className={`flex flex-col items-center p-1 sm:p-2 ${isExtra ? 'text-amber-700 font-medium' : ''}`}>
-                              <span>{format(date, 'dd-MM-yyyy')}</span>
-                              {isExtra && (
-                                <span className="text-[10px] text-amber-600">
-                                  {/* Show early arrival or late departure based on date comparison */}
-                                  {date < new Date(program.start_date) ? '⏰ Early Arrival' : '⌛ Late Departure'}
+                            <div className={`flex flex-col items-center p-1 sm:p-2 ${
+                              isExtra && program
+                                ? date < new Date(program.start_date)
+                                  ? 'text-blue-700 font-medium' // Early arrival - blue text
+                                  : 'text-orange-700 font-medium' // Late departure - orange text
+                                : ''
+                            }`}>
+                              <span className="font-medium">{format(date, 'dd-MM-yyyy')}</span>
+                              {isExtra && program && (
+                                <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium mt-1 ${
+                                  date < new Date(program.start_date)
+                                    ? 'bg-blue-100 text-blue-700 border border-blue-200' // Early arrival styling
+                                    : 'bg-orange-100 text-orange-700 border border-orange-200' // Late departure styling
+                                }`}>
+                                  {date < new Date(program.start_date) ? '🔵 Early Arrival' : '🟠 Late Departure'}
                                 </span>
                               )}
                             </div>
@@ -1713,10 +1867,10 @@ export function BillingEntriesPage() {
                       })}
                       {showSummary && (
                         <>
-                          <th className="border bg-gray-50 sticky top-0 z-40 p-1 sm:p-2 text-xs sm:text-sm shadow-[0_2px_4px_-2px_rgba(0,0,0,0.1)]">Total</th>
-                          <th className="border bg-gray-50 sticky top-0 z-40 p-1 sm:p-2 text-xs sm:text-sm shadow-[0_2px_4px_-2px_rgba(0,0,0,0.1)]">Average</th>
-                          <th className="border bg-gray-50 sticky top-0 z-40 p-1 sm:p-2 text-xs sm:text-sm shadow-[0_2px_4px_-2px_rgba(0,0,0,0.1)]">Max</th>
-                          <th className="border bg-gray-50 sticky top-0 z-40 p-1 sm:p-2 text-xs sm:text-sm shadow-[0_2px_4px_-2px_rgba(0,0,0,0.1)]">Min</th>
+                          <th className="border bg-gray-50 sticky top-0 z-[70] p-1 sm:p-2 text-xs sm:text-sm shadow-[0_2px_4px_-2px_rgba(0,0,0,0.1)]">Total</th>
+                          <th className="border bg-gray-50 sticky top-0 z-[70] p-1 sm:p-2 text-xs sm:text-sm shadow-[0_2px_4px_-2px_rgba(0,0,0,0.1)]">Average</th>
+                          <th className="border bg-gray-50 sticky top-0 z-[70] p-1 sm:p-2 text-xs sm:text-sm shadow-[0_2px_4px_-2px_rgba(0,0,0,0.1)]">Max</th>
+                          <th className="border bg-gray-50 sticky top-0 z-[70] p-1 sm:p-2 text-xs sm:text-sm shadow-[0_2px_4px_-2px_rgba(0,0,0,0.1)]">Min</th>
                         </>
                       )}
                     </tr>
@@ -1730,7 +1884,7 @@ export function BillingEntriesPage() {
                       .map((product, rowIndex) => (
                         <tr key={product.id}>
                           <td
-                            className="border bg-gray-50 font-medium sticky left-0 z-30 text-sm sm:text-base shadow-[2px_0_4px_-2px_rgba(0,0,0,0.1)]"
+                            className="border bg-gray-50 font-medium sticky left-0 z-[65] text-sm sm:text-base shadow-[2px_0_4px_-2px_rgba(0,0,0,0.1)]"
                           >
                             <div className="truncate p-2" title={product.name}>
                               {product.name}
@@ -1741,12 +1895,30 @@ export function BillingEntriesPage() {
                             // Check if date is outside program duration
                             const program = programs.find(p => p.id === selectedProgram);
                             const isExtra = isExtraDate(date, program);
-                            const bgColor = isExtra ? 'bg-amber-50' : getCellBackgroundColor(date);
+                            
+                            // Determine cell background color based on date type
+                            let bgColor = 'bg-white';
+                            let borderColor = '';
+                            let inputBg = 'bg-white';
+                            
+                            if (isExtra && program) {
+                              if (date < new Date(program.start_date)) {
+                                // Early arrival - blue theme
+                                bgColor = 'bg-blue-50';
+                                borderColor = 'border-blue-100';
+                                inputBg = 'bg-blue-50';
+                              } else {
+                                // Late departure - orange theme
+                                bgColor = 'bg-orange-50';
+                                borderColor = 'border-orange-100';
+                                inputBg = 'bg-orange-50';
+                              }
+                            }
                             
                             return (
                               <td
                                 key={`${date}-${product.id}`}
-                                className={`border text-center ${bgColor}`}
+                                className={`border text-center ${bgColor} ${borderColor}`}
                               >
                                 <div className="flex items-center justify-center p-1">
                                   <input
@@ -1761,9 +1933,21 @@ export function BillingEntriesPage() {
                                       focusedCell?.row === rowIndex && focusedCell?.col === colIndex
                                         ? 'ring-2 ring-amber-500'
                                         : ''
-                                    } ${isExtra ? 'bg-amber-50 border-amber-300' : ''}`}
+                                    } ${inputBg} ${
+                                      isExtra && program
+                                        ? date < new Date(program.start_date)
+                                          ? 'border-blue-300' // Early arrival border
+                                          : 'border-orange-300' // Late departure border
+                                        : 'border-gray-300'
+                                    }`}
                                     min="0"
-                                    title={isExtra ? "Extra entry outside program duration" : "Click to view participant details"}
+                                    title={
+                                      isExtra && program
+                                        ? date < new Date(program.start_date)
+                                          ? "Early arrival entry - before program start date"
+                                          : "Late departure entry - after program end date"
+                                        : "Click to view participant details"
+                                    }
                                   />
                                 </div>
                               </td>
