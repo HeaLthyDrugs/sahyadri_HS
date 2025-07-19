@@ -26,15 +26,19 @@ interface Packages {
 }
 
 interface ProgramReportProps {
-  programId: string;
-  programName: string;
-  customerName: string;
-  startDate: string;
-  endDate: string;
-  totalParticipants: number;
+  programId?: string;  // Made optional since staff mode won't have a program ID
+  programName?: string; // Made optional for staff mode
+  customerName?: string; // Made optional for staff mode
+  startDate?: string; // Made optional for staff mode
+  endDate?: string; // Made optional for staff mode
+  totalParticipants?: number; // Made optional for staff mode
   selectedPackage: string;
   packages: Packages;
   grandTotal: number;
+  isStaffMode?: boolean;
+  month?: string;
+  onModeChange?: (isStaff: boolean) => void;
+  onMonthChange?: (month: string) => void;
 }
 
 // Package type mapping and order
@@ -92,7 +96,11 @@ const ProgramReport: React.FC<ProgramReportProps> = ({
   totalParticipants,
   selectedPackage,
   packages,
-  grandTotal
+  grandTotal,
+  isStaffMode = false,
+  month,
+  onModeChange,
+  onMonthChange
 }) => {
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
   const [actionType, setActionType] = useState<'print' | 'download' | null>(null);
@@ -105,16 +113,28 @@ const ProgramReport: React.FC<ProgramReportProps> = ({
   useEffect(() => {
     const fetchComments = async () => {
       try {
-        const { data, error } = await supabase
-          .from('program_item_comments')
-          .select('package_type, product_name, comment')
-          .eq('program_id', programId);
+        // Use report_comments table instead of program_item_comments
+        const query = supabase
+          .from('report_comments')
+          .select('reference_id, report_type, comment')
+          .eq('report_type', 'program_item')
+          .eq('ofStaff', isStaffMode ? true : false);
+          
+        // For staff mode, filter by month
+        if (isStaffMode && month) {
+          query.eq('month', month);
+        } else if (!isStaffMode && programId) {
+          // For regular program reports, filter by program ID
+          query.eq('program_id', programId);
+        }
+          
+        const { data, error } = await query;
 
         if (error) throw error;
 
         const commentMap = data.reduce((acc, item) => {
-          const key = `${item.package_type}:${item.product_name}`;
-          acc[key] = item.comment;
+          // The reference_id format is "packageType:productName"
+          acc[item.reference_id] = item.comment;
           return acc;
         }, {} as { [key: string]: string });
 
@@ -125,12 +145,10 @@ const ProgramReport: React.FC<ProgramReportProps> = ({
       }
     };
 
-    if (programId) {
-      fetchComments();
-    }
-  }, [programId]);
+    fetchComments();
+  }, [programId, isStaffMode, month]);
 
-  // Updated saveComment function
+  // Updated saveComment function to use report_comments table
   const saveComment = async (packageType: string, productName: string, comment: string) => {
     const commentKey = `${packageType}:${productName}`;
     
@@ -138,18 +156,37 @@ const ProgramReport: React.FC<ProgramReportProps> = ({
       setSavingStates(prev => ({ ...prev, [commentKey]: true }));
       setSavedStates(prev => ({ ...prev, [commentKey]: false }));
 
-      const { error } = await supabase
-        .from('program_item_comments')
-        .upsert({
-          program_id: programId,
-          package_type: packageType,
-          product_name: productName,
-          comment: comment.trim() || null
-        }, {
-          onConflict: 'program_id,package_type,product_name'
-        });
+      // Create the data object for report_comments table
+      const commentData: any = {
+        report_type: 'program_item',
+        reference_id: commentKey, // Using the format "packageType:productName"
+        comment: comment.trim() || null,
+        ofStaff: isStaffMode
+      };
+      
+      // Add program_id or month based on mode
+      if (isStaffMode && month) {
+        commentData.month = month;
+      } else if (!isStaffMode && programId) {
+        commentData.program_id = programId;
+      }
 
-      if (error) throw error;
+      // Use the exact column names that match the unique index
+      let conflictTarget = '';
+      if (isStaffMode) {
+        conflictTarget = 'report_type,reference_id,month,"ofStaff"';
+      } else {
+        conflictTarget = 'report_type,reference_id,"ofStaff"';
+      }
+
+      const { error } = await supabase
+        .from('report_comments')
+        .upsert(commentData, { onConflict: conflictTarget });
+
+      if (error) {
+        console.error('Upsert error:', error);
+        throw error;
+      }
 
       // Show success state
       setSavedStates(prev => ({ ...prev, [commentKey]: true }));
@@ -244,7 +281,9 @@ const ProgramReport: React.FC<ProgramReportProps> = ({
           totalParticipants,
           selectedPackage,
           packages: transformedPackages,
-          action: 'print'
+          action: 'print',
+          isStaffMode,
+          month
         })
       });
 
@@ -331,7 +370,9 @@ const ProgramReport: React.FC<ProgramReportProps> = ({
           totalParticipants,
           selectedPackage,
           packages: transformedPackages,
-          action: 'download'
+          action: 'download',
+          isStaffMode,
+          month
         }),
       });
 
@@ -382,14 +423,29 @@ const ProgramReport: React.FC<ProgramReportProps> = ({
     ).sort();
 
     // Filter package groups based on selected package
-    const filteredPackages = selectedPackage === 'all' 
-      ? packages 
-      : Object.entries(packages).reduce((acc, [type, data]) => {
-          if (type === selectedPackage) {
-            acc[type] = data;
-          }
-          return acc;
-        }, {} as typeof packages);
+    const filteredPackages = (() => {
+      if (selectedPackage === 'all') {
+        return packages;
+      }
+
+      // Convert selected package to proper case
+      const packageTypeMap = {
+        'normal': 'Normal',
+        'extra': 'Extra',
+        'cold drink': 'Cold Drink'
+      };
+
+      const mappedType = packageTypeMap[selectedPackage.toLowerCase() as keyof typeof packageTypeMap];
+      if (!mappedType) return {};
+
+      // Filter packages by type
+      return Object.entries(packages).reduce((acc, [type, data]) => {
+        if (type === mappedType) {
+          acc[type] = data;
+        }
+        return acc;
+      }, {} as typeof packages);
+    })();
 
     if (Object.keys(filteredPackages).length === 0) {
       return (
@@ -658,34 +714,44 @@ const ProgramReport: React.FC<ProgramReportProps> = ({
 
   const hasPackages = packages && Object.keys(packages).length > 0;
 
+  // Helper function to get current month in YYYY-MM format
+  const getCurrentMonth = () => {
+    const now = new Date();
+    return format(now, 'yyyy-MM');
+  };
+
   return (
     <div className="bg-white w-full">
-      {/* Action Buttons */}
-      <div className="flex justify-end gap-4 mb-6 print:hidden max-w-5xl mx-auto">
-        <button
-          onClick={handlePrint}
-          disabled={isGeneratingPDF || !hasPackages}
-          className="inline-flex items-center px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-800 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed min-w-[100px] justify-center"
-        >
-          {isGeneratingPDF && actionType === 'print' ? (
-            <LoadingSpinner size="sm" className="text-gray-600 mr-2" />
-          ) : (
-            <RiPrinterLine className="w-5 h-5 mr-2" />
-          )}
-          {isGeneratingPDF && actionType === 'print' ? 'Preparing...' : 'Print'}
-        </button>
-        <button
-          onClick={handleDownloadPDF}
-          disabled={isGeneratingPDF || !hasPackages}
-          className="inline-flex items-center px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-800 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed min-w-[120px] justify-center"
-        >
-          {isGeneratingPDF && actionType === 'download' ? (
-            <LoadingSpinner size="sm" className="text-gray-600 mr-2" />
-          ) : (
-            <RiDownloadLine className="w-5 h-5 mr-2" />
-          )}
-          {isGeneratingPDF && actionType === 'download' ? 'Generating...' : 'Download PDF'}
-        </button>
+      {/* Mode Selection and Filters */}
+      <div className="flex justify-end items-center mb-6 print:hidden max-w-5xl mx-auto">
+
+        {/* Action Buttons */}
+        <div className="flex gap-4">
+          <button
+            onClick={handlePrint}
+            disabled={isGeneratingPDF || !hasPackages}
+            className="inline-flex items-center px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-800 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed min-w-[100px] justify-center"
+          >
+            {isGeneratingPDF && actionType === 'print' ? (
+              <LoadingSpinner size="sm" className="text-gray-600 mr-2" />
+            ) : (
+              <RiPrinterLine className="w-5 h-5 mr-2" />
+            )}
+            {isGeneratingPDF && actionType === 'print' ? 'Preparing...' : 'Print'}
+          </button>
+          <button
+            onClick={handleDownloadPDF}
+            disabled={isGeneratingPDF || !hasPackages}
+            className="inline-flex items-center px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-800 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed min-w-[120px] justify-center"
+          >
+            {isGeneratingPDF && actionType === 'download' ? (
+              <LoadingSpinner size="sm" className="text-gray-600 mr-2" />
+            ) : (
+              <RiDownloadLine className="w-5 h-5 mr-2" />
+            )}
+            {isGeneratingPDF && actionType === 'download' ? 'Generating...' : 'Download PDF'}
+          </button>
+        </div>
       </div>
 
       {/* Report Content */}
@@ -706,25 +772,34 @@ const ProgramReport: React.FC<ProgramReportProps> = ({
             {/* Report Header */}
             <div className="text-center mb-6 p-4 bg-gray-50 border border-gray-200 rounded-lg">
               <h2 className="text-xl font-semibold text-gray-900 mb-2">
-                Program Report - {programName}
+                {isStaffMode ? 'Staff Catering Report' : `Program Report - ${programName}`}
               </h2>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                <div>
-                  <p className="text-gray-600">Customer Name</p>
-                  <p className="font-medium">{customerName}</p>
-                </div>
-                <div>
-                  <p className="text-gray-600">Start Date</p>
-                  <p className="font-medium">{format(new Date(startDate), 'dd/MM/yyyy')}</p>
-                </div>
-                <div>
-                  <p className="text-gray-600">End Date</p>
-                  <p className="font-medium">{format(new Date(endDate), 'dd/MM/yyyy')}</p>
-                </div>
-                <div>
-                  <p className="text-gray-600">Total Participants</p>
-                  <p className="font-medium">{totalParticipants}</p>
-                </div>
+                {isStaffMode ? (
+                  <div className="col-span-full">
+                    <p className="text-gray-600">Month</p>
+                    <p className="font-medium">{format(new Date(month + '-01'), 'MMMM yyyy')}</p>
+                  </div>
+                ) : (
+                  <>
+                    <div>
+                      <p className="text-gray-600">Customer Name</p>
+                      <p className="font-medium">{customerName}</p>
+                    </div>
+                    <div>
+                      <p className="text-gray-600">Start Date</p>
+                      <p className="font-medium">{format(new Date(startDate!), 'dd/MM/yyyy')}</p>
+                    </div>
+                    <div>
+                      <p className="text-gray-600">End Date</p>
+                      <p className="font-medium">{format(new Date(endDate!), 'dd/MM/yyyy')}</p>
+                    </div>
+                    <div>
+                      <p className="text-gray-600">Total Participants</p>
+                      <p className="font-medium">{totalParticipants}</p>
+                    </div>
+                  </>
+                )}
               </div>
             </div>
             {renderPackageTables()}
@@ -732,7 +807,7 @@ const ProgramReport: React.FC<ProgramReportProps> = ({
         ) : (
           <div className="text-center py-8 bg-gray-50 rounded-lg border border-gray-200">
             <p className="text-gray-500">
-              No data found for program {programName}
+              No data found {isStaffMode ? `for ${format(new Date(month + '-01'), 'MMMM yyyy')}` : `for program ${programName}`}
               {selectedPackage !== 'all' ? ` in ${selectedPackage} package` : ''}.
             </p>
           </div>

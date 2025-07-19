@@ -3,6 +3,8 @@ import puppeteer from 'puppeteer';
 import puppeteerCore from 'puppeteer-core';
 import chromium from '@sparticuz/chromium-min';
 import { format } from 'date-fns';
+import { createServerComponentClient } from '@supabase/auth-helpers-nextjs';
+import { cookies } from 'next/headers';
 
 interface Product {
   id: string;
@@ -55,7 +57,113 @@ const CATERING_PRODUCT_ORDER = [
 
 export async function POST(req: NextRequest) {
   try {
-    const { programName, customerName, startDate, endDate, totalParticipants, selectedPackage, packages, action } = await req.json();
+    const { programName, customerName, startDate, endDate, totalParticipants, selectedPackage, packages, action, isStaffMode, month } = await req.json();
+    
+    // Initialize Supabase client if we need to fetch staff data
+    let staffPackages = packages;
+    if (isStaffMode && month) {
+      const supabase = createServerComponentClient({ cookies });
+      
+      // Calculate date range for the selected month
+      const startDateStr = `${month}-01`;
+      const endDate = new Date(month + '-01');
+      endDate.setMonth(endDate.getMonth() + 1);
+      endDate.setDate(endDate.getDate() - 1);
+      const endDateStr = format(endDate, 'yyyy-MM-dd');
+      
+      // Fetch staff billing entries for the selected month
+      let query = supabase
+        .from('staff_billing_entries')
+        .select(`
+          entry_date,
+          quantity,
+          packages:packages!inner (id, name, type),
+          products:products!inner (id, name, rate)
+        `)
+        .gte('entry_date', startDateStr)
+        .lte('entry_date', endDateStr)
+        .order('entry_date', { ascending: true });
+      
+      // Add package filter if not 'all'
+      if (selectedPackage && selectedPackage !== 'all') {
+        query = query.eq('packages.type', selectedPackage);
+      }
+      
+      const { data: staffData, error: staffError } = await query;
+      
+      if (staffError) {
+        console.error('Error fetching staff data:', staffError);
+        return NextResponse.json({ error: 'Failed to fetch staff data' }, { status: 500 });
+      }
+      
+      if (!staffData || staffData.length === 0) {
+        return NextResponse.json({ error: 'No staff data found for the selected period' }, { status: 404 });
+      }
+      
+      // Process and transform staff data to match the expected format
+      const transformedPackages: any = {};
+      
+      // Group by package type
+      staffData.forEach((entry: any) => {
+        const packageType = entry.packages.type;
+        if (!transformedPackages[packageType]) {
+          transformedPackages[packageType] = {
+            products: [],
+            entries: [],
+            totals: {},
+            rates: {},
+            totalAmounts: {}
+          };
+        }
+        
+        // Add product if not already added
+        const productExists = transformedPackages[packageType].products.some(
+          (p: any) => p.id === entry.products.name
+        );
+        
+        if (!productExists) {
+          transformedPackages[packageType].products.push({
+            id: entry.products.name,
+            name: entry.products.name,
+            rate: entry.products.rate
+          });
+        }
+        
+        // Update or create entry for this date
+        const dateStr = format(new Date(entry.entry_date), 'yyyy-MM-dd');
+        let dateEntry = transformedPackages[packageType].entries.find(
+          (e: any) => e.date === dateStr
+        );
+        
+        if (!dateEntry) {
+          dateEntry = {
+            date: dateStr,
+            quantities: {}
+          };
+          transformedPackages[packageType].entries.push(dateEntry);
+        }
+        
+        // Update quantities for this product on this date
+        if (!dateEntry.quantities[entry.products.name]) {
+          dateEntry.quantities[entry.products.name] = 0;
+        }
+        dateEntry.quantities[entry.products.name] += entry.quantity;
+        
+        // Update totals, rates, and amounts
+        if (!transformedPackages[packageType].totals[entry.products.name]) {
+          transformedPackages[packageType].totals[entry.products.name] = 0;
+          transformedPackages[packageType].rates[entry.products.name] = entry.products.rate;
+          transformedPackages[packageType].totalAmounts[entry.products.name] = 0;
+        }
+        
+        transformedPackages[packageType].totals[entry.products.name] += entry.quantity;
+        transformedPackages[packageType].totalAmounts[entry.products.name] = 
+          transformedPackages[packageType].totals[entry.products.name] * entry.products.rate;
+      });
+      
+      // Use the transformed staff data instead of the passed packages
+      staffPackages = transformedPackages;
+    }
 
     let browser;
     try {
@@ -64,7 +172,7 @@ export async function POST(req: NextRequest) {
         const executablePath = await chromium.executablePath('https://github.com/Sparticuz/chromium/releases/download/v133.0.0/chromium-v133.0.0-pack.tar');
         browser = await puppeteerCore.launch({
           executablePath,
-          args: chromium.args,
+          args: [...chromium.args, '--font-render-hinting=none'], // Add font rendering hint
           headless: true as const,
           defaultViewport: chromium.defaultViewport
         });
@@ -72,21 +180,28 @@ export async function POST(req: NextRequest) {
         // Local development environment
         browser = await puppeteer.launch({
           headless: true as const,
-          args: ['--no-sandbox', '--disable-setuid-sandbox']
+          args: ['--no-sandbox', '--disable-setuid-sandbox', '--font-render-hinting=none'] // Add font rendering hint
         });
       }
 
       const page = await browser.newPage();
+      
+      // Set font to ensure proper rendering
+      await page.evaluateOnNewDocument(() => {
+        document.fonts.ready.then(() => {
+          console.log('Fonts loaded');
+        });
+      });
 
       // Get all unique dates from all packages
       const allDates = new Set<string>();
-      Object.values(packages).forEach((pkg: any) => {
+      Object.values(staffPackages).forEach((pkg: any) => {
         pkg.entries.forEach((entry: any) => allDates.add(entry.date));
       });
 
       // Filter dates with consumption
       const datesWithConsumption = Array.from(allDates).filter(date => 
-        Object.values(packages).some((pkg: any) => 
+        Object.values(staffPackages).some((pkg: any) => 
           pkg.entries.some((entry: any) => 
             Object.values(entry.quantities).some(qty => (qty as number) > 0)
           )
@@ -95,8 +210,8 @@ export async function POST(req: NextRequest) {
 
       // Filter package types based on selection
       const filteredPackages = selectedPackage === 'all' 
-        ? packages 
-        : Object.entries(packages).reduce((acc: any, [type, data]: [string, any]) => {
+        ? staffPackages 
+        : Object.entries(staffPackages).reduce((acc: any, [type, data]: [string, any]) => {
             if (type.toLowerCase() === selectedPackage.toLowerCase()) {
               acc[type] = data;
             }
@@ -104,19 +219,34 @@ export async function POST(req: NextRequest) {
           }, {});
 
       const PRODUCTS_PER_TABLE = 7;
+      
+      // Calculate grand total
+      const grandTotal = PACKAGE_ORDER
+        .filter(pkgType => filteredPackages[pkgType])
+        .reduce((sum: number, pkgType) => 
+          sum + Object.values(filteredPackages[pkgType].totalAmounts as Record<string, number>)
+            .reduce((pkgSum: number, amount: number) => pkgSum + amount, 0), 
+          0
+        );
 
       const htmlContent = `
         <!DOCTYPE html>
         <html>
           <head>
             <meta charset="UTF-8">
-            <title>${customerName} - ${programName}</title>
+            <title>${isStaffMode ? 'Staff Report' : `${customerName} - ${programName}`}</title>
             <style>
+              @page { 
+                margin: 15mm;
+                size: A4 landscape;
+              }
               body { 
                 font-family: Arial, sans-serif; 
                 margin: 0;
                 padding: 8px;
-                font-size: 9px;
+                font-size: 10px;
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
               }
               .report-header {
                 text-align: center;
@@ -136,7 +266,7 @@ export async function POST(req: NextRequest) {
                 gap: 12px;
                 margin-bottom: 16px;
                 padding: 12px;
-                background-color: #fff;
+                background-color: #f9f9f9;
                 border: 1px solid #dee2e6;
                 border-radius: 4px;
               }
@@ -148,27 +278,26 @@ export async function POST(req: NextRequest) {
               }
               .program-details .label {
                 color: #6b7280;
-                font-size: 8px;
+                font-size: 9px;
               }
               .program-details .value {
                 color: #1f2937;
                 font-weight: 500;
-                font-size: 9px;
+                font-size: 10px;
               }
               .packages-container {
                 display: flex;
                 flex-direction: column;
-                gap: 4px;
+                gap: 8px;
               }
               .package-section {
-                // page-break-inside: avoid;
-                margin-bottom: 4px;
+                margin-bottom: 8px;
               }
               .package-header {
                 text-align: center;
                 margin: 4px 0;
                 padding: 6px;
-                background-color: #fff;
+                background-color: #f9f9f9;
                 border: 1px solid #dee2e6;
                 border-radius: 4px;
                 page-break-after: avoid;
@@ -178,7 +307,6 @@ export async function POST(req: NextRequest) {
                 font-size: 12px;
               }
               .table-container {
-                // page-break-inside: avoid;
                 margin-bottom: 4px;
               }
               table { 
@@ -191,11 +319,10 @@ export async function POST(req: NextRequest) {
               th, td { 
                 border: 1px solid #dee2e6; 
                 padding: 4px;
-                font-size: 9px;
+                font-size: 10px;
                 text-align: center;
                 overflow: hidden;
                 text-overflow: ellipsis;
-                white-space: nowrap;
               }
               th:first-child, td:first-child {
                 width: 120px;
@@ -209,20 +336,15 @@ export async function POST(req: NextRequest) {
               }
               th:last-child, td:last-child {
                 width: 150px;
-              }
-              th[style*="display: none;"], td[style*="display: none;"] {
-                width: 0;
-                padding: 0;
-                border: none;
+                text-align: left;
               }
               .comment-cell {
-                text-align: center;
+                text-align: left;
                 white-space: normal;
-                font-size: 8px;
-                border-right: none;
+                font-size: 9px;
               }
               th { 
-                background-color: #fff;
+                background-color: #f9f9f9;
                 font-weight: 600;
                 color: #1a1a1a;
               }
@@ -231,23 +353,19 @@ export async function POST(req: NextRequest) {
                 margin: 4px 0;
                 padding: 6px;
                 background-color: #fff;
-                font-size: 10px;
+                font-size: 11px;
                 page-break-inside: avoid;
               }
               .grand-total {
                 text-align: right;
-                margin-top: 8px;
-                padding: 8px;
-                background-color: #fff;
-                border: 1px solid #dee2e6;
+                margin-top: 12px;
+                padding: 10px;
+                background-color: #fff8e1;
+                border: 1px solid #ffecb3;
                 border-radius: 4px;
                 font-weight: 600;
-                font-size: 11px;
+                font-size: 12px;
                 page-break-inside: avoid;
-              }
-              @page { 
-                margin: 10mm;
-                size: A4 landscape;
               }
               
               /* Keep headers with their content */
@@ -260,7 +378,7 @@ export async function POST(req: NextRequest) {
 
               /* Ensure continuous flow between packages */
               .package-section + .package-section {
-                margin-top: 4px;
+                margin-top: 8px;
               }
 
               /* Prevent page breaks between packages */
@@ -286,27 +404,36 @@ export async function POST(req: NextRequest) {
           </head>
           <body>
             <div class="report-header">
-              <h2>${customerName} - ${programName}</h2>
+              <h2>${isStaffMode ? 'Staff Catering Report - ' + format(new Date(month + '-01'), 'MMMM yyyy') : `${customerName} - ${programName}`}</h2>
             </div>
 
-            <div class="program-details">
-              <div>
-                <p class="label">Customer Name</p>
-                <p class="value">${customerName}</p>
+            ${isStaffMode ? `
+              <div class="program-details">
+                <div class="col-span-full">
+                  <p class="label">Month</p>
+                  <p class="value">${format(new Date(month + '-01'), 'MMMM yyyy')}</p>
+                </div>
               </div>
-              <div>
-                <p class="label">Start Date</p>
-                <p class="value">${format(new Date(startDate), 'dd/MM/yyyy')}</p>
+            ` : `
+              <div class="program-details">
+                <div>
+                  <p class="label">Customer Name</p>
+                  <p class="value">${customerName}</p>
+                </div>
+                <div>
+                  <p class="label">Start Date</p>
+                  <p class="value">${format(new Date(startDate), 'dd/MM/yyyy')}</p>
+                </div>
+                <div>
+                  <p class="label">End Date</p>
+                  <p class="value">${format(new Date(endDate), 'dd/MM/yyyy')}</p>
+                </div>
+                <div>
+                  <p class="label">Total Participants</p>
+                  <p class="value">${totalParticipants}</p>
+                </div>
               </div>
-              <div>
-                <p class="label">End Date</p>
-                <p class="value">${format(new Date(endDate), 'dd/MM/yyyy')}</p>
-              </div>
-              <div>
-                <p class="label">Total Participants</p>
-                <p class="value">${totalParticipants}</p>
-              </div>
-            </div>
+            `}
 
             <div class="packages-container">
               ${PACKAGE_ORDER
@@ -391,6 +518,10 @@ export async function POST(req: NextRequest) {
 
                   if (productChunks.length === 0) return '';
 
+                  // Calculate package total
+                  const packageTotal = sortedProducts.reduce((sum, product) => 
+                    sum + (packageData.totalAmounts[product.id] || 0), 0);
+
                   return `
                     <div class="package-section" ${index > 0 ? 'style="margin-top: 0;"' : ''}>
                       <div class="package-header">
@@ -407,6 +538,9 @@ export async function POST(req: NextRequest) {
 
                         if (chunkDates.length === 0) return '';
 
+                        // Check if any product in the chunk has a comment
+                        const hasCommentsInChunk = chunk.some((p: Product) => p.comment);
+
                         return `
                           <div class="table-container">
                             <table>
@@ -419,13 +553,7 @@ export async function POST(req: NextRequest) {
                                   <th>Total</th>
                                   <th>Rate</th>
                                   <th>Amount</th>
-                                  ${(() => {
-                                    // Only show comment header if any product in current chunk has a comment
-                                    const hasCommentsInChunk = chunk.some((p: Product) => p.comment);
-                                    return hasCommentsInChunk 
-                                      ? '<th class="comment-cell">Comments</th>'
-                                      : '';
-                                  })()}
+                                  ${hasCommentsInChunk ? '<th>Comments</th>' : ''}
                                 </tr>
                               </thead>
                               <tbody>
@@ -435,9 +563,6 @@ export async function POST(req: NextRequest) {
 
                                   const rate = packageData.rates[product.id] || 0;
                                   const amount = packageData.totalAmounts[product.id] || 0;
-                                  
-                                  // Check if any product in the current chunk has a comment
-                                  const hasCommentsInChunk = chunk.some((p: Product) => p.comment);
                                   
                                   return `
                                     <tr>
@@ -450,9 +575,9 @@ export async function POST(req: NextRequest) {
                                       <td style="font-weight: 500;">${total}</td>
                                       <td>₹${rate.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
                                       <td>₹${amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-                                      ${hasCommentsInChunk && product.comment 
-                                        ? `<td class="comment-cell">${product.comment}</td>`
-                                        : ''}
+                                      ${hasCommentsInChunk ? 
+                                        `<td class="comment-cell">${product.comment || ''}</td>` : 
+                                        ''}
                                     </tr>
                                   `;
                                 }).join('')}
@@ -462,9 +587,7 @@ export async function POST(req: NextRequest) {
                         `;
                       }).join('')}
                       <div class="package-total">
-                        Package Total: ₹${Object.values(packageData.totalAmounts as Record<string, number>)
-                          .reduce((sum: number, amount: number) => sum + amount, 0)
-                          .toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        Package Total: ₹${packageTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                       </div>
                     </div>
                   `;
@@ -472,13 +595,7 @@ export async function POST(req: NextRequest) {
             </div>
 
             <div class="grand-total">
-              Grand Total: ₹${PACKAGE_ORDER
-                .filter(pkgType => filteredPackages[pkgType])
-                .reduce((sum: number, pkgType) => 
-                  sum + Object.values(filteredPackages[pkgType].totalAmounts as Record<string, number>)
-                    .reduce((pkgSum: number, amount: number) => pkgSum + amount, 0), 
-                  0
-                ).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+              Grand Total: ₹${grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
             </div>
           </body>
         </html>
@@ -490,13 +607,13 @@ export async function POST(req: NextRequest) {
 
       const pdf = await page.pdf({
         format: 'A4',
-        landscape: false,
+        landscape: true,
         printBackground: true,
         margin: {
-          top: '10mm',
-          right: '10mm',
-          bottom: '10mm',
-          left: '10mm'
+          top: '15mm',
+          right: '15mm',
+          bottom: '15mm',
+          left: '15mm'
         },
         displayHeaderFooter: false
       });
@@ -508,7 +625,7 @@ export async function POST(req: NextRequest) {
         return new NextResponse(pdf, {
           headers: {
             'Content-Type': 'application/pdf',
-            'Content-Disposition': `attachment; filename=program-report-${format(new Date(), 'yyyy-MM-dd')}.pdf`
+            'Content-Disposition': `attachment; filename=${isStaffMode ? 'staff' : 'program'}-report-${format(new Date(), 'yyyy-MM-dd')}.pdf`
           }
         });
       } else {
@@ -526,4 +643,4 @@ export async function POST(req: NextRequest) {
     console.error('Error generating PDF:', error);
     return NextResponse.json({ error: 'Failed to generate PDF' }, { status: 500 });
   }
-} 
+}
