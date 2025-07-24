@@ -41,6 +41,7 @@ import { Input } from "@/components/ui/input";
 interface Product {
   id: string;
   index: number;
+  serve_item_no: number | null;
   name: string;
   description: string;
   package_id: string;
@@ -689,6 +690,9 @@ export function ProductsPage() {
                   <th className="w-[80px] px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     ID
                   </th>
+                  <th className="w-[100px] px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Serve Item No.
+                  </th>
                   <th className="w-1/4 min-w-[200px] px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Name
                   </th>
@@ -726,6 +730,9 @@ export function ProductsPage() {
                       )}
                       <td className="w-[80px] px-4 py-4 text-sm text-gray-900">
                         {product.index}
+                      </td>
+                      <td className="w-[100px] px-4 py-4 text-sm text-gray-900">
+                        {product.serve_item_no || '-'}
                       </td>
                       <td className="w-1/4 min-w-[200px] px-4 py-4">
                         <div className="max-w-full">

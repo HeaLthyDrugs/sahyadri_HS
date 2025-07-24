@@ -1,5 +1,6 @@
 create table public.products (
   id uuid not null default gen_random_uuid (),
+  serve_item_no integer null,
   name character varying(255) not null,
   description text null,
   package_id uuid null,
