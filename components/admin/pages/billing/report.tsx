@@ -83,6 +83,7 @@ interface ProgramReport {
       packageName: string;
       items: {
         productName: string;
+        serve_item_no?: number;
         quantity: number;
         rate: number;
         total: number;
@@ -152,6 +153,7 @@ type ReportType = 'day' | 'program' | 'monthly' | 'lifetime';
 interface ProductConsumption {
   id: string;
   name: string;
+  serve_item_no?: number;
   monthlyQuantities: { [month: string]: number };
   total: number;
 }
@@ -689,8 +691,8 @@ export default function ReportPage() {
           .select(`
             entry_date,
             quantity,
-            packages:packages!inner (id, name, type),
-            products:products!inner (id, name, rate)
+            packages!staff_billing_entries_package_id_fkey(id, name, type),
+            products!staff_billing_entries_product_id_fkey(id, name, rate, serve_item_no)
           `)
           .in('package_id', packageIds)
           .gte('entry_date', startDate)
@@ -729,6 +731,7 @@ export default function ReportPage() {
           if (!item) {
             item = {
               productName: entry.products.name,
+              serve_item_no: entry.products.serve_item_no,
               quantity: 0,
               rate: entry.products.rate,
               total: 0,
@@ -822,8 +825,8 @@ export default function ReportPage() {
           .select(`
             entry_date,
             quantity,
-            packages:packages!inner (id, name, type),
-            products:products!inner (id, name, rate)
+            packages!billing_entries_package_id_fkey(id, name, type),
+            products!billing_entries_product_id_fkey(id, name, rate, serve_item_no)
           `)
           .eq('program_id', selectedProgram)
           .in('package_id', packageIds)
@@ -861,6 +864,7 @@ export default function ReportPage() {
           if (!item) {
             item = {
               productName: entry.products.name,
+              serve_item_no: entry.products.serve_item_no,
               quantity: 0,
               rate: entry.products.rate,
               total: 0,
@@ -1101,9 +1105,10 @@ export default function ReportPage() {
       }
 
       // Ensure the data structure is correct
-      const processedData = data.package.products.map((product: { id: string; name: string; monthlyQuantities?: { [key: string]: number }; total?: number }) => ({
+      const processedData = data.package.products.map((product: { id: string; name: string; serve_item_no?: number; monthlyQuantities?: { [key: string]: number }; total?: number }) => ({
         id: product.id,
         name: product.name,
+        serve_item_no: product.serve_item_no,
         monthlyQuantities: product.monthlyQuantities || {},
         total: product.total || 0
       }));
@@ -1760,6 +1765,7 @@ export default function ReportPage() {
                 products: annualReportData.map(product => ({
                   id: product.id,
                   name: product.name,
+                  serve_item_no: product.serve_item_no,
                   monthlyQuantities: product.monthlyQuantities || {},
                   total: product.total || 0
                 }))

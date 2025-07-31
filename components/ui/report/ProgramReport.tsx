@@ -9,6 +9,7 @@ import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 
 interface PackageItem {
   productName: string;
+  serve_item_no?: number;
   quantity: number;
   rate: number;
   total: number;
@@ -242,6 +243,7 @@ const ProgramReport: React.FC<ProgramReportProps> = ({
           products: data.items.map(item => ({
             id: item.productName,
             name: item.productName,
+            serve_item_no: item.serve_item_no,
             rate: item.rate,
             comment: comments[`${type}:${item.productName}`] || null // Include comments in transformation
           })),
@@ -331,6 +333,7 @@ const ProgramReport: React.FC<ProgramReportProps> = ({
           products: data.items.map(item => ({
             id: item.productName,
             name: item.productName,
+            serve_item_no: item.serve_item_no,
             rate: item.rate,
             comment: comments[`${type}:${item.productName}`] || null // Include comments in transformation
           })),
@@ -597,6 +600,9 @@ const ProgramReport: React.FC<ProgramReportProps> = ({
                       <table className="w-full text-[11px] border-collapse">
                         <thead>
                           <tr className="bg-gray-50">
+                            <th className="px-1.5 py-1 border-b border-r border-gray-200 text-center font-normal text-gray-900 w-[60px]">
+                              Sr. No
+                            </th>
                             <th className="px-1.5 py-1 border-b border-r border-gray-200 text-left font-normal text-gray-900 w-[100px]">
                               Product Name
                             </th>
@@ -630,6 +636,9 @@ const ProgramReport: React.FC<ProgramReportProps> = ({
 
                             return (
                               <tr key={item.productName} className="border-b border-gray-200">
+                                <td className="px-1.5 py-1 border-r border-gray-200 text-center text-gray-900">
+                                  {item.serve_item_no || '-'}
+                                </td>
                                 <td className="px-1.5 py-1 border-r border-gray-200 text-gray-900">
                                   {item.productName}
                                 </td>

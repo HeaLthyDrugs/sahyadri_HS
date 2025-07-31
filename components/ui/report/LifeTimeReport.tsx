@@ -9,6 +9,7 @@ import LoadingSpinner from '../LoadingSpinner';
 interface ProductConsumption {
   id: string;
   name: string;
+  serve_item_no?: number;
   monthlyQuantities: { [month: string]: number };
   total: number;
 }
@@ -309,6 +310,9 @@ export default function LifeTimeReport({
                   <table className="w-full text-[11px] border-collapse">
                     <thead>
                       <tr className="bg-gray-50">
+                        <th className="px-4 py-3 border-b border-r border-gray-200 text-center font-medium text-gray-900 w-[10%]">
+                          Sr. No
+                        </th>
                         <th className="px-4 py-3 border-b border-r border-gray-200 text-left font-medium text-gray-900 w-[20%]">
                           Product Name
                         </th>
@@ -341,6 +345,9 @@ export default function LifeTimeReport({
                         })
                         .map(product => (
                           <tr key={product.id} className="border-b border-gray-200 hover:bg-gray-50">
+                            <td className="px-4 py-3 border-r border-gray-200 text-center text-gray-900">
+                              {product.serve_item_no || '-'}
+                            </td>
                             <td className="px-4 py-3 border-r border-gray-200 text-gray-900">
                               {product.name}
                             </td>
@@ -355,6 +362,9 @@ export default function LifeTimeReport({
                           </tr>
                         ))}
                       <tr className="bg-gray-50 font-medium">
+                        <td className="px-4 py-3 border-r border-gray-200 text-center text-gray-900">
+                          -
+                        </td>
                         <td className="px-4 py-3 border-r border-gray-200 text-gray-900">
                           Monthly Total
                         </td>

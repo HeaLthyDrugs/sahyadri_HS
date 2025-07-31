@@ -7,6 +7,7 @@ create table public.billing_entries (
   quantity integer not null default 0,
   created_at timestamp with time zone not null default now(),
   updated_at timestamp with time zone not null default now(),
+  product_rate numeric(10, 2) not null,
   constraint billing_entries_pkey primary key (id),
   constraint billing_entries_program_id_package_id_product_id_entry_date_key unique (program_id, package_id, product_id, entry_date),
   constraint billing_entries_package_id_fkey foreign KEY (package_id) references packages (id),

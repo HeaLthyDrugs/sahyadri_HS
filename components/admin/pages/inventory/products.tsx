@@ -100,6 +100,7 @@ export function ProductsPage() {
     description: "",
     package_id: "",
     rate: "",
+    serve_item_no: "",
     slot_start: "00:00",
     slot_end: "12:00"
   });
@@ -183,6 +184,7 @@ export function ProductsPage() {
         description: formData.description,
         package_id: formData.package_id,
         rate: parseFloat(formData.rate),
+        serve_item_no: formData.serve_item_no ? parseInt(formData.serve_item_no) : null,
         slot_start: formData.slot_start,
         slot_end: formData.slot_end,
         index: editingProduct ? editingProduct.index : nextIndex
@@ -210,6 +212,7 @@ export function ProductsPage() {
         description: "",
         package_id: "",
         rate: "",
+        serve_item_no: "",
         slot_start: "00:00",
         slot_end: "12:00"
       });
@@ -775,6 +778,7 @@ export function ProductsPage() {
                                   description: product.description,
                                   package_id: product.package_id,
                                   rate: product.rate.toString(),
+                                  serve_item_no: product.serve_item_no?.toString() || "",
                                   slot_start: product.slot_start,
                                   slot_end: product.slot_end
                                 });
@@ -826,6 +830,7 @@ export function ProductsPage() {
                         description: "",
                         package_id: "",
                         rate: "",
+                        serve_item_no: "",
                         slot_start: "00:00",
                         slot_end: "12:00"
                       });
@@ -889,6 +894,18 @@ export function ProductsPage() {
                   </div>
 
                   <div>
+                    <label className="block text-sm font-medium text-gray-700">Serve Item No.</label>
+                    <input
+                      type="number"
+                      value={formData.serve_item_no}
+                      onChange={(e) => setFormData({ ...formData, serve_item_no: e.target.value })}
+                      className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-amber-500 focus:outline-none focus:ring-amber-500"
+                      min="1"
+                      placeholder="Optional"
+                    />
+                  </div>
+
+                  <div>
                     <label className="block text-sm font-medium text-gray-700">Slot Start Time</label>
                     <input
                       type="time"
@@ -921,6 +938,7 @@ export function ProductsPage() {
                           description: "",
                           package_id: "",
                           rate: "",
+                          serve_item_no: "",
                           slot_start: "00:00",
                           slot_end: "12:00"
                         });

@@ -1,5 +1,4 @@
-CREATE OR REPLACE FUNCTION public.calculate_entries_for_participant() 
-RETURNS trigger LANGUAGE plpgsql AS $function$ 
+ 
 DECLARE 
   program_record programs%ROWTYPE;
   normal_package_id UUID;
@@ -94,6 +93,7 @@ BEGIN
       SELECT
         d.date_val AS entry_date,
         pr.id AS product_id,
+        pr.rate AS product_rate,
         COUNT(DISTINCT p.id) AS quantity
       FROM
         unnest(affected_dates) AS d(date_val)
@@ -113,22 +113,24 @@ BEGIN
         )
       WHERE
         pr.package_id = normal_package_id
-      GROUP BY d.date_val, pr.id
+      GROUP BY d.date_val, pr.id, pr.rate
       HAVING COUNT(DISTINCT p.id) > 0
     )
     -- Insert the calculated entries with ON CONFLICT handling
-    INSERT INTO billing_entries (id, program_id, package_id, product_id, entry_date, quantity)
+    INSERT INTO billing_entries (id, program_id, package_id, product_id, entry_date, quantity, product_rate)
     SELECT
       gen_random_uuid(),
       program_record.id,
       normal_package_id,
       product_id,
       entry_date,
-      quantity
+      quantity,
+      product_rate
     FROM calculated_entries
     ON CONFLICT (program_id, package_id, product_id, entry_date) 
     DO UPDATE SET
       quantity = EXCLUDED.quantity,
+      product_rate = EXCLUDED.product_rate,
       updated_at = NOW();
     
     -- Get the count of affected rows
@@ -142,4 +144,3 @@ BEGIN
 
   RETURN CASE WHEN TG_OP = 'DELETE' THEN OLD ELSE NEW END;
 END;
-$function$

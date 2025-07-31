@@ -9,6 +9,7 @@ import { cookies } from 'next/headers';
 interface Product {
   id: string;
   name: string;
+  serve_item_no?: number;
   rate: number;
   comment?: string;
 }
@@ -77,8 +78,9 @@ export async function POST(req: NextRequest) {
         .select(`
           entry_date,
           quantity,
-          packages:packages!inner (id, name, type),
-          products:products!inner (id, name, rate)
+          product_id,
+          packages!staff_billing_entries_package_id_fkey (id, name, type),
+          products!staff_billing_entries_product_id_fkey (id, name, rate, serve_item_no)
         `)
         .gte('entry_date', startDateStr)
         .lte('entry_date', endDateStr)
@@ -118,14 +120,15 @@ export async function POST(req: NextRequest) {
         
         // Add product if not already added
         const productExists = transformedPackages[packageType].products.some(
-          (p: any) => p.id === entry.products.name
+          (p: any) => p.id === entry.product_id
         );
         
         if (!productExists) {
           transformedPackages[packageType].products.push({
-            id: entry.products.name,
+            id: entry.product_id,
             name: entry.products.name,
-            rate: entry.products.rate
+            rate: entry.products.rate,
+            serve_item_no: entry.products.serve_item_no
           });
         }
         
@@ -144,21 +147,21 @@ export async function POST(req: NextRequest) {
         }
         
         // Update quantities for this product on this date
-        if (!dateEntry.quantities[entry.products.name]) {
-          dateEntry.quantities[entry.products.name] = 0;
+        if (!dateEntry.quantities[entry.product_id]) {
+          dateEntry.quantities[entry.product_id] = 0;
         }
-        dateEntry.quantities[entry.products.name] += entry.quantity;
+        dateEntry.quantities[entry.product_id] += entry.quantity;
         
         // Update totals, rates, and amounts
-        if (!transformedPackages[packageType].totals[entry.products.name]) {
-          transformedPackages[packageType].totals[entry.products.name] = 0;
-          transformedPackages[packageType].rates[entry.products.name] = entry.products.rate;
-          transformedPackages[packageType].totalAmounts[entry.products.name] = 0;
+        if (!transformedPackages[packageType].totals[entry.product_id]) {
+          transformedPackages[packageType].totals[entry.product_id] = 0;
+          transformedPackages[packageType].rates[entry.product_id] = entry.products.rate;
+          transformedPackages[packageType].totalAmounts[entry.product_id] = 0;
         }
         
-        transformedPackages[packageType].totals[entry.products.name] += entry.quantity;
-        transformedPackages[packageType].totalAmounts[entry.products.name] = 
-          transformedPackages[packageType].totals[entry.products.name] * entry.products.rate;
+        transformedPackages[packageType].totals[entry.product_id] += entry.quantity;
+        transformedPackages[packageType].totalAmounts[entry.product_id] = 
+          transformedPackages[packageType].totals[entry.product_id] * entry.products.rate;
       });
       
       // Use the transformed staff data instead of the passed packages
@@ -546,6 +549,7 @@ export async function POST(req: NextRequest) {
                             <table>
                               <thead>
                                 <tr>
+                                  <th>Sr. No</th>
                                   <th>Product Name</th>
                                   ${chunkDates.map(date => `
                                     <th>${format(new Date(date), 'dd')}</th>
@@ -566,6 +570,7 @@ export async function POST(req: NextRequest) {
                                   
                                   return `
                                     <tr>
+                                      <td style="text-align: center;">${product.serve_item_no || '-'}</td>
                                       <td>${product.name}</td>
                                       ${chunkDates.map(date => {
                                         const entry = packageData.entries.find((e: Entry) => e.date === date);

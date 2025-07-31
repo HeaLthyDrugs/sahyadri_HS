@@ -16,6 +16,7 @@ interface RequestBody {
 interface ProductConsumption {
   id: string;
   name: string;
+  serve_item_no?: number;
   monthlyQuantities: { [month: string]: number };
   total: number;
 }
@@ -201,6 +202,7 @@ const generatePDF = async (
             <table>
               <thead>
                 <tr>
+                  <th style="width: 10%">Sr. No</th>
                   <th style="width: 20%">Product Name</th>
                   ${chunk.map(month => `
                     <th>${format(parse(month, 'yyyy-MM', new Date()), 'MMM yyyy')}</th>
@@ -211,6 +213,7 @@ const generatePDF = async (
               <tbody>
                 ${productsWithConsumption.map(product => `
                   <tr>
+                    <td style="text-align: center;">${product.serve_item_no || '-'}</td>
                     <td class="product-name">${product.name}</td>
                     ${chunk.map(month => `
                       <td>${product.monthlyQuantities[month] || 0}</td>
@@ -219,6 +222,7 @@ const generatePDF = async (
                   </tr>
                 `).join('')}
                 <tr class="total-row">
+                  <td style="text-align: center;">-</td>
                   <td>Monthly Total</td>
                   ${chunk.map(month => `
                     <td>${productsWithConsumption.reduce((sum, product) => sum + (product.monthlyQuantities[month] || 0), 0)}</td>
@@ -339,7 +343,8 @@ export async function POST(request: Request) {
     }
 
     // Fetch products based on package
-    let productsQuery = supabase.from('products').select('id, name, package_id');
+    let productsQuery = supabase.from('products').select('id, name, package_id, serve_item_no');
+    console.log('LifeTime Report - Fetching products with serve_item_no field');
     if (packageId && packageId !== 'all' && packageId !== null) {
       productsQuery = productsQuery.eq('package_id', packageId);
     } else {
@@ -374,9 +379,17 @@ export async function POST(request: Request) {
     const productConsumption: ProductConsumption[] = products.map(product => ({
       id: product.id,
       name: product.name,
+      serve_item_no: product.serve_item_no,
       monthlyQuantities: {},
       total: 0
     }));
+    
+    console.log('LifeTime Report - Initial product data with serve_item_no:', {
+      totalProducts: products.length,
+      sampleProduct: products[0],
+      productsWithServeItemNo: products.filter(p => p.serve_item_no).length,
+      productConsumptionSample: productConsumption[0]
+    });
 
     // Initialize tracking for monthly data aggregation
     const monthlyProgramData: { [month: string]: any[] } = {};
@@ -408,7 +421,8 @@ export async function POST(request: Request) {
             entry_date,
             quantity,
             product_id,
-            program_id
+            program_id,
+            products!billing_entries_product_id_fkey(id, name, serve_item_no)
           `)
           .in('program_id', programIds);
 
@@ -452,7 +466,8 @@ export async function POST(request: Request) {
         .select(`
           entry_date,
           quantity,
-          product_id
+          product_id,
+          products!staff_billing_entries_product_id_fkey(id, name, serve_item_no)
         `)
         .gte('entry_date', format(monthStartDate, 'yyyy-MM-dd'))
         .lte('entry_date', format(monthEndDate, 'yyyy-MM-dd'));
@@ -561,22 +576,38 @@ export async function POST(request: Request) {
     Object.entries(monthlyProgramData).forEach(([billingMonth, entries]) => {
       entries.forEach(entry => {
         const product = productConsumption.find(p => p.id === entry.product_id);
-        if (product) {
+        if (product && entry.products) {
+          // Ensure serve_item_no is properly assigned from the fetched product data
+          product.serve_item_no = entry.products.serve_item_no;
           product.monthlyQuantities[billingMonth] = (product.monthlyQuantities[billingMonth] || 0) + entry.quantity;
           product.total += entry.quantity;
         }
       });
+    });
+    
+    console.log('LifeTime Report - Program entries processed, serve_item_no check:', {
+      sampleProduct: productConsumption.find(p => p.total > 0),
+      productsWithServeItemNo: productConsumption.filter(p => p.serve_item_no).length,
+      totalProducts: productConsumption.length
     });
 
     // Process staff entries by billing month (not entry_date) - maintaining consistency
     Object.entries(monthlyStaffData).forEach(([billingMonth, entries]) => {
       entries.forEach(entry => {
         const product = productConsumption.find(p => p.id === entry.product_id);
-        if (product) {
+        if (product && entry.products) {
+          // Ensure serve_item_no is properly assigned from the fetched product data
+          product.serve_item_no = entry.products.serve_item_no;
           product.monthlyQuantities[billingMonth] = (product.monthlyQuantities[billingMonth] || 0) + entry.quantity;
           product.total += entry.quantity;
         }
       });
+    });
+    
+    console.log('LifeTime Report - Staff entries processed, serve_item_no check:', {
+      sampleProduct: productConsumption.find(p => p.total > 0),
+      productsWithServeItemNo: productConsumption.filter(p => p.serve_item_no).length,
+      totalProducts: productConsumption.length
     });
 
     const packageDataWithProducts: PackageData = {
