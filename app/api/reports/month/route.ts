@@ -43,6 +43,7 @@ interface DatabaseEntry {
   entry_date: string;
   quantity: number;
   package_id: number;
+  product_rate?: number;
   packages: {
     id: number;
     name: string;
@@ -68,6 +69,7 @@ interface DatabaseEntryWithoutPackages {
   entry_date: string;
   quantity: number;
   package_id: number;
+  product_rate?: number;
   products: {
     id: string;
     name: string;
@@ -538,6 +540,7 @@ export async function POST(request: Request) {
             entry_date,
             quantity,
             package_id,
+            product_rate,
             products!inner (
               id,
               name,
@@ -611,7 +614,7 @@ export async function POST(request: Request) {
           };
         }
 
-        const amount = entry.quantity * entry.products.rate;
+        const amount = entry.quantity * ((entry as any).product_rate || entry.products.rate);
         const packageType = entry.packages.type.toLowerCase();
 
         switch (packageType) {
@@ -742,6 +745,7 @@ export async function POST(request: Request) {
             entry_date,
             quantity,
             package_id,
+            product_rate,
             products!inner (
               id,
               name,

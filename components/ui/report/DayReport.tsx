@@ -337,7 +337,7 @@ const DayReport: React.FC<DayReportProps> = ({ selectedMonth, selectedPackage })
             const [programEntriesResponse, staffEntriesResponse] = await Promise.all([
               supabase
                 .from('billing_entries')
-                .select('entry_date, quantity, product_id')
+                .select('entry_date, quantity, product_id, product_rate')
                 .eq('package_id', packageData.id)
                 .gte('entry_date', startDateStr)
                 .lte('entry_date', endDateStr)
@@ -535,7 +535,7 @@ const DayReport: React.FC<DayReportProps> = ({ selectedMonth, selectedPackage })
         const [programEntriesResponse, staffEntriesResponse] = await Promise.all([
           supabase
             .from('billing_entries')
-            .select('entry_date, quantity, product_id')
+            .select('entry_date, quantity, product_id, product_rate')
             .eq('package_id', packageData.id)
             .gte('entry_date', startDateStr)
             .lte('entry_date', endDateStr)

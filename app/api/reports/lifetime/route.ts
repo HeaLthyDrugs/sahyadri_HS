@@ -422,6 +422,7 @@ export async function POST(request: Request) {
             quantity,
             product_id,
             program_id,
+            product_rate,
             products!billing_entries_product_id_fkey(id, name, serve_item_no)
           `)
           .in('program_id', programIds);
@@ -467,7 +468,7 @@ export async function POST(request: Request) {
           entry_date,
           quantity,
           product_id,
-          products!staff_billing_entries_product_id_fkey(id, name, serve_item_no)
+          products!staff_billing_entries_product_id_fkey(id, name, serve_item_no, rate)
         `)
         .gte('entry_date', format(monthStartDate, 'yyyy-MM-dd'))
         .lte('entry_date', format(monthEndDate, 'yyyy-MM-dd'));

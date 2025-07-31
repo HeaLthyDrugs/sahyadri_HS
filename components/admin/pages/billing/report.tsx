@@ -825,6 +825,7 @@ export default function ReportPage() {
           .select(`
             entry_date,
             quantity,
+            product_rate,
             packages!billing_entries_package_id_fkey(id, name, type),
             products!billing_entries_product_id_fkey(id, name, rate, serve_item_no)
           `)
@@ -866,7 +867,7 @@ export default function ReportPage() {
               productName: entry.products.name,
               serve_item_no: entry.products.serve_item_no,
               quantity: 0,
-              rate: entry.products.rate,
+              rate: entry.product_rate || entry.products.rate,
               total: 0,
               dates: {}
             };

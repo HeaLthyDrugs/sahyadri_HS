@@ -152,7 +152,7 @@ export async function POST(req: NextRequest) {
         }
         dateEntry.quantities[entry.product_id] += entry.quantity;
         
-        // Update totals, rates, and amounts
+        // Update totals, rates, and amounts using current product rates for staff entries
         if (!transformedPackages[packageType].totals[entry.product_id]) {
           transformedPackages[packageType].totals[entry.product_id] = 0;
           transformedPackages[packageType].rates[entry.product_id] = entry.products.rate;

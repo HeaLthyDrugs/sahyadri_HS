@@ -8,6 +8,7 @@ interface Product {
   id: string;
   name: string;
   rate: number;
+  product_rate?: number;
 }
 
 interface DailyEntry {
@@ -24,6 +25,7 @@ interface PackageData {
   products: Product[];
   reportData: ReportData;
   dates: string[];
+  rates?: { [productId: string]: number };
 }
 
 const PACKAGE_TYPE_DISPLAY = {
