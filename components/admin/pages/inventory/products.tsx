@@ -115,6 +115,7 @@ export function ProductsPage() {
   const [isSelectMode, setIsSelectMode] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [productsToDelete, setProductsToDelete] = useState<string[]>([]);
+  const [importProgress, setImportProgress] = useState({ show: false, current: 0, total: 0, status: '' });
 
   // Fetch products and packages on component mount
   useEffect(() => {
@@ -335,6 +336,12 @@ export function ProductsPage() {
       // Skip header row and process data
       const rows = jsonData.slice(1) as any[][];
       
+      // Get existing products for the selected package
+      const { data: existingProducts } = await supabase
+        .from('products')
+        .select('id, name, index')
+        .eq('package_id', activePackage);
+      
       const { data: maxIndexProduct } = await supabase
         .from('products')
         .select('index')
@@ -350,16 +357,19 @@ export function ProductsPage() {
         throw new Error('Selected package not found');
       }
       
-      const importData = rows.map((row, idx) => {
+      const processedData = rows.map((row, idx) => {
         if (!row || row.length < 6) return null;
         
+        const productName = row[2]?.toString().trim() || '';
+        if (!productName) return null;
+        
         return {
-          name: row[2]?.toString().trim() || '', // Product Name
-          description: row[3]?.toString().trim() || '', // Product Description
+          name: productName,
+          description: row[3]?.toString().trim() || '',
           package_id: activePackage,
-          rate: parseFloat(row[5]) || 0, // Basic Rate
-          serve_item_no: row[1] ? parseInt(row[1]) : null, // Serve Item No.
-          quantity: row[4]?.toString().trim() || null, // Quantity
+          rate: parseFloat(row[5]) || 0,
+          serve_item_no: row[1] ? parseInt(row[1]) : null,
+          quantity: row[4]?.toString().trim() || null,
           slot_start: "00:00",
           slot_end: "12:00",
           index: nextIndex + idx
@@ -372,23 +382,61 @@ export function ProductsPage() {
         item.rate > 0
       );
 
-      if (importData.length === 0) {
+      if (processedData.length === 0) {
         throw new Error('No valid data found in Excel file');
       }
 
-      const { error } = await supabase
-        .from('products')
-        .insert(importData);
+      let updatedCount = 0;
+      let createdCount = 0;
 
-      if (error) throw error;
+      // Show progress
+      setImportProgress({ show: true, current: 0, total: processedData.length, status: 'Processing products...' });
 
-      toast.success(`Successfully imported ${importData.length} products`);
-      fetchProducts();
+      // Process each product
+      for (let i = 0; i < processedData.length; i++) {
+        const productData = processedData[i];
+        setImportProgress(prev => ({ ...prev, current: i + 1, status: `Processing: ${productData.name}` }));
+        
+        const existingProduct = existingProducts?.find(p => 
+          p.name.toLowerCase() === productData.name.toLowerCase()
+        );
+
+        if (existingProduct) {
+          // Update existing product
+          const { error } = await supabase
+            .from('products')
+            .update({
+              description: productData.description,
+              rate: productData.rate,
+              serve_item_no: productData.serve_item_no,
+              quantity: productData.quantity,
+              slot_start: productData.slot_start,
+              slot_end: productData.slot_end
+            })
+            .eq('id', existingProduct.id);
+
+          if (error) throw error;
+          updatedCount++;
+        } else {
+          // Create new product
+          const { error } = await supabase
+            .from('products')
+            .insert([productData]);
+
+          if (error) throw error;
+          createdCount++;
+        }
+      }
+
+      setImportProgress(prev => ({ ...prev, status: 'Refreshing list...' }));
+      await fetchProducts();
+      toast.success(`Import completed: ${updatedCount} products updated, ${createdCount} products created`);
     } catch (error) {
       console.error('Error importing Excel:', error);
       toast.error('Failed to import Excel file');
     } finally {
       setIsLoading(false);
+      setImportProgress({ show: false, current: 0, total: 0, status: '' });
     }
   };
 
@@ -398,6 +446,12 @@ export function ProductsPage() {
       complete: async (results) => {
         try {
           setIsLoading(true);
+
+          // Get existing products for the selected package
+          const { data: existingProducts } = await supabase
+            .from('products')
+            .select('id, name, index')
+            .eq('package_id', activePackage);
 
           const { data: maxIndexProduct } = await supabase
             .from('products')
@@ -414,9 +468,12 @@ export function ProductsPage() {
             throw new Error('Selected package not found');
           }
 
-          const importData = results.data.map((row: any, idx) => {
+          const processedData = results.data.map((row: any, idx) => {
+            const productName = row['Product Name']?.toString().trim() || '';
+            if (!productName) return null;
+            
             return {
-              name: row['Product Name']?.toString().trim() || '',
+              name: productName,
               description: row['Product Description']?.toString().trim() || '',
               package_id: activePackage,
               rate: parseFloat(row['Basic Rate']) || 0,
@@ -427,29 +484,68 @@ export function ProductsPage() {
               index: nextIndex + idx
             };
           }).filter(item => 
+            item && 
             item.name && 
             item.package_id && 
             !isNaN(item.rate) && 
             item.rate > 0
           );
 
-          if (importData.length === 0) {
+          if (processedData.length === 0) {
             throw new Error('No valid data found in CSV');
           }
 
-          const { error } = await supabase
-            .from('products')
-            .insert(importData);
+          let updatedCount = 0;
+          let createdCount = 0;
 
-          if (error) throw error;
+          // Show progress
+          setImportProgress({ show: true, current: 0, total: processedData.length, status: 'Processing products...' });
 
-          toast.success(`Successfully imported ${importData.length} products`);
-          fetchProducts();
+          // Process each product
+          for (let i = 0; i < processedData.length; i++) {
+            const productData = processedData[i];
+            setImportProgress(prev => ({ ...prev, current: i + 1, status: `Processing: ${productData.name}` }));
+            
+            const existingProduct = existingProducts?.find(p => 
+              p.name.toLowerCase() === productData.name.toLowerCase()
+            );
+
+            if (existingProduct) {
+              // Update existing product
+              const { error } = await supabase
+                .from('products')
+                .update({
+                  description: productData.description,
+                  rate: productData.rate,
+                  serve_item_no: productData.serve_item_no,
+                  quantity: productData.quantity,
+                  slot_start: productData.slot_start,
+                  slot_end: productData.slot_end
+                })
+                .eq('id', existingProduct.id);
+
+              if (error) throw error;
+              updatedCount++;
+            } else {
+              // Create new product
+              const { error } = await supabase
+                .from('products')
+                .insert([productData]);
+
+              if (error) throw error;
+              createdCount++;
+            }
+          }
+
+          setImportProgress(prev => ({ ...prev, status: 'Refreshing list...' }));
+          await fetchProducts();
+          toast.success(`Import completed: ${updatedCount} products updated, ${createdCount} products created`);
         } catch (error) {
           console.error('Error importing CSV:', error);
           toast.error('Failed to import products');
         } finally {
           setIsLoading(false);
+          setImportProgress({ show: false, current: 0, total: 0, status: '' });
         }
       },
       error: (error) => {
@@ -1083,6 +1179,29 @@ export function ProductsPage() {
           )}
           <DeleteDialog />
         </EditGuard>
+
+        {/* Import Progress Modal */}
+        {importProgress.show && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-lg p-6 w-full max-w-md">
+              <div className="text-center">
+                <h3 className="text-lg font-semibold mb-4">Importing Products</h3>
+                <div className="mb-4">
+                  <div className="w-full bg-gray-200 rounded-full h-2">
+                    <div 
+                      className="bg-amber-600 h-2 rounded-full transition-all duration-300" 
+                      style={{ width: `${(importProgress.current / importProgress.total) * 100}%` }}
+                    ></div>
+                  </div>
+                  <p className="text-sm text-gray-600 mt-2">
+                    {importProgress.current} of {importProgress.total} products
+                  </p>
+                </div>
+                <p className="text-sm text-gray-700 truncate">{importProgress.status}</p>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </PermissionGuard>
   );
