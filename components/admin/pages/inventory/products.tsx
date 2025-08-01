@@ -20,6 +20,7 @@ import {
 import { supabase } from "@/lib/supabase";
 import { toast } from "react-hot-toast";
 import { parse, unparse } from 'papaparse';
+import * as XLSX from 'xlsx';
 import { PermissionGuard, EditGuard } from "@/components/PermissionGuard";
 import {
   Dialog,
@@ -48,6 +49,7 @@ interface Product {
   rate: number;
   slot_start: string;
   slot_end: string;
+  quantity: string | null;
 }
 
 interface Package {
@@ -102,7 +104,8 @@ export function ProductsPage() {
     rate: "",
     serve_item_no: "",
     slot_start: "00:00",
-    slot_end: "12:00"
+    slot_end: "12:00",
+    quantity: ""
   });
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10);
@@ -187,6 +190,7 @@ export function ProductsPage() {
         serve_item_no: formData.serve_item_no ? parseInt(formData.serve_item_no) : null,
         slot_start: formData.slot_start,
         slot_end: formData.slot_end,
+        quantity: formData.quantity.trim() || null,
         index: editingProduct ? editingProduct.index : nextIndex
       };
 
@@ -214,7 +218,8 @@ export function ProductsPage() {
         rate: "",
         serve_item_no: "",
         slot_start: "00:00",
-        slot_end: "12:00"
+        slot_end: "12:00",
+        quantity: ""
       });
       setEditingProduct(null);
       setIsModalOpen(false);
@@ -264,50 +269,130 @@ export function ProductsPage() {
     return searchMatch && packageMatch;
   });
 
-  const handleExportCSV = () => {
+  const handleExport = () => {
+    if (activePackage === 'all') {
+      toast.error('Please select a specific package to export');
+      return;
+    }
+
     try {
-      const exportData = filteredProducts.map(product => ({
-        Name: product.name,
-        Description: product.description,
-        Package: (product as any).packages?.name,
-        Rate: product.rate,
-        Slot_Start: product.slot_start,
-        Slot_End: product.slot_end
+      const exportData = filteredProducts.map((product, index) => ({
+        'Serial No.': index + 1,
+        'Serve Item No.': product.serve_item_no || '',
+        'Product Name': product.name,
+        'Product Description': product.description || '',
+        'Quantity': product.quantity || '1',
+        'Basic Rate': product.rate
       }));
 
-      let filename = 'products';
-      if (activePackage !== 'all') {
-        const packageName = packages.find(p => p.id === activePackage)?.name;
-        if (packageName) filename += `_${packageName}`;
-      }
-      filename += '.csv';
+      const worksheet = XLSX.utils.json_to_sheet(exportData);
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'Products');
 
-      const csv = unparse(exportData);
-      
-      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-      const link = document.createElement('a');
-      const url = URL.createObjectURL(blob);
-      
-      link.setAttribute('href', url);
-      link.setAttribute('download', filename);
-      link.style.visibility = 'hidden';
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+      const packageName = packages.find(p => p.id === activePackage)?.name || 'products';
+      const filename = `${packageName.replace(/\s+/g, '_')}_products.xlsx`;
 
-      toast.success(`Exported ${exportData.length} products`);
+      XLSX.writeFile(workbook, filename);
+      toast.success(`Exported ${exportData.length} products from ${packageName}`);
     } catch (error) {
-      console.error('Error exporting CSV:', error);
+      console.error('Error exporting:', error);
       toast.error('Failed to export products');
     }
   };
 
-  const handleImportCSV = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImportFile = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
-    event.target.value = '';
+    if (activePackage === 'all') {
+      toast.error('Please select a specific package before importing');
+      event.target.value = '';
+      return;
+    }
 
+    event.target.value = '';
+    const fileExtension = file.name.split('.').pop()?.toLowerCase();
+
+    if (fileExtension === 'xlsx' || fileExtension === 'xls') {
+      handleImportExcel(file);
+    } else if (fileExtension === 'csv') {
+      handleImportCSV(file);
+    } else {
+      toast.error('Please select a valid Excel (.xlsx, .xls) or CSV file');
+    }
+  };
+
+  const handleImportExcel = async (file: File) => {
+    try {
+      setIsLoading(true);
+      
+      const arrayBuffer = await file.arrayBuffer();
+      const workbook = XLSX.read(arrayBuffer, { type: 'array' });
+      const sheetName = workbook.SheetNames[0];
+      const worksheet = workbook.Sheets[sheetName];
+      const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+      
+      // Skip header row and process data
+      const rows = jsonData.slice(1) as any[][];
+      
+      const { data: maxIndexProduct } = await supabase
+        .from('products')
+        .select('index')
+        .order('index', { ascending: false })
+        .limit(1);
+      
+      let nextIndex = maxIndexProduct && maxIndexProduct[0]?.index 
+        ? maxIndexProduct[0].index + 1 
+        : 1;
+
+      const selectedPackageData = packages.find(p => p.id === activePackage);
+      if (!selectedPackageData) {
+        throw new Error('Selected package not found');
+      }
+      
+      const importData = rows.map((row, idx) => {
+        if (!row || row.length < 6) return null;
+        
+        return {
+          name: row[2]?.toString().trim() || '', // Product Name
+          description: row[3]?.toString().trim() || '', // Product Description
+          package_id: activePackage,
+          rate: parseFloat(row[5]) || 0, // Basic Rate
+          serve_item_no: row[1] ? parseInt(row[1]) : null, // Serve Item No.
+          quantity: row[4]?.toString().trim() || null, // Quantity
+          slot_start: "00:00",
+          slot_end: "12:00",
+          index: nextIndex + idx
+        };
+      }).filter(item => 
+        item && 
+        item.name && 
+        item.package_id && 
+        !isNaN(item.rate) && 
+        item.rate > 0
+      );
+
+      if (importData.length === 0) {
+        throw new Error('No valid data found in Excel file');
+      }
+
+      const { error } = await supabase
+        .from('products')
+        .insert(importData);
+
+      if (error) throw error;
+
+      toast.success(`Successfully imported ${importData.length} products`);
+      fetchProducts();
+    } catch (error) {
+      console.error('Error importing Excel:', error);
+      toast.error('Failed to import Excel file');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleImportCSV = (file: File) => {
     parse(file, {
       header: true,
       complete: async (results) => {
@@ -324,23 +409,28 @@ export function ProductsPage() {
             ? maxIndexProduct[0].index + 1 
             : 1;
 
-          const importData = results.data.map((row: any, idx) => {
-            // Find package ID by name
-            const pkg = packages.find(p => p.name === row.Package);
+          const selectedPackageData = packages.find(p => p.id === activePackage);
+          if (!selectedPackageData) {
+            throw new Error('Selected package not found');
+          }
 
+          const importData = results.data.map((row: any, idx) => {
             return {
-              name: row.Name,
-              description: row.Description,
-              package_id: pkg?.id,
-              rate: parseFloat(row.Rate),
-              slot_start: row.Slot_Start,
-              slot_end: row.Slot_End,
+              name: row['Product Name']?.toString().trim() || '',
+              description: row['Product Description']?.toString().trim() || '',
+              package_id: activePackage,
+              rate: parseFloat(row['Basic Rate']) || 0,
+              serve_item_no: row['Serve Item No.'] ? parseInt(row['Serve Item No.']) : null,
+              quantity: row['Quantity']?.toString().trim() || null,
+              slot_start: "00:00",
+              slot_end: "12:00",
               index: nextIndex + idx
             };
           }).filter(item => 
             item.name && 
             item.package_id && 
-            !isNaN(item.rate)
+            !isNaN(item.rate) && 
+            item.rate > 0
           );
 
           if (importData.length === 0) {
@@ -372,24 +462,21 @@ export function ProductsPage() {
   const downloadTemplate = () => {
     const template = [
       {
-        Name: 'Sample Product',
-        Description: 'Product description',
-        Package: 'Package Name',
-        Rate: '100'
+        'Serial No.': 1,
+        'Serve Item No.': 1,
+        'Product Name': 'Sample Product',
+        'Product Description': 'Product description',
+        'Quantity': '200ml',
+        'Basic Rate': 100
       }
     ];
 
-    const csv = unparse(template);
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    const url = URL.createObjectURL(blob);
+    const worksheet = XLSX.utils.json_to_sheet(template);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Products Template');
     
-    link.setAttribute('href', url);
-    link.setAttribute('download', 'products_template.csv');
-    link.style.visibility = 'hidden';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    XLSX.writeFile(workbook, 'products_template.xlsx');
+    toast.success('Template downloaded successfully');
   };
 
   const paginatedProducts = () => {
@@ -586,25 +673,39 @@ export function ProductsPage() {
         {/* Header with Edit Controls */}
         <EditGuard>
           <div className="flex justify-end items-center gap-4 mb-6">
-            <button
-              onClick={handleExportCSV}
-              className="flex items-center gap-2 px-3 py-2 text-amber-600 bg-amber-50 rounded-lg hover:bg-amber-100 transition-colors text-sm"
-            >
-              <RiUploadLine className="w-4 h-4" />
-              Export
-            </button>
+            <div className="relative">
+              <button
+                onClick={handleExport}
+                disabled={activePackage === 'all'}
+                className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors text-sm ${
+                  activePackage === 'all' 
+                    ? 'text-gray-400 bg-gray-100 cursor-not-allowed' 
+                    : 'text-amber-600 bg-amber-50 hover:bg-amber-100'
+                }`}
+                title={activePackage === 'all' ? 'Please select a specific package to export' : ''}
+              >
+                <RiUploadLine className="w-4 h-4" />
+                Export
+              </button>
+            </div>
 
             <div className="relative">
               <input
                 type="file"
-                accept=".csv"
-                onChange={handleImportCSV}
+                accept=".xlsx,.xls,.csv"
+                onChange={handleImportFile}
                 className="hidden"
-                id="csv-upload"
+                id="file-upload"
+                disabled={activePackage === 'all'}
               />
               <label
-                htmlFor="csv-upload"
-                className="flex items-center gap-2 px-3 py-2 text-amber-600 bg-amber-50 rounded-lg hover:bg-amber-100 transition-colors cursor-pointer text-sm"
+                htmlFor={activePackage === 'all' ? '' : 'file-upload'}
+                className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors text-sm ${
+                  activePackage === 'all'
+                    ? 'text-gray-400 bg-gray-100 cursor-not-allowed'
+                    : 'text-amber-600 bg-amber-50 hover:bg-amber-100 cursor-pointer'
+                }`}
+                title={activePackage === 'all' ? 'Please select a specific package to import' : ''}
               >
                 <RiDownloadLine className="w-4 h-4" />
                 Import
@@ -691,13 +792,19 @@ export function ProductsPage() {
                     </EditGuard>
                   )}
                   <th className="w-[80px] px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    ID
+                    Sr No.
                   </th>
                   <th className="w-[100px] px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Serve Item No.
                   </th>
-                  <th className="w-1/4 min-w-[200px] px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="w-1/6 min-w-[150px] px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Name
+                  </th>
+                  <th className="w-1/6 min-w-[150px] px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Description
+                  </th>
+                  <th className="w-[100px] px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Quantity
                   </th>
                   <th className="w-1/6 min-w-[150px] px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Package
@@ -717,7 +824,7 @@ export function ProductsPage() {
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
                 {paginatedProducts().length > 0 ? (
-                  paginatedProducts().map((product) => (
+                  paginatedProducts().map((product, index) => (
                     <tr key={product.id} className="hover:bg-gray-50">
                       {isSelectMode && (
                         <EditGuard>
@@ -732,22 +839,23 @@ export function ProductsPage() {
                         </EditGuard>
                       )}
                       <td className="w-[80px] px-4 py-4 text-sm text-gray-900">
-                        {product.index}
+                        {((currentPage - 1) * itemsPerPage) + index + 1}
                       </td>
                       <td className="w-[100px] px-4 py-4 text-sm text-gray-900">
                         {product.serve_item_no || '-'}
                       </td>
-                      <td className="w-1/4 min-w-[200px] px-4 py-4">
-                        <div className="max-w-full">
-                          <div className="text-sm font-medium text-gray-900 truncate">
-                            {product.name}
-                          </div>
-                          {product.description && (
-                            <div className="text-sm text-gray-500 truncate">
-                              {product.description}
-                            </div>
-                          )}
+                      <td className="w-1/6 min-w-[150px] px-4 py-4">
+                        <div className="text-sm font-medium text-gray-900 truncate">
+                          {product.name}
                         </div>
+                      </td>
+                      <td className="w-1/6 min-w-[150px] px-4 py-4">
+                        <div className="text-sm text-gray-500 truncate">
+                          {product.description || '-'}
+                        </div>
+                      </td>
+                      <td className="w-[100px] px-4 py-4 text-sm text-gray-900">
+                        {product.quantity || '1'}
                       </td>
                       <td className="w-1/6 min-w-[150px] px-4 py-4">
                         <span className="text-sm font-medium text-amber-600 truncate block">
@@ -780,7 +888,8 @@ export function ProductsPage() {
                                   rate: product.rate.toString(),
                                   serve_item_no: product.serve_item_no?.toString() || "",
                                   slot_start: product.slot_start,
-                                  slot_end: product.slot_end
+                                  slot_end: product.slot_end,
+                                  quantity: product.quantity || ""
                                 });
                                 setIsModalOpen(true);
                               }}
@@ -801,7 +910,7 @@ export function ProductsPage() {
                   ))
                 ) : (
                   <tr>
-                    <td colSpan={isSelectMode ? 7 : 6} className="px-4 py-4 text-center text-gray-500">
+                    <td colSpan={isSelectMode ? 9 : 8} className="px-4 py-4 text-center text-gray-500">
                       No products found matching the selected filters
                     </td>
                   </tr>
@@ -832,7 +941,8 @@ export function ProductsPage() {
                         rate: "",
                         serve_item_no: "",
                         slot_start: "00:00",
-                        slot_end: "12:00"
+                        slot_end: "12:00",
+                        quantity: ""
                       });
                     }}
                     className="text-gray-500 hover:text-gray-700"
@@ -906,6 +1016,17 @@ export function ProductsPage() {
                   </div>
 
                   <div>
+                    <label className="block text-sm font-medium text-gray-700">Quantity</label>
+                    <input
+                      type="text"
+                      value={formData.quantity}
+                      onChange={(e) => setFormData({ ...formData, quantity: e.target.value })}
+                      className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-amber-500 focus:outline-none focus:ring-amber-500"
+                      placeholder="e.g., 200ml, 1kg, 10pcs"
+                    />
+                  </div>
+
+                  <div>
                     <label className="block text-sm font-medium text-gray-700">Slot Start Time</label>
                     <input
                       type="time"
@@ -940,7 +1061,8 @@ export function ProductsPage() {
                           rate: "",
                           serve_item_no: "",
                           slot_start: "00:00",
-                          slot_end: "12:00"
+                          slot_end: "12:00",
+                          quantity: ""
                         });
                       }}
                       className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
