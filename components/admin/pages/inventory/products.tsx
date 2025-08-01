@@ -148,6 +148,7 @@ export function ProductsPage() {
             type
           )
         `)
+        .order('serve_item_no', { ascending: true, nullsLast: true })
         .order('index', { ascending: true });
 
       if (error) throw error;
