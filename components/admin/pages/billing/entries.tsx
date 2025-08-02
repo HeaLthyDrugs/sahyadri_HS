@@ -712,12 +712,17 @@ export function BillingEntriesPage() {
       } else {
         // For program mode
         if (quantity > 0) {
+          // Get product rate from products array
+          const product = products.find(p => p.id === productId);
+          const productRate = product?.rate || 0;
+
           const programEntry = {
             program_id: selectedProgram,
             package_id: selectedPackage,
             product_id: productId,
             entry_date: date,
             quantity: quantity,
+            product_rate: productRate,
           };
 
           const { error } = await supabase
@@ -862,16 +867,23 @@ export function BillingEntriesPage() {
         console.log('✅ Program entries deleted successfully');
 
         // Prepare program entries (only include entries with quantity > 0)
-        const programEntries = Object.entries(entryData).flatMap(([date, products]) =>
-          Object.entries(products)
+        const programEntries = Object.entries(entryData).flatMap(([date, productData]) =>
+          Object.entries(productData)
             .filter(([_, quantity]) => quantity > 0)
-            .map(([productId, quantity]) => ({
-              program_id: selectedProgram,
-              package_id: selectedPackage,
-              product_id: productId,
-              entry_date: date,
-              quantity: quantity,
-            }))
+            .map(([productId, quantity]) => {
+              // Get product rate from products array
+              const product = products.find(p => p.id === productId);
+              const productRate = product?.rate || 0;
+              
+              return {
+                program_id: selectedProgram,
+                package_id: selectedPackage,
+                product_id: productId,
+                entry_date: date,
+                quantity: quantity,
+                product_rate: productRate,
+              };
+            })
         );
 
         console.log('📦 Prepared program entries for insert:', programEntries.length, 'entries');
