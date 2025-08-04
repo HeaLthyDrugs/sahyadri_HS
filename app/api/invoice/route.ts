@@ -9,6 +9,7 @@ interface Product {
   name: string;
   rate: number;
   index: number;
+  serve_item_no?: number;
 }
 
 interface Program {
@@ -141,7 +142,8 @@ export async function POST(request: Request) {
             id,
             name,
             rate,
-            index
+            index,
+            serve_item_no
           ),
           programs!inner (
             id,
@@ -187,7 +189,8 @@ export async function POST(request: Request) {
           id,
           name,
           rate,
-          index
+          index,
+          serve_item_no
         )
       `)
       .eq('package_id', packageId)
@@ -234,8 +237,15 @@ export async function POST(request: Request) {
       }, { status: 404 });
     }
 
-    // Sort entries by product index
-    transformedEntries.sort((a, b) => (a.products.index || 0) - (b.products.index || 0));
+    // Sort entries by serve_item_no first, then by product index
+    transformedEntries.sort((a, b) => {
+      const serveA = a.products.serve_item_no || 999999;
+      const serveB = b.products.serve_item_no || 999999;
+      if (serveA !== serveB) {
+        return serveA - serveB;
+      }
+      return (a.products.index || 0) - (b.products.index || 0);
+    });
 
     // Calculate total with detailed logging
     const totalAmount = transformedEntries.reduce((sum, entry) => {
@@ -463,11 +473,12 @@ function generateInvoiceHTML({ packageDetails, month, entries, totalAmount, conf
         <table>
           <thead>
             <tr>
-              <th style="width: 10%">Sr. No</th>
-              <th style="width: 40%">Product Name</th>
+              <th style="width: 8%">Sr. No</th>
+              <th style="width: 10%">Serv. Itm</th>
+              <th style="width: 37%">Product Name</th>
               <th style="width: 15%">Quantity</th>
               <th style="width: 15%" class="text-right">Basic Rate</th>
-              <th style="width: 20%" class="text-right">Total</th>
+              <th style="width: 15%" class="text-right">Total</th>
             </tr>
           </thead>
           <tbody>
@@ -478,6 +489,7 @@ function generateInvoiceHTML({ packageDetails, month, entries, totalAmount, conf
               return `
                 <tr>
                   <td>${index + 1}</td>
+                  <td>${entry.products.serve_item_no || '-'}</td>
                   <td>${entry.products.name}</td>
                   <td>${quantity}</td>
                   <td class="text-right">₹${rate.toFixed(2)}</td>
@@ -486,7 +498,7 @@ function generateInvoiceHTML({ packageDetails, month, entries, totalAmount, conf
               `;
             }).join('')}
             <tr class="total-row">
-              <td colspan="4" class="text-right">Total Amount:</td>
+              <td colspan="5" class="text-right">Total Amount:</td>
               <td class="text-right">₹${totalAmount.toFixed(2)}</td>
             </tr>
           </tbody>

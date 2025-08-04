@@ -328,10 +328,18 @@ export async function POST(req: NextRequest) {
                 text-overflow: ellipsis;
               }
               th:first-child, td:first-child {
+                width: 30px;
+                text-align: center;
+              }
+              th:nth-child(2), td:nth-child(2) {
+                width: 40px;
+                text-align: center;
+              }
+              th:nth-child(3), td:nth-child(3) {
                 width: 120px;
                 text-align: left;
               }
-              th:not(:first-child):not(:last-child), td:not(:first-child):not(:last-child) {
+              th:not(:first-child):not(:nth-child(2)):not(:nth-child(3)):not(:last-child), td:not(:first-child):not(:nth-child(2)):not(:nth-child(3)):not(:last-child) {
                 width: 45px;
               }
               th:nth-last-child(-n+4):not(:last-child), td:nth-last-child(-n+4):not(:last-child) {
@@ -550,6 +558,7 @@ export async function POST(req: NextRequest) {
                               <thead>
                                 <tr>
                                   <th>Sr. No</th>
+                                  <th>Serv. Itm</th>
                                   <th>Product Name</th>
                                   ${chunkDates.map(date => `
                                     <th>${format(new Date(date), 'dd')}</th>
@@ -561,7 +570,7 @@ export async function POST(req: NextRequest) {
                                 </tr>
                               </thead>
                               <tbody>
-                                ${chunk.map((product: Product) => {
+                                ${chunk.map((product: Product, productIndex: number) => {
                                   const total = packageData.totals[product.id] || 0;
                                   if (total === 0) return '';
 
@@ -570,6 +579,7 @@ export async function POST(req: NextRequest) {
                                   
                                   return `
                                     <tr>
+                                      <td style="text-align: center;">${productIndex + 1}</td>
                                       <td style="text-align: center;">${product.serve_item_no || '-'}</td>
                                       <td>${product.name}</td>
                                       ${chunkDates.map(date => {

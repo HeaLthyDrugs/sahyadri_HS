@@ -600,8 +600,11 @@ const ProgramReport: React.FC<ProgramReportProps> = ({
                       <table className="w-full text-[11px] border-collapse">
                         <thead>
                           <tr className="bg-gray-50">
-                            <th className="px-1.5 py-1 border-b border-r border-gray-200 text-center font-normal text-gray-900 w-[60px]">
+                            <th className="px-1.5 py-1 border-b border-r border-gray-200 text-center font-normal text-gray-900 w-[30px]">
                               Sr. No
+                            </th>
+                            <th className="px-1.5 py-1 border-b border-r border-gray-200 text-center font-normal text-gray-900 w-[40px]">
+                              Serv. Itm
                             </th>
                             <th className="px-1.5 py-1 border-b border-r border-gray-200 text-left font-normal text-gray-900 w-[100px]">
                               Product Name
@@ -626,7 +629,7 @@ const ProgramReport: React.FC<ProgramReportProps> = ({
                           </tr>
                         </thead>
                         <tbody>
-                          {chunk.map(item => {
+                          {chunk.map((item, itemIndex) => {
                             // Calculate row totals
                             const rowTotal = chunkDates.reduce((sum, date) => 
                               sum + (item.dates?.[date] || 0), 0
@@ -636,6 +639,9 @@ const ProgramReport: React.FC<ProgramReportProps> = ({
 
                             return (
                               <tr key={item.productName} className="border-b border-gray-200">
+                                <td className="px-1.5 py-1 border-r border-gray-200 text-center text-gray-900">
+                                  {itemIndex + 1}
+                                </td>
                                 <td className="px-1.5 py-1 border-r border-gray-200 text-center text-gray-900">
                                   {item.serve_item_no || '-'}
                                 </td>

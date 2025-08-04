@@ -18,6 +18,7 @@ interface Product {
   name: string;
   rate: number;
   index: number;
+  serve_item_no?: number;
 }
 
 interface Program {
@@ -273,11 +274,12 @@ export default function InvoicePreview({ invoiceData, invoiceConfig }: InvoicePr
           <table className="min-w-full divide-y divide-gray-200 border-2 border-gray-200">
             <thead className="bg-amber-50">
               <tr>
-                <th className="w-[10%] px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase">Sr. No</th>
-                <th className="w-[40%] px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase">Product Name</th>
+                <th className="w-[8%] px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase">Sr. No</th>
+                <th className="w-[10%] px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase">Serv. Itm</th>
+                <th className="w-[37%] px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase">Product Name</th>
                 <th className="w-[15%] px-6 py-3 text-left text-xs font-medium text-gray-700 uppercase">Quantity</th>
                 <th className="w-[15%] px-6 py-3 text-right text-xs font-medium text-gray-700 uppercase">Basic Rate</th>
-                <th className="w-[20%] px-6 py-3 text-right text-xs font-medium text-gray-700 uppercase">Total</th>
+                <th className="w-[15%] px-6 py-3 text-right text-xs font-medium text-gray-700 uppercase">Total</th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
@@ -290,6 +292,9 @@ export default function InvoicePreview({ invoiceData, invoiceConfig }: InvoicePr
                   <tr key={entry.id}>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                       {index + 1}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      {entry.products.serve_item_no || '-'}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                       {entry.products.name}
@@ -309,7 +314,7 @@ export default function InvoicePreview({ invoiceData, invoiceConfig }: InvoicePr
             </tbody>
             <tfoot className="bg-gray-50">
               <tr>
-                <td colSpan={4} className="px-6 py-4 text-right font-semibold">Total Amount:</td>
+                <td colSpan={5} className="px-6 py-4 text-right font-semibold">Total Amount:</td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-right">
                   ₹{invoiceData.totalAmount.toFixed(2)}
                 </td>
