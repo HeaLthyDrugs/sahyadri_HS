@@ -21,6 +21,7 @@ interface DatabaseUser {
   id: string;
   email: string | null;
   full_name: string | null;
+  password?: string | null;
   created_at: string | null;
   role_id: string | null;
   roles: {
@@ -34,6 +35,7 @@ interface User {
   id: string;
   email: string;
   full_name: string;
+  password?: string;
   role: {
     id: string;
     name: string;
@@ -74,6 +76,7 @@ export default function ManageUsersPage() {
   const [userToDelete, setUserToDelete] = useState<User | null>(null);
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [showPassword, setShowPassword] = useState(false);
+  const [showPasswordColumn, setShowPasswordColumn] = useState<{[key: string]: boolean}>({});
   const [roles, setRoles] = useState<Role[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [formData, setFormData] = useState({
@@ -103,6 +106,7 @@ export default function ManageUsersPage() {
             id,
             email,
             full_name,
+            password,
             created_at,
             is_active,
             role_id,
@@ -120,6 +124,7 @@ export default function ManageUsersPage() {
               id: dbUser.id,
               email: dbUser.email || '',
               full_name: dbUser.full_name || '',
+              password: dbUser.password || '',
               role: {
                 id: dbUser.role_id || '',
                 name: dbUser.roles?.name || 'No Role'
@@ -163,6 +168,7 @@ export default function ManageUsersPage() {
           id,
           email,
           full_name,
+          password,
           created_at,
           is_active,
           role_id,
@@ -180,6 +186,7 @@ export default function ManageUsersPage() {
             id: dbUser.id,
             email: dbUser.email || '',
             full_name: dbUser.full_name || '',
+            password: dbUser.password || '',
             role: {
               id: dbUser.role_id || '',
               name: dbUser.roles?.name || 'No Role'
@@ -205,20 +212,36 @@ export default function ManageUsersPage() {
       }
 
       if (editingUser) {
-        // Handle user update
-        const { error: updateError } = await supabase
-          .from('profiles')
-          .update({
-            full_name: formData.full_name,
-            role_id: formData.role_id,
-          })
-          .eq('id', editingUser.id);
+        // Handle user update via API
+        const updateData: any = {
+          userId: editingUser.id,
+          full_name: formData.full_name,
+          role_id: formData.role_id,
+        };
+        
+        // Only include password if it's provided
+        if (formData.password) {
+          updateData.password = formData.password;
+        }
+        
+        const response = await fetch('/api/users', {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(updateData),
+        });
 
-        if (updateError) throw updateError;
+        const data = await response.json();
+
+        if (!response.ok) {
+          console.error('Update error:', data);
+          throw new Error(data.error || 'Failed to update user');
+        }
 
         toast({
           title: "Success",
-          description: "User updated successfully",
+          description: data.message || "User updated successfully",
         });
       } else {
         // Create new user through API route
@@ -238,7 +261,7 @@ export default function ManageUsersPage() {
         const data = await response.json();
 
         if (!response.ok) {
-          console.error('Server response:', data);
+          console.error('Create user error:', data);
           throw new Error(data.error || 'Failed to create user');
         }
 
@@ -299,18 +322,7 @@ export default function ManageUsersPage() {
         throw new Error('You do not have permission to delete users');
       }
 
-      // Delete the user's profile first
-      const { error: deleteProfileError } = await supabase
-        .from('profiles')
-        .delete()
-        .eq('id', id);
-
-      if (deleteProfileError) {
-        console.error('Error deleting profile:', deleteProfileError);
-        throw new Error('Failed to delete user profile');
-      }
-
-      // Then delete the user from auth.users through the API
+      // Delete the user through the API
       const response = await fetch('/api/users', {
         method: 'DELETE',
         headers: {
@@ -321,6 +333,7 @@ export default function ManageUsersPage() {
 
       if (!response.ok) {
         const data = await response.json();
+        console.error('Delete user error:', data);
         throw new Error(data.error || 'Failed to delete user');
       }
 
@@ -392,6 +405,9 @@ export default function ManageUsersPage() {
                 Email
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Password
+              </th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Role
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -410,6 +426,22 @@ export default function ManageUsersPage() {
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
                   <div className="text-sm text-gray-500">{user.email}</div>
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap">
+                  <div className="flex items-center gap-2">
+                    <div className="text-sm text-gray-500">
+                      {showPasswordColumn[user.id] ? user.password : '••••••••'}
+                    </div>
+                    <button
+                      onClick={() => setShowPasswordColumn(prev => ({
+                        ...prev,
+                        [user.id]: !prev[user.id]
+                      }))}
+                      className="text-gray-400 hover:text-gray-600"
+                    >
+                      {showPasswordColumn[user.id] ? <RiEyeOffLine className="w-4 h-4" /> : <RiEyeLine className="w-4 h-4" />}
+                    </button>
+                  </div>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
                   <div className="text-sm text-gray-500">{user.role.name}</div>
@@ -576,29 +608,27 @@ export default function ManageUsersPage() {
                 />
               </div>
 
-              {!editingUser && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">
-                    Password
-                  </label>
-                  <div className="relative">
-                    <input
-                      type={showPassword ? "text" : "password"}
-                      value={formData.password}
-                      onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                      className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-amber-500 focus:outline-none focus:ring-amber-500"
-                      required
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500"
-                    >
-                      {showPassword ? <RiEyeOffLine /> : <RiEyeLine />}
-                    </button>
-                  </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">
+                  Password {editingUser && <span className="text-xs text-gray-500">(leave empty to keep current)</span>}
+                </label>
+                <div className="relative">
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    value={formData.password}
+                    onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                    className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-amber-500 focus:outline-none focus:ring-amber-500"
+                    required={!editingUser}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500"
+                  >
+                    {showPassword ? <RiEyeOffLine /> : <RiEyeLine />}
+                  </button>
                 </div>
-              )}
+              </div>
 
               <div>
                 <label className="block text-sm font-medium text-gray-700">

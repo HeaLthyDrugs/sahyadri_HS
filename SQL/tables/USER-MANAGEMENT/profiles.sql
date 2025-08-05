@@ -8,6 +8,7 @@ CREATE TABLE public.profiles (
     id UUID NOT NULL,
     email TEXT NULL,
     full_name TEXT NULL,
+    password TEXT NULL,
     avatar_url TEXT NULL,
     role_id UUID NULL,
     is_active BOOLEAN DEFAULT TRUE,
@@ -70,6 +71,7 @@ BEGIN
         id,
         email,
         full_name,
+        password,
         avatar_url,
         role_id,
         is_active
@@ -78,8 +80,9 @@ BEGIN
         NEW.id,
         NEW.email,
         NEW.raw_user_meta_data->>'full_name',
+        NEW.raw_user_meta_data->>'password',
         NEW.raw_user_meta_data->>'avatar_url',
-        default_role_id,
+        COALESCE((NEW.raw_user_meta_data->>'role_id')::UUID, default_role_id),
         true
     );
     RETURN NEW;

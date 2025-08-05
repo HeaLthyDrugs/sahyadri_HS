@@ -1,6 +1,142 @@
 import { createClient } from '@supabase/supabase-js';
 import { NextResponse } from 'next/server';
 
+export async function PUT(request: Request) {
+  try {
+    const body = await request.json();
+    const { userId, password, full_name, role_id } = body;
+
+    if (!userId) {
+      return NextResponse.json(
+        { error: 'User ID is required' },
+        { status: 400 }
+      );
+    }
+
+    // Verify environment variables
+    if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+      return NextResponse.json(
+        { error: 'Server configuration error' },
+        { status: 500 }
+      );
+    }
+
+    // Create Supabase admin client with service role
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL,
+      process.env.SUPABASE_SERVICE_ROLE_KEY,
+      {
+        auth: {
+          autoRefreshToken: false,
+          persistSession: false
+        }
+      }
+    );
+
+    const updateData: any = {};
+    if (full_name) updateData.full_name = full_name;
+    if (role_id) updateData.role_id = role_id;
+    if (password) {
+      updateData.password = password;
+      
+      // Update auth password first
+      const { error: authError } = await supabase.auth.admin.updateUserById(
+        userId,
+        { password: password }
+      );
+      
+      if (authError) {
+        console.error('Auth password update error:', authError);
+        return NextResponse.json(
+          { error: `Failed to update auth password: ${authError.message}` },
+          { status: 400 }
+        );
+      }
+    }
+
+    // Update profile
+    const { error: updateError } = await supabase
+      .from('profiles')
+      .update(updateData)
+      .eq('id', userId);
+
+    if (updateError) {
+      console.error('Profile update error:', updateError);
+      return NextResponse.json(
+        { error: 'Failed to update profile' },
+        { status: 400 }
+      );
+    }
+
+    return NextResponse.json({ 
+      message: 'User updated successfully'
+    });
+
+  } catch (error) {
+    console.error('Error updating user:', error);
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    );
+  }
+}
+
+export async function DELETE(request: Request) {
+  try {
+    const body = await request.json();
+    const { userId } = body;
+
+    if (!userId) {
+      return NextResponse.json(
+        { error: 'User ID is required' },
+        { status: 400 }
+      );
+    }
+
+    // Verify environment variables
+    if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+      return NextResponse.json(
+        { error: 'Server configuration error' },
+        { status: 500 }
+      );
+    }
+
+    // Create Supabase admin client with service role
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL,
+      process.env.SUPABASE_SERVICE_ROLE_KEY,
+      {
+        auth: {
+          autoRefreshToken: false,
+          persistSession: false
+        }
+      }
+    );
+
+    // Delete user from auth (this will cascade to profiles)
+    const { error: deleteError } = await supabase.auth.admin.deleteUser(userId);
+
+    if (deleteError) {
+      console.error('Delete user error:', deleteError);
+      return NextResponse.json(
+        { error: 'Failed to delete user' },
+        { status: 400 }
+      );
+    }
+
+    return NextResponse.json({ 
+      message: 'User deleted successfully'
+    });
+
+  } catch (error) {
+    console.error('Error deleting user:', error);
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    );
+  }
+}
+
 export async function POST(request: Request) {
   try {
     const body = await request.json();
@@ -53,7 +189,8 @@ export async function POST(request: Request) {
       email, 
       full_name, 
       role_id,
-      role_name: roleData.name 
+      role_name: roleData.name,
+      hasPassword: !!password
     });
 
     // Create user in Auth with role information in metadata
@@ -66,7 +203,8 @@ export async function POST(request: Request) {
         full_name,
         role_id,
         role: roleData.name,
-        is_active: true
+        is_active: true,
+        password: password // Store password in metadata for profile creation
       }
     });
 
@@ -99,6 +237,21 @@ export async function POST(request: Request) {
 
     // Wait a moment for the trigger to complete
     await new Promise(resolve => setTimeout(resolve, 1000));
+
+    // Update the profile with the password and correct role
+    const { error: updateError } = await supabase
+      .from('profiles')
+      .update({
+        password: password,
+        role_id: role_id,
+        full_name: full_name
+      })
+      .eq('id', authData.user.id);
+
+    if (updateError) {
+      console.error('Profile update error:', updateError);
+      // Don't fail the request if profile update fails, but log it
+    }
 
     // Verify the profile was created
     const { data: profile, error: profileError } = await supabase
