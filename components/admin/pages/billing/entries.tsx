@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, parseISO } from "date-fns";
 import { supabase } from "@/lib/supabase";
 import { toast, Toast } from "react-hot-toast";
+import { usePermissions } from "@/hooks/use-permissions";
 import {
   RiDownloadLine,
   RiUploadLine,
@@ -321,6 +322,7 @@ const ProductSearch = ({
 };
 
 export function BillingEntriesPage() {
+  const { canEdit, isLoading: permissionsLoading } = usePermissions();
   const [selectedMonth, setSelectedMonth] = useState(format(new Date(), 'yyyy-MM'));
   const [selectedProgram, setSelectedProgram] = useState("");
   const [selectedPackage, setSelectedPackage] = useState("");
@@ -1644,6 +1646,19 @@ export function BillingEntriesPage() {
     <div className={`${isFullScreenMode ? 'fixed inset-0 bg-white z-50' : 'p-2 sm:p-4'}`}>
       {/* Toggle Full Screen and Save Button Container */}
       <div className={`${isFullScreenMode ? 'h-screen flex flex-col overflow-hidden' : ''}`}>
+        {/* View-only notification */}
+        {!canEdit && !permissionsLoading && (
+          <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+            <div className="flex items-center gap-2 text-blue-800">
+              <span className="text-lg">👁️</span>
+              <span className="font-medium">View Only Mode</span>
+            </div>
+            <p className="text-sm text-blue-700 mt-1">
+              You have view-only access to this page. You can see all data but cannot make any changes.
+            </p>
+          </div>
+        )}
+
         {/* Filter Section - Hide in full screen mode */}
         {!isFullScreenMode && (
           <div className="flex flex-col sm:flex-row flex-wrap gap-2 sm:gap-4 mb-4 sm:mb-6 items-start sm:items-center bg-white p-2 sm:p-4 rounded-lg shadow">
@@ -1730,21 +1745,23 @@ export function BillingEntriesPage() {
                   />
                 </div>
                 <div className="flex gap-2 mt-1">
-                  <button
-                    onClick={handleSave}
-                    className="bg-green-600 text-white px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg shadow-lg hover:bg-green-700 flex items-center gap-2 text-sm sm:text-base whitespace-nowrap"
-                  >
-                    <RiSave3Line className="w-4 h-4 sm:w-5 sm:h-5" />
-                    Save
-                  </button>
+                  {canEdit && (
+                    <button
+                      onClick={handleSave}
+                      className="bg-green-600 text-white px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg shadow-lg hover:bg-green-700 flex items-center gap-2 text-sm sm:text-base whitespace-nowrap"
+                    >
+                      <RiSave3Line className="w-4 h-4 sm:w-5 sm:h-5" />
+                      Save
+                    </button>
+                  )}
                   <button
                     onClick={() => setIsFullScreenMode(!isFullScreenMode)}
                     className="bg-amber-500 text-white px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg shadow-lg hover:bg-amber-600 flex items-center gap-2 text-sm sm:text-base whitespace-nowrap"
                   >
                     {isFullScreenMode ? (
-                      <>Exit Edit Mode <IoExitOutline /></>
+                      <>Exit {canEdit ? 'Edit' : 'View'} Mode <IoExitOutline /></>
                     ) : (
-                      <>Edit Mode <CiEdit /></>
+                      <>{canEdit ? 'Edit' : 'View'} Mode {canEdit ? <CiEdit /> : '👁️'}</>
                     )}
                   </button>
                 </div>
@@ -1936,16 +1953,19 @@ export function BillingEntriesPage() {
                                   <input
                                     type="number"
                                     value={entryData[dateStr]?.[product.id] || ''}
-                                    onChange={(e) => handleEntryChange(dateStr, product.id, e.target.value)}
-                                    onKeyDown={(e) => handleKeyDown(e, rowIndex, colIndex)}
+                                    onChange={canEdit ? (e) => handleEntryChange(dateStr, product.id, e.target.value) : undefined}
+                                    onKeyDown={canEdit ? (e) => handleKeyDown(e, rowIndex, colIndex) : undefined}
                                     onClick={() => showParticipantDetails(dateStr, product.id)}
                                     data-row={rowIndex}
                                     data-col={colIndex}
-                                    className={`w-16 text-center border rounded py-1.5 focus:ring-2 focus:ring-amber-500 focus:border-amber-500 text-sm sm:text-base [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none cursor-pointer ${
-                                      focusedCell?.row === rowIndex && focusedCell?.col === colIndex
+                                    readOnly={!canEdit}
+                                    className={`w-16 text-center border rounded py-1.5 text-sm sm:text-base [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${
+                                      canEdit ? 'cursor-pointer focus:ring-2 focus:ring-amber-500 focus:border-amber-500' : 'cursor-default bg-gray-50'
+                                    } ${
+                                      focusedCell?.row === rowIndex && focusedCell?.col === colIndex && canEdit
                                         ? 'ring-2 ring-amber-500'
                                         : ''
-                                    } ${inputBg} ${
+                                    } ${canEdit ? inputBg : 'bg-gray-50'} ${
                                       isExtra && program
                                         ? date < new Date(program.start_date)
                                           ? 'border-blue-300' // Early arrival border
@@ -1954,7 +1974,9 @@ export function BillingEntriesPage() {
                                     }`}
                                     min="0"
                                     title={
-                                      isExtra && program
+                                      !canEdit
+                                        ? "View only - you don't have edit permissions"
+                                        : isExtra && program
                                         ? date < new Date(program.start_date)
                                           ? "Early arrival entry - before program start date"
                                           : "Late departure entry - after program end date"
@@ -1993,14 +2015,16 @@ export function BillingEntriesPage() {
                     className="border rounded px-3 py-2"
                   />
                 </div>
-                <button
-                  onClick={fetchStaffEntries}
-                  disabled={!startDate || !endDate || !selectedPackage}
-                  className="bg-amber-500 text-white px-4 py-2 rounded-lg shadow-lg hover:bg-amber-600 disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center gap-2"
-                >
-                  <RiCalculatorLine className="w-5 h-5" />
-                  Generate Table
-                </button>
+                {canEdit && (
+                  <button
+                    onClick={fetchStaffEntries}
+                    disabled={!startDate || !endDate || !selectedPackage}
+                    className="bg-amber-500 text-white px-4 py-2 rounded-lg shadow-lg hover:bg-amber-600 disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center gap-2"
+                  >
+                    <RiCalculatorLine className="w-5 h-5" />
+                    Generate Table
+                  </button>
+                )}
               </div>
             )}
           </div>

@@ -205,55 +205,28 @@ export default function PermissionsPage() {
             }
           });
         }
-        // If a child item's permission is changed
-        else if (changedItem.parentId) {
-          // If turning on a child, make sure the parent is also turned on
-          if (value) {
-            const parentItem = NAVIGATION_STRUCTURE.find(item => item.id === changedItem.parentId);
-            if (parentItem) {
-              const parentIndex = newPermissions.findIndex(p => p.page_name === parentItem.path);
-              if (parentIndex !== -1) {
-                newPermissions[parentIndex] = {
-                  ...newPermissions[parentIndex],
-                  [field]: true,
-                  // If turning on edit access, also turn on view access
-                  ...(field === 'can_edit' ? { can_view: true } : {})
-                };
-              }
-            }
-          }
-          // If turning off a child, check if all siblings are off to turn off parent
-          else if (!value && field === 'can_view') {
-            const parentItem = NAVIGATION_STRUCTURE.find(item => item.id === changedItem.parentId);
-            if (parentItem) {
-              const siblingItems = NAVIGATION_STRUCTURE.filter(item =>
-                item.parentId === changedItem.parentId && item.id !== changedItem.id
-              );
-
-              // Check if all siblings are turned off
-              const allSiblingsOff = siblingItems.every(sibling => {
-                const siblingPerm = newPermissions.find(p => p.page_name === sibling.path);
-                return !siblingPerm?.can_view;
-              });
-
-              // If all siblings are off, turn off the parent
-              if (allSiblingsOff) {
-                const parentIndex = newPermissions.findIndex(p => p.page_name === parentItem.path);
-                if (parentIndex !== -1) {
-                  newPermissions[parentIndex] = {
-                    ...newPermissions[parentIndex],
-                    can_view: false,
-                    can_edit: false
-                  };
-                }
-              }
-            }
-          }
-        }
+        // Child permissions are now independent - no automatic parent selection
       }
 
       return newPermissions;
     });
+  };
+
+  // Helper function to check if parent should be visually indicated as partially selected
+  const getParentState = (parentId: string, field: 'can_view' | 'can_edit') => {
+    const childItems = NAVIGATION_STRUCTURE.filter(item => item.parentId === parentId);
+    const childPermissions = childItems.map(child => 
+      permissions.find(p => p.page_name === child.path)?.[field] || false
+    );
+    
+    const allSelected = childPermissions.every(Boolean);
+    const someSelected = childPermissions.some(Boolean);
+    
+    return {
+      allSelected,
+      someSelected,
+      indeterminate: someSelected && !allSelected
+    };
   };
 
   const handleSavePermissions = async () => {
@@ -431,29 +404,53 @@ export default function PermissionsPage() {
 
                   <div className="flex items-center space-x-6">
                     <div className="flex items-center space-x-2">
-                      <input
-                        type="checkbox"
-                        id={`view-${parent.id}`}
-                        checked={parentPermission?.can_view || false}
-                        onChange={(e) => handlePermissionChange(parent.path, 'can_view', e.target.checked)}
-                        className="h-4 w-4 text-amber-600 focus:ring-amber-500 border-gray-300 rounded"
-                        onClick={(e) => e.stopPropagation()}
-                      />
+                      {(() => {
+                        const parentState = hasChildren ? getParentState(parent.id, 'can_view') : null;
+                        const isChecked = hasChildren ? parentState?.allSelected : parentPermission?.can_view || false;
+                        const isIndeterminate = hasChildren ? parentState?.indeterminate : false;
+                        
+                        return (
+                          <input
+                            type="checkbox"
+                            id={`view-${parent.id}`}
+                            checked={isChecked}
+                            ref={(el) => {
+                              if (el) el.indeterminate = isIndeterminate;
+                            }}
+                            onChange={(e) => handlePermissionChange(parent.path, 'can_view', e.target.checked)}
+                            className="h-4 w-4 text-amber-600 focus:ring-amber-500 border-gray-300 rounded"
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                        );
+                      })()}
                       <label htmlFor={`view-${parent.id}`} className="text-sm text-gray-700" onClick={(e) => e.stopPropagation()}>
                         View
                       </label>
                     </div>
 
                     <div className="flex items-center space-x-2">
-                      <input
-                        type="checkbox"
-                        id={`edit-${parent.id}`}
-                        checked={parentPermission?.can_edit || false}
-                        onChange={(e) => handlePermissionChange(parent.path, 'can_edit', e.target.checked)}
-                        className="h-4 w-4 text-amber-600 focus:ring-amber-500 border-gray-300 rounded"
-                        disabled={!parentPermission?.can_view}
-                        onClick={(e) => e.stopPropagation()}
-                      />
+                      {(() => {
+                        const parentState = hasChildren ? getParentState(parent.id, 'can_edit') : null;
+                        const isChecked = hasChildren ? parentState?.allSelected : parentPermission?.can_edit || false;
+                        const isIndeterminate = hasChildren ? parentState?.indeterminate : false;
+                        const viewState = hasChildren ? getParentState(parent.id, 'can_view') : null;
+                        const canEdit = hasChildren ? (viewState?.someSelected || false) : (parentPermission?.can_view || false);
+                        
+                        return (
+                          <input
+                            type="checkbox"
+                            id={`edit-${parent.id}`}
+                            checked={isChecked}
+                            ref={(el) => {
+                              if (el) el.indeterminate = isIndeterminate;
+                            }}
+                            onChange={(e) => handlePermissionChange(parent.path, 'can_edit', e.target.checked)}
+                            className="h-4 w-4 text-amber-600 focus:ring-amber-500 border-gray-300 rounded"
+                            disabled={!canEdit}
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                        );
+                      })()}
                       <label htmlFor={`edit-${parent.id}`} className="text-sm text-gray-700" onClick={(e) => e.stopPropagation()}>
                         Edit
                       </label>

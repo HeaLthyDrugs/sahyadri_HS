@@ -28,6 +28,7 @@ import {
 import { auth } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
 import Link from "next/link";
+import { createClient } from "@/utils/supabase/client";
 
 interface MenuItem {
   title: string;
@@ -48,6 +49,12 @@ interface ProfileResponse {
   }[];
 }
 
+interface Permission {
+  page_name: string;
+  can_view: boolean;
+  can_edit: boolean;
+}
+
 
 export default function DashboardLayout({
   children,
@@ -60,16 +67,21 @@ export default function DashboardLayout({
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
+  const [userPermissions, setUserPermissions] = useState<Permission[]>([]);
+  const [permissionsLoading, setPermissionsLoading] = useState(true);
+  const supabaseClient = createClient();
 
   useEffect(() => {
-    const fetchUserProfile = async () => {
+    const fetchUserProfileAndPermissions = async () => {
       try {
-        const { data: { user } } = await supabase.auth.getUser();
+        const { data: { user } } = await supabaseClient.auth.getUser();
         if (user) {
-          const { data } = await supabase
+          // Fetch user profile
+          const { data: profileData } = await supabaseClient
             .from('profiles')
             .select(`
               full_name,
+              role_id,
               roles!inner (
                 name
               )
@@ -77,19 +89,30 @@ export default function DashboardLayout({
             .eq('id', user.id)
             .single();
 
-          if (data && Array.isArray(data.roles) && data.roles.length > 0) {
+          if (profileData && Array.isArray(profileData.roles) && profileData.roles.length > 0) {
             setUserProfile({
-              full_name: data.full_name,
-              role_name: data.roles[0].name
+              full_name: profileData.full_name,
+              role_name: profileData.roles[0].name
             });
+
+            // Fetch user permissions
+            const { data: permissions } = await supabaseClient
+              .from('permissions')
+              .select('page_name, can_view, can_edit')
+              .eq('role_id', profileData.role_id);
+
+            setUserPermissions(permissions || []);
+            console.log('Loaded permissions:', permissions);
           }
         }
       } catch (error) {
-        console.error('Error fetching user profile:', error);
+        console.error('Error fetching user profile and permissions:', error);
+      } finally {
+        setPermissionsLoading(false);
       }
     };
 
-    fetchUserProfile();
+    fetchUserProfileAndPermissions();
   }, []);
 
   const menuItems: MenuItem[] = [
@@ -161,6 +184,44 @@ export default function DashboardLayout({
     return pathname === path;
   };
 
+  const hasPermission = (path: string) => {
+    // Check for full access first
+    const hasFullAccess = userPermissions.some(p => p.page_name === '*' && p.can_view);
+    if (hasFullAccess) {
+      console.log(`Full access granted for ${path}`);
+      return true;
+    }
+    
+    // Check specific page permission
+    const hasSpecificPermission = userPermissions.some(p => p.page_name === path && p.can_view);
+    console.log(`Permission check for ${path}:`, hasSpecificPermission, userPermissions.filter(p => p.page_name === path));
+    return hasSpecificPermission;
+  };
+
+  const getFilteredMenuItems = () => {
+    // Show all items while loading permissions
+    if (permissionsLoading) return menuItems;
+    
+    // If no permissions loaded, show all items as fallback
+    if (userPermissions.length === 0) return menuItems;
+    
+    return menuItems.map(item => {
+      if (item.items) {
+        // Filter child items based on permissions
+        const filteredItems = item.items.filter(subItem => hasPermission(subItem.path));
+        
+        // Only show parent if it has accessible children
+        if (filteredItems.length > 0) {
+          return { ...item, items: filteredItems };
+        }
+        return null;
+      } else {
+        // Check permission for single item
+        return hasPermission(item.path!) ? item : null;
+      }
+    }).filter(Boolean) as MenuItem[];
+  };
+
   return (
     <div className="min-h-screen bg-gray-100">
       {/* Mobile Header */}
@@ -223,7 +284,7 @@ export default function DashboardLayout({
           {/* Navigation */}
           <nav className="flex-1 p-4 overflow-y-auto mt-16 md:mt-0">
             <ul className="space-y-2">
-              {menuItems.map((item) => (
+              {getFilteredMenuItems().map((item) => (
                 <li key={item.title}>
                   {item.items ? (
                     // Dropdown Menu

@@ -22,14 +22,14 @@ const PERMISSION_PATH_MAP: Record<string, string> = {
   '/dashboard/users': '/dashboard/users',
   '/dashboard/users/roles': '/dashboard/users/roles',
   '/dashboard/users/permissions': '/dashboard/users/permissions',
-  '/dashboard/inventory/packages': '/dashboard/inventory',
-  '/dashboard/inventory/products': '/dashboard/inventory',
-  '/dashboard/consumer/programs': '/dashboard/consumer',
-  '/dashboard/consumer/participants': '/dashboard/consumer',
-  '/dashboard/consumer/staff': '/dashboard/consumer',
-  '/dashboard/billing/entries': '/dashboard/billing',
-  '/dashboard/billing/invoice': '/dashboard/billing',
-  '/dashboard/billing/report': '/dashboard/billing',
+  '/dashboard/inventory/packages': '/dashboard/inventory/packages',
+  '/dashboard/inventory/products': '/dashboard/inventory/products',
+  '/dashboard/consumer/programs': '/dashboard/consumer/programs',
+  '/dashboard/consumer/participants': '/dashboard/consumer/participants',
+  '/dashboard/consumer/staff': '/dashboard/consumer/staff',
+  '/dashboard/billing/entries': '/dashboard/billing/entries',
+  '/dashboard/billing/invoice': '/dashboard/billing/invoice',
+  '/dashboard/billing/reports': '/dashboard/billing/reports',
   '/dashboard/config': '/dashboard/config'
 };
 
