@@ -1,9 +1,9 @@
 "use client";
 
 import Report from "@/components/admin/pages/billing/report";
-import { withPermission } from '@/components/withPermission';
+import { withStrictPermission } from '@/components/withPermission';
 
-const ProtectedReportPage = withPermission(Report);
+const ProtectedReportPage = withStrictPermission(Report, '/dashboard/billing/reports');
 
 export default function BillingReportsPage() {
   return (

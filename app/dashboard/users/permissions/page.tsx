@@ -1,9 +1,9 @@
 "use client";
 
 import PermissionsPage from "@/components/admin/pages/users/permissions";
-import { withPermission } from '@/components/withPermission';
+import { withStrictPermission } from '@/components/withPermission';
 
-const ProtectedPermissionsPage = withPermission(PermissionsPage);
+const ProtectedPermissionsPage = withStrictPermission(PermissionsPage, '/dashboard/users/permissions');
 
 export default function UsersPermissionsPage() {
   return (

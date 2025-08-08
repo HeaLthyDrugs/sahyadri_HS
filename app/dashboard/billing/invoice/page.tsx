@@ -5,6 +5,7 @@ import { format } from 'date-fns';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import InvoiceForm from '@/components/admin/pages/billing/invoice-form';
 import InvoicePreview from '@/components/admin/pages/billing/invoice-preview';
+import { StrictPermissionGuard } from '@/components/PermissionGuard';
 import { toast } from 'react-hot-toast';
 
 interface Product {
@@ -61,7 +62,7 @@ interface InvoiceData {
   totalAmount: number;
 }
 
-export default function InvoicePage() {
+function InvoicePageContent() {
   const supabase = createClientComponentClient();
   const currentMonth = format(new Date(), 'yyyy-MM');
 
@@ -225,5 +226,13 @@ export default function InvoicePage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function InvoicePage() {
+  return (
+    <StrictPermissionGuard requiredPath="/dashboard/billing/invoice">
+      <InvoicePageContent />
+    </StrictPermissionGuard>
   );
 }

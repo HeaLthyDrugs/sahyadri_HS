@@ -1,9 +1,9 @@
 "use client";
 
 import { BillingEntriesPage } from "@/components/admin/pages/billing/entries";
-import { withPermission } from '@/components/withPermission';
+import { withStrictPermission } from '@/components/withPermission';
 
-const ProtectedBillingEntriesPage = withPermission(BillingEntriesPage);
+const ProtectedBillingEntriesPage = withStrictPermission(BillingEntriesPage, '/dashboard/billing/entries');
 
 export default function BillingEntriesListPage() {
   return (

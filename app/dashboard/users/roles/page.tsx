@@ -1,9 +1,9 @@
 "use client";
 
 import RolesPage from "@/components/admin/pages/users/roles";
-import { withPermission } from '@/components/withPermission';
+import { withStrictPermission } from '@/components/withPermission';
 
-const ProtectedRolesPage = withPermission(RolesPage);
+const ProtectedRolesPage = withStrictPermission(RolesPage, '/dashboard/users/roles');
 
 export default function UsersRolesPage() {
   return (

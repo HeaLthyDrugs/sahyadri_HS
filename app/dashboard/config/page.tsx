@@ -1,9 +1,9 @@
 "use client";
 
 import Config from "@/components/admin/pages/config";
-import { withPermission } from '@/components/withPermission';
+import { withStrictPermission } from '@/components/withPermission';
 
-const ProtectedConfigPage = withPermission(Config);
+const ProtectedConfigPage = withStrictPermission(Config, '/dashboard/config');
 
 export default function ConfigurationPage() {
   return (
