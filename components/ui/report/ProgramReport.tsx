@@ -172,21 +172,50 @@ const ProgramReport: React.FC<ProgramReportProps> = ({
         commentData.program_id = programId;
       }
 
-      // Use the exact column names that match the unique index
-      let conflictTarget = '';
-      if (isStaffMode) {
-        conflictTarget = 'report_type,reference_id,month,"ofStaff"';
-      } else {
-        conflictTarget = 'report_type,reference_id,"ofStaff"';
+      // First, try to find existing record
+      let query = supabase
+        .from('report_comments')
+        .select('id')
+        .eq('report_type', 'program_item')
+        .eq('reference_id', commentKey)
+        .eq('ofStaff', isStaffMode);
+
+      if (isStaffMode && month) {
+        query = query.eq('month', month);
+      } else if (!isStaffMode && programId) {
+        query = query.eq('program_id', programId);
       }
 
-      const { error } = await supabase
-        .from('report_comments')
-        .upsert(commentData, { onConflict: conflictTarget });
+      const { data: existingRecord } = await query.single();
 
-      if (error) {
-        console.error('Upsert error:', error);
-        throw error;
+      let result;
+      if (existingRecord) {
+        if (!comment.trim()) {
+          // Delete record if comment is empty
+          result = await supabase
+            .from('report_comments')
+            .delete()
+            .eq('id', existingRecord.id);
+        } else {
+          // Update existing record
+          result = await supabase
+            .from('report_comments')
+            .update(commentData)
+            .eq('id', existingRecord.id);
+        }
+      } else if (comment.trim()) {
+        // Only insert new record if comment is not empty
+        result = await supabase
+          .from('report_comments')
+          .insert(commentData);
+      } else {
+        // No action needed for empty comment on non-existing record
+        result = { error: null };
+      }
+
+      if (result.error) {
+        console.error('Save error:', result.error);
+        throw result.error;
       }
 
       // Show success state

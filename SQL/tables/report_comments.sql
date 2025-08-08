@@ -16,16 +16,19 @@ create table public.report_comments (
 ) TABLESPACE pg_default;
 
 create index IF not exists idx_report_comments_lookup on public.report_comments using btree (report_type, reference_id, month) TABLESPACE pg_default;
+
 create index IF not exists idx_report_comments_program on public.report_comments using btree (program_id) TABLESPACE pg_default;
 
--- Create unique indexes for upsert operations
-create unique index IF not exists idx_report_comments_staff_unique 
-on public.report_comments (report_type, reference_id, month, "ofStaff")
-where "ofStaff" = true and month is not null;
+create unique INDEX IF not exists idx_report_comments_staff_unique on public.report_comments using btree (report_type, reference_id, month, "ofStaff") TABLESPACE pg_default
+where
+  (
+    ("ofStaff" = true)
+    and (month is not null)
+  );
 
-create unique index IF not exists idx_report_comments_program_unique 
-on public.report_comments (report_type, reference_id, "ofStaff")
-where "ofStaff" = false;
+create unique INDEX IF not exists idx_report_comments_program_unique on public.report_comments using btree (report_type, reference_id, "ofStaff") TABLESPACE pg_default
+where
+  ("ofStaff" = false);
 
 create trigger update_report_comments_updated_at BEFORE
 update on report_comments for EACH row

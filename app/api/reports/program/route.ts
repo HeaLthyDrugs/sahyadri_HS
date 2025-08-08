@@ -464,56 +464,12 @@ export async function POST(req: NextRequest) {
 
                   if (products.length === 0) return '';
 
-                  // Sort products based on package type
-                  let sortedProducts = [...products];
-                  if (packageType.toLowerCase() === 'normal') {
-                    // Helper function to normalize product names
-                    const normalizeProductName = (name: string): string => {
-                      return name.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
-                    };
-                    
-                    // Create normalized versions of CATERING_PRODUCT_ORDER for comparison
-                    const normalizedOrderMap = new Map();
-                    CATERING_PRODUCT_ORDER.forEach((name, index) => {
-                      normalizedOrderMap.set(normalizeProductName(name), index);
-                    });
-                    
-                    sortedProducts = sortedProducts.sort((a, b) => {
-                      // Exact matches first
-                      const indexA = CATERING_PRODUCT_ORDER.indexOf(a.name);
-                      const indexB = CATERING_PRODUCT_ORDER.indexOf(b.name);
-                      
-                      if (indexA !== -1 && indexB !== -1) return indexA - indexB;
-                      if (indexA !== -1) return -1;
-                      if (indexB !== -1) return 1;
-                      
-                      // Try normalized matching
-                      const normA = normalizeProductName(a.name);
-                      const normB = normalizeProductName(b.name);
-                      
-                      const normIndexA = normalizedOrderMap.get(normA);
-                      const normIndexB = normalizedOrderMap.get(normB);
-                      
-                      if (normIndexA !== undefined && normIndexB !== undefined) return normIndexA - normIndexB;
-                      if (normIndexA !== undefined) return -1;
-                      if (normIndexB !== undefined) return 1;
-                      
-                      // Partial matching
-                      for (let i = 0; i < CATERING_PRODUCT_ORDER.length; i++) {
-                        const orderNorm = normalizeProductName(CATERING_PRODUCT_ORDER[i]);
-                        
-                        // A contains order name or order name contains A
-                        const aContains = normA.includes(orderNorm) || orderNorm.includes(normA);
-                        const bContains = normB.includes(orderNorm) || orderNorm.includes(normB);
-                        
-                        if (aContains && !bContains) return -1;
-                        if (!aContains && bContains) return 1;
-                      }
-                      
-                      // Fallback to alphabetical
-                      return a.name.localeCompare(b.name);
-                    });
-                  }
+                  // Sort products by serve_item_no in ascending order
+                  const sortedProducts = [...products].sort((a, b) => {
+                    const serveA = a.serve_item_no || 999;
+                    const serveB = b.serve_item_no || 999;
+                    return serveA - serveB;
+                  });
 
                   // Only chunk normal package items
                   const shouldChunk = packageType.toLowerCase() === 'normal';
