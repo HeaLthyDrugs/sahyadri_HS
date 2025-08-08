@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { usePathname } from 'next/navigation';
 import { createClient } from '@/utils/supabase/client';
+import { checkPathPermission, hasStrictPermission } from '@/lib/permission-utils';
 
 interface Permission {
   role_id: string;
@@ -16,24 +17,7 @@ interface PermissionState {
   error: string | null;
 }
 
-// Map dashboard routes to permission paths
-const PERMISSION_PATH_MAP: Record<string, string> = {
-  '/dashboard': '/dashboard',
-  '/dashboard/users': '/dashboard/users',
-  '/dashboard/users/roles': '/dashboard/users/roles',
-  '/dashboard/users/permissions': '/dashboard/users/permissions',
-  '/dashboard/inventory/packages': '/dashboard/inventory/packages',
-  '/dashboard/inventory/products': '/dashboard/inventory/products',
-  '/dashboard/consumer/programs': '/dashboard/consumer/programs',
-  '/dashboard/consumer/participants': '/dashboard/consumer/participants',
-  '/dashboard/consumer/staff': '/dashboard/consumer/staff',
-  '/dashboard/billing/entries': '/dashboard/billing/entries',
-  '/dashboard/billing/invoice': '/dashboard/billing/invoice',
-  '/dashboard/billing/reports': '/dashboard/billing/reports',
-  '/dashboard/config': '/dashboard/config'
-};
-
-export function usePermissions() {
+export function usePermissions(specificPath?: string) {
   const [permissionState, setPermissionState] = useState<PermissionState>({
     loading: true,
     hasAccess: false,
@@ -57,6 +41,9 @@ export function usePermissions() {
           });
           return;
         }
+        
+        // Use specific path if provided, otherwise use current pathname
+        const currentPath = specificPath || pathname;
 
         // Get user's role
         const { data: profileData, error: profileError } = await supabase
@@ -106,18 +93,16 @@ export function usePermissions() {
           return;
         }
 
-        // Get the permission path for the current route
-        const permissionPath = PERMISSION_PATH_MAP[pathname] || pathname;
-
-        // Check specific page permission
-        const pagePermission = permissions?.find(
-          (p: Permission) => p.page_name === permissionPath
+        // Use strict permission checking - each page needs explicit permission
+        const { hasAccess, canEdit } = checkPathPermission(
+          permissions || [],
+          currentPath
         );
 
         setPermissionState({
           loading: false,
-          hasAccess: pagePermission?.can_view ?? false,
-          canEdit: pagePermission?.can_edit ?? false,
+          hasAccess,
+          canEdit,
           error: null
         });
 
@@ -133,7 +118,7 @@ export function usePermissions() {
     }
 
     checkPermissions();
-  }, [pathname, supabase]);
+  }, [specificPath || pathname, supabase]);
 
   return {
     ...permissionState,
