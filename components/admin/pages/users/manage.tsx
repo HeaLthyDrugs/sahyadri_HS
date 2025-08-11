@@ -371,7 +371,8 @@ export default function ManageUsersPage() {
   };
 
   return (
-    <div className="space-y-6">
+    <PermissionGuard>
+      <div className="space-y-6">
       {/* Header with Search and Add User */}
       <div className="flex justify-between items-center">
         <div className="relative w-64">
@@ -384,13 +385,15 @@ export default function ManageUsersPage() {
             className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
           />
         </div>
-        <button
-          onClick={() => setIsModalOpen(true)}
-          className="bg-amber-600 text-white px-4 py-2 rounded-lg hover:bg-amber-700 flex items-center gap-2"
-        >
-          <RiAddLine />
-          Add User
-        </button>
+        <EditGuard>
+          <button
+            onClick={() => setIsModalOpen(true)}
+            className="bg-amber-600 text-white px-4 py-2 rounded-lg hover:bg-amber-700 flex items-center gap-2"
+          >
+            <RiAddLine />
+            Add User
+          </button>
+        </EditGuard>
       </div>
 
       {/* Users Table */}
@@ -432,15 +435,17 @@ export default function ManageUsersPage() {
                     <div className="text-sm text-gray-500">
                       {showPasswordColumn[user.id] ? user.password : '••••••••'}
                     </div>
-                    <button
-                      onClick={() => setShowPasswordColumn(prev => ({
-                        ...prev,
-                        [user.id]: !prev[user.id]
-                      }))}
-                      className="text-gray-400 hover:text-gray-600"
-                    >
-                      {showPasswordColumn[user.id] ? <RiEyeOffLine className="w-4 h-4" /> : <RiEyeLine className="w-4 h-4" />}
-                    </button>
+                    <EditGuard>
+                      <button
+                        onClick={() => setShowPasswordColumn(prev => ({
+                          ...prev,
+                          [user.id]: !prev[user.id]
+                        }))}
+                        className="text-gray-400 hover:text-gray-600"
+                      >
+                        {showPasswordColumn[user.id] ? <RiEyeOffLine className="w-4 h-4" /> : <RiEyeLine className="w-4 h-4" />}
+                      </button>
+                    </EditGuard>
                   </div>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
@@ -555,30 +560,31 @@ export default function ManageUsersPage() {
       )}
 
       {/* Add/Edit User Modal */}
-      {isModalOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 w-full max-w-md">
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="text-xl font-semibold">
-                {editingUser ? "Edit User" : "Add New User"}
-              </h2>
-              <button
-                onClick={() => {
-                  setIsModalOpen(false);
-                  setEditingUser(null);
-                  setFormData({
-                    email: "",
-                    full_name: "",
-                    password: "",
-                    role_id: "",
-                    is_active: true,
-                  });
-                }}
-                className="text-gray-500 hover:text-gray-700"
-              >
-                <RiCloseLine className="w-6 h-6" />
-              </button>
-            </div>
+      <EditGuard>
+        {isModalOpen && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-lg p-6 w-full max-w-md">
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-xl font-semibold">
+                  {editingUser ? "Edit User" : "Add New User"}
+                </h2>
+                <button
+                  onClick={() => {
+                    setIsModalOpen(false);
+                    setEditingUser(null);
+                    setFormData({
+                      email: "",
+                      full_name: "",
+                      password: "",
+                      role_id: "",
+                      is_active: true,
+                    });
+                  }}
+                  className="text-gray-500 hover:text-gray-700"
+                >
+                  <RiCloseLine className="w-6 h-6" />
+                </button>
+              </div>
 
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
@@ -620,13 +626,15 @@ export default function ManageUsersPage() {
                     className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-amber-500 focus:outline-none focus:ring-amber-500"
                     required={!editingUser}
                   />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500"
-                  >
-                    {showPassword ? <RiEyeOffLine /> : <RiEyeLine />}
-                  </button>
+                  <EditGuard>
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500"
+                    >
+                      {showPassword ? <RiEyeOffLine /> : <RiEyeLine />}
+                    </button>
+                  </EditGuard>
                 </div>
               </div>
 
@@ -675,27 +683,29 @@ export default function ManageUsersPage() {
                   {isLoading ? "Saving..." : "Save"}
                 </button>
               </div>
-            </form>
+              </form>
+            </div>
           </div>
-        </div>
-      )}
+        )}
+      </EditGuard>
 
       {/* Delete Confirmation Modal */}
-      {isDeleteModalOpen && userToDelete && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 w-full max-w-md">
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="text-xl font-semibold text-gray-900">Delete User</h2>
-              <button
-                onClick={() => {
-                  setIsDeleteModalOpen(false);
-                  setUserToDelete(null);
-                }}
-                className="text-gray-500 hover:text-gray-700"
-              >
-                <RiCloseLine className="w-6 h-6" />
-              </button>
-            </div>
+      <EditGuard>
+        {isDeleteModalOpen && userToDelete && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-lg p-6 w-full max-w-md">
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-xl font-semibold text-gray-900">Delete User</h2>
+                <button
+                  onClick={() => {
+                    setIsDeleteModalOpen(false);
+                    setUserToDelete(null);
+                  }}
+                  className="text-gray-500 hover:text-gray-700"
+                >
+                  <RiCloseLine className="w-6 h-6" />
+                </button>
+              </div>
 
             <div className="mb-6">
               <div className="flex items-center gap-3 text-amber-600 bg-amber-50 px-4 py-3 rounded-lg mb-4">
@@ -723,10 +733,12 @@ export default function ManageUsersPage() {
               >
                 {isLoading ? "Deleting..." : "Delete User"}
               </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
-    </div>
+        )}
+      </EditGuard>
+      </div>
+    </PermissionGuard>
   );
 } 

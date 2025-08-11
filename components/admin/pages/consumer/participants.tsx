@@ -20,6 +20,7 @@ import { parse, unparse } from 'papaparse';
 import { supabase } from "@/lib/supabase";
 import Papa from 'papaparse';
 import * as XLSX from 'xlsx';
+import { PermissionGuard, EditGuard } from "@/components/PermissionGuard";
 
 interface Participant {
   id: string;
@@ -1238,64 +1239,67 @@ export function ParticipantsPage() {
   };
 
   return (
-    <div className="space-y-6">
+    <PermissionGuard>
+      <div className="space-y-6">
       <div className="flex flex-col gap-4">
-        <div className="flex flex-col sm:flex-row justify-end items-start sm:items-center gap-4">
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              onClick={handleExportCSV}
-              className="flex items-center gap-2 px-3 py-2 text-amber-600 bg-amber-50 rounded-lg hover:bg-amber-100 transition-colors text-sm"
-            >
-              <RiUploadLine className="w-4 h-4" />
-              Export
-            </button>
-
-            <div className="relative">
-              <input
-                type="file"
-                accept=".csv,.xls,.xlsx"
-                onChange={handleImportCSV}
-                className="hidden"
-                id="csv-upload"
-              />
-              <label
-                htmlFor="csv-upload"
-                className={`flex items-center gap-2 px-3 py-2 text-amber-600 ${
-                  selectedProgramId === 'all' ? 'bg-amber-50/50 cursor-not-allowed opacity-70' : 'bg-amber-50 hover:bg-amber-100 cursor-pointer'
-                } rounded-lg transition-colors text-sm`}
-                onClick={(e) => {
-                  if (selectedProgramId === 'all') {
-                    e.preventDefault();
-                    toast.error('Please select a specific program before importing participants');
-                  }
-                }}
+        <EditGuard>
+          <div className="flex flex-col sm:flex-row justify-end items-start sm:items-center gap-4">
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                onClick={handleExportCSV}
+                className="flex items-center gap-2 px-3 py-2 text-amber-600 bg-amber-50 rounded-lg hover:bg-amber-100 transition-colors text-sm"
               >
-                <RiDownloadLine className="w-4 h-4" />
-                Import
-              </label>
-            </div>
+                <RiUploadLine className="w-4 h-4" />
+                Export
+              </button>
 
-            <button
-              onClick={() => {
-                setFormErrors({});
-                setFormData({
-                  attendee_name: "",
-                  program_id: "all",
-                  security_checkin: "",
-                  reception_checkin: "",
-                  reception_checkout: "",
-                  security_checkout: "",
-                  type: "participant",
-                });
-                setIsModalOpen(true);
-              }}
-              className="flex items-center gap-2 px-3 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors ml-2 text-sm"
-            >
-              <RiAddLine className="w-4 h-4" />
-              Add Participant
-            </button>
+              <div className="relative">
+                <input
+                  type="file"
+                  accept=".csv,.xls,.xlsx"
+                  onChange={handleImportCSV}
+                  className="hidden"
+                  id="csv-upload"
+                />
+                <label
+                  htmlFor="csv-upload"
+                  className={`flex items-center gap-2 px-3 py-2 text-amber-600 ${
+                    selectedProgramId === 'all' ? 'bg-amber-50/50 cursor-not-allowed opacity-70' : 'bg-amber-50 hover:bg-amber-100 cursor-pointer'
+                  } rounded-lg transition-colors text-sm`}
+                  onClick={(e) => {
+                    if (selectedProgramId === 'all') {
+                      e.preventDefault();
+                      toast.error('Please select a specific program before importing participants');
+                    }
+                  }}
+                >
+                  <RiDownloadLine className="w-4 h-4" />
+                  Import
+                </label>
+              </div>
+
+              <button
+                onClick={() => {
+                  setFormErrors({});
+                  setFormData({
+                    attendee_name: "",
+                    program_id: "all",
+                    security_checkin: "",
+                    reception_checkin: "",
+                    reception_checkout: "",
+                    security_checkout: "",
+                    type: "participant",
+                  });
+                  setIsModalOpen(true);
+                }}
+                className="flex items-center gap-2 px-3 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors ml-2 text-sm"
+              >
+                <RiAddLine className="w-4 h-4" />
+                Add Participant
+              </button>
+            </div>
           </div>
-        </div>
+        </EditGuard>
 
         <div className="flex flex-wrap items-center gap-4">
           <div className="flex items-center gap-2 bg-white rounded-lg shadow px-3 py-2 w-full sm:w-auto">
@@ -1391,14 +1395,16 @@ export function ParticipantsPage() {
         </div>
 
         <div className="flex items-center gap-4">
-          <button
-            onClick={() => setIsDeleteAllModalOpen(true)}
-            className="flex items-center gap-2 px-3 py-2 text-red-600 bg-red-50 rounded-lg hover:bg-red-100 transition-colors text-sm"
-            disabled={participants.length === 0}
-          >
-            <RiDeleteBinLine className="w-4 h-4" />
-            Delete All
-          </button>
+          <EditGuard>
+            <button
+              onClick={() => setIsDeleteAllModalOpen(true)}
+              className="flex items-center gap-2 px-3 py-2 text-red-600 bg-red-50 rounded-lg hover:bg-red-100 transition-colors text-sm"
+              disabled={participants.length === 0}
+            >
+              <RiDeleteBinLine className="w-4 h-4" />
+              Delete All
+            </button>
+          </EditGuard>
 
           <div className="flex items-center gap-2 text-sm text-gray-500">
             <span>Show</span>
@@ -1470,9 +1476,11 @@ export function ParticipantsPage() {
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Duration
                     </th>
-                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Actions
-                    </th>
+                    <EditGuard>
+                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Actions
+                      </th>
+                    </EditGuard>
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
@@ -1545,22 +1553,24 @@ export function ParticipantsPage() {
                           </span>
                         )}
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-2">
-                        <button
-                          onClick={() => handleEdit(participant)}
-                          className="text-amber-600 hover:text-amber-900"
-                          title="Edit participant"
-                        >
-                          <RiEditLine className="w-5 h-5" />
-                        </button>
-                        <button
-                          onClick={() => openDeleteModal(participant)}
-                          className="text-red-600 hover:text-red-900"
-                          title="Delete participant"
-                        >
-                          <RiDeleteBinLine className="w-5 h-5" />
-                        </button>
-                      </td>
+                      <EditGuard>
+                        <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-2">
+                          <button
+                            onClick={() => handleEdit(participant)}
+                            className="text-amber-600 hover:text-amber-900"
+                            title="Edit participant"
+                          >
+                            <RiEditLine className="w-5 h-5" />
+                          </button>
+                          <button
+                            onClick={() => openDeleteModal(participant)}
+                            className="text-red-600 hover:text-red-900"
+                            title="Delete participant"
+                          >
+                            <RiDeleteBinLine className="w-5 h-5" />
+                          </button>
+                        </td>
+                      </EditGuard>
                     </tr>
                   ))}
                 </tbody>
@@ -1586,22 +1596,24 @@ export function ParticipantsPage() {
                         {participant.type.charAt(0).toUpperCase() + participant.type.slice(1)}
                       </span>
                     </div>
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => handleEdit(participant)}
-                        className="text-amber-600 hover:text-amber-900"
-                        title="Edit participant"
-                      >
-                        <RiEditLine className="w-5 h-5" />
-                      </button>
-                      <button
-                        onClick={() => openDeleteModal(participant)}
-                        className="text-red-600 hover:text-red-900"
-                        title="Delete participant"
-                      >
-                        <RiDeleteBinLine className="w-5 h-5" />
-                      </button>
-                    </div>
+                    <EditGuard>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => handleEdit(participant)}
+                          className="text-amber-600 hover:text-amber-900"
+                          title="Edit participant"
+                        >
+                          <RiEditLine className="w-5 h-5" />
+                        </button>
+                        <button
+                          onClick={() => openDeleteModal(participant)}
+                          className="text-red-600 hover:text-red-900"
+                          title="Delete participant"
+                        >
+                          <RiDeleteBinLine className="w-5 h-5" />
+                        </button>
+                      </div>
+                    </EditGuard>
                   </div>
 
                   {participant.program?.name && (
@@ -1687,31 +1699,32 @@ export function ParticipantsPage() {
         </div>
       )}
 
-      {isModalOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 w-full max-w-md">
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="text-xl font-semibold">
-                {editingParticipant ? 'Edit Participant' : 'Add New Participant'}
-              </h2>
-              <button
-                onClick={() => {
-                  setIsModalOpen(false);
-                  setEditingParticipant(null);
-                  setFormErrors({});
-                  setFormData({
-                    attendee_name: "",
-                    program_id: "all",
-                    reception_checkin: "",
-                    reception_checkout: "",
-                    type: "participant",
-                  });
-                }}
-                className="text-gray-500 hover:text-gray-700"
-              >
-                <RiCloseLine className="w-6 h-6" />
-              </button>
-            </div>
+      <EditGuard>
+        {isModalOpen && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-lg p-6 w-full max-w-md">
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-xl font-semibold">
+                  {editingParticipant ? 'Edit Participant' : 'Add New Participant'}
+                </h2>
+                <button
+                  onClick={() => {
+                    setIsModalOpen(false);
+                    setEditingParticipant(null);
+                    setFormErrors({});
+                    setFormData({
+                      attendee_name: "",
+                      program_id: "all",
+                      reception_checkin: "",
+                      reception_checkout: "",
+                      type: "participant",
+                    });
+                  }}
+                  className="text-gray-500 hover:text-gray-700"
+                >
+                  <RiCloseLine className="w-6 h-6" />
+                </button>
+              </div>
 
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
@@ -1833,22 +1846,24 @@ export function ParticipantsPage() {
                 </button>
               </div>
             </form>
-          </div>
-        </div>
-      )}
-
-      {isDeleteAllModalOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 w-full max-w-md">
-            <div className="flex items-center mb-4">
-              <RiAlertLine className="w-6 h-6 text-red-600 mr-2" />
-              <h2 className="text-xl font-semibold text-gray-900">
-                {selectedProgramId === 'all'
-                  ? `Delete All Participants - ${format(new Date(selectedMonth), 'MMMM yyyy')}`
-                  : `Delete All Participants - ${programs.find(p => p.id === selectedProgramId)?.name}`
-                }
-              </h2>
             </div>
+          </div>
+        )}
+      </EditGuard>
+
+      <EditGuard>
+        {isDeleteAllModalOpen && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-lg p-6 w-full max-w-md">
+              <div className="flex items-center mb-4">
+                <RiAlertLine className="w-6 h-6 text-red-600 mr-2" />
+                <h2 className="text-xl font-semibold text-gray-900">
+                  {selectedProgramId === 'all'
+                    ? `Delete All Participants - ${format(new Date(selectedMonth), 'MMMM yyyy')}`
+                    : `Delete All Participants - ${programs.find(p => p.id === selectedProgramId)?.name}`
+                  }
+                </h2>
+              </div>
 
             <p className="text-gray-500 mb-2">
               {selectedProgramId === 'all'
@@ -1880,15 +1895,16 @@ export function ParticipantsPage() {
         </div>
       )}
 
-      {isDeleteModalOpen && participantToDelete && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 w-full max-w-md">
-            <div className="flex items-center mb-4">
-              <RiAlertLine className="w-6 h-6 text-red-600 mr-2" />
-              <h2 className="text-xl font-semibold text-gray-900">
-                Delete Participant
-              </h2>
-            </div>
+      <EditGuard>
+        {isDeleteModalOpen && participantToDelete && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-lg p-6 w-full max-w-md">
+              <div className="flex items-center mb-4">
+                <RiAlertLine className="w-6 h-6 text-red-600 mr-2" />
+                <h2 className="text-xl font-semibold text-gray-900">
+                  Delete Participant
+                </h2>
+              </div>
 
             <p className="text-gray-500 mb-2">
               Are you sure you want to delete <span className="font-medium">{participantToDelete.attendee_name}</span>?
@@ -1915,10 +1931,12 @@ export function ParticipantsPage() {
               >
                 {isLoading ? 'Deleting...' : 'Delete'}
               </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
-    </div>
+        )}
+      </EditGuard>
+      </div>
+    </PermissionGuard>
   );
 }

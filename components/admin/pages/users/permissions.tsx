@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { createClient } from "@/utils/supabase/client";
 import { RiSaveLine, RiLoader4Line, RiCheckLine, RiErrorWarningLine, RiArrowRightSLine, RiArrowDownSLine, RiArrowUpSLine } from "react-icons/ri";
 import { useToast } from "@/hooks/use-toast";
+import { PermissionGuard, EditGuard } from "@/components/PermissionGuard";
 
 interface Role {
   id: string;
@@ -331,7 +332,8 @@ export default function PermissionsPage() {
   const parentItems = NAVIGATION_STRUCTURE.filter(item => item.isParent);
 
   return (
-    <div className="space-y-6">
+    <PermissionGuard requiredPermission="/dashboard/users/permissions">
+      <div className="space-y-6">
       {/* Role Selection */}
       <div className="mb-8">
         <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -410,17 +412,31 @@ export default function PermissionsPage() {
                         const isIndeterminate = hasChildren ? parentState?.indeterminate : false;
                         
                         return (
-                          <input
-                            type="checkbox"
-                            id={`view-${parent.id}`}
-                            checked={isChecked}
-                            ref={(el) => {
-                              if (el) el.indeterminate = isIndeterminate;
-                            }}
-                            onChange={(e) => handlePermissionChange(parent.path, 'can_view', e.target.checked)}
-                            className="h-4 w-4 text-amber-600 focus:ring-amber-500 border-gray-300 rounded"
-                            onClick={(e) => e.stopPropagation()}
-                          />
+                          <EditGuard fallback={
+                            <input
+                              type="checkbox"
+                              id={`view-${parent.id}`}
+                              checked={isChecked}
+                              ref={(el) => {
+                                if (el) el.indeterminate = isIndeterminate;
+                              }}
+                              className="h-4 w-4 text-amber-600 focus:ring-amber-500 border-gray-300 rounded"
+                              disabled
+                              onClick={(e) => e.stopPropagation()}
+                            />
+                          }>
+                            <input
+                              type="checkbox"
+                              id={`view-${parent.id}`}
+                              checked={isChecked}
+                              ref={(el) => {
+                                if (el) el.indeterminate = isIndeterminate;
+                              }}
+                              onChange={(e) => handlePermissionChange(parent.path, 'can_view', e.target.checked)}
+                              className="h-4 w-4 text-amber-600 focus:ring-amber-500 border-gray-300 rounded"
+                              onClick={(e) => e.stopPropagation()}
+                            />
+                          </EditGuard>
                         );
                       })()}
                       <label htmlFor={`view-${parent.id}`} className="text-sm text-gray-700" onClick={(e) => e.stopPropagation()}>
@@ -437,18 +453,32 @@ export default function PermissionsPage() {
                         const canEdit = hasChildren ? (viewState?.someSelected || false) : (parentPermission?.can_view || false);
                         
                         return (
-                          <input
-                            type="checkbox"
-                            id={`edit-${parent.id}`}
-                            checked={isChecked}
-                            ref={(el) => {
-                              if (el) el.indeterminate = isIndeterminate;
-                            }}
-                            onChange={(e) => handlePermissionChange(parent.path, 'can_edit', e.target.checked)}
-                            className="h-4 w-4 text-amber-600 focus:ring-amber-500 border-gray-300 rounded"
-                            disabled={!canEdit}
-                            onClick={(e) => e.stopPropagation()}
-                          />
+                          <EditGuard fallback={
+                            <input
+                              type="checkbox"
+                              id={`edit-${parent.id}`}
+                              checked={isChecked}
+                              ref={(el) => {
+                                if (el) el.indeterminate = isIndeterminate;
+                              }}
+                              className="h-4 w-4 text-amber-600 focus:ring-amber-500 border-gray-300 rounded"
+                              disabled
+                              onClick={(e) => e.stopPropagation()}
+                            />
+                          }>
+                            <input
+                              type="checkbox"
+                              id={`edit-${parent.id}`}
+                              checked={isChecked}
+                              ref={(el) => {
+                                if (el) el.indeterminate = isIndeterminate;
+                              }}
+                              onChange={(e) => handlePermissionChange(parent.path, 'can_edit', e.target.checked)}
+                              className="h-4 w-4 text-amber-600 focus:ring-amber-500 border-gray-300 rounded"
+                              disabled={!canEdit}
+                              onClick={(e) => e.stopPropagation()}
+                            />
+                          </EditGuard>
                         );
                       })()}
                       <label htmlFor={`edit-${parent.id}`} className="text-sm text-gray-700" onClick={(e) => e.stopPropagation()}>
@@ -477,27 +507,47 @@ export default function PermissionsPage() {
 
                           <div className="flex items-center space-x-6">
                             <div className="flex items-center space-x-2">
-                              <input
-                                type="checkbox"
-                                id={`view-${child.id}`}
-                                checked={childPermission?.can_view || false}
-                                onChange={(e) => handlePermissionChange(child.path, 'can_view', e.target.checked)}
-                                className="h-4 w-4 text-amber-600 focus:ring-amber-500 border-gray-300 rounded"
-                              />
+                              <EditGuard fallback={
+                                <input
+                                  type="checkbox"
+                                  id={`view-${child.id}`}
+                                  checked={childPermission?.can_view || false}
+                                  className="h-4 w-4 text-amber-600 focus:ring-amber-500 border-gray-300 rounded"
+                                  disabled
+                                />
+                              }>
+                                <input
+                                  type="checkbox"
+                                  id={`view-${child.id}`}
+                                  checked={childPermission?.can_view || false}
+                                  onChange={(e) => handlePermissionChange(child.path, 'can_view', e.target.checked)}
+                                  className="h-4 w-4 text-amber-600 focus:ring-amber-500 border-gray-300 rounded"
+                                />
+                              </EditGuard>
                               <label htmlFor={`view-${child.id}`} className="text-sm text-gray-700">
                                 View
                               </label>
                             </div>
 
                             <div className="flex items-center space-x-2">
-                              <input
-                                type="checkbox"
-                                id={`edit-${child.id}`}
-                                checked={childPermission?.can_edit || false}
-                                onChange={(e) => handlePermissionChange(child.path, 'can_edit', e.target.checked)}
-                                className="h-4 w-4 text-amber-600 focus:ring-amber-500 border-gray-300 rounded"
-                                disabled={!childPermission?.can_view}
-                              />
+                              <EditGuard fallback={
+                                <input
+                                  type="checkbox"
+                                  id={`edit-${child.id}`}
+                                  checked={childPermission?.can_edit || false}
+                                  className="h-4 w-4 text-amber-600 focus:ring-amber-500 border-gray-300 rounded"
+                                  disabled
+                                />
+                              }>
+                                <input
+                                  type="checkbox"
+                                  id={`edit-${child.id}`}
+                                  checked={childPermission?.can_edit || false}
+                                  onChange={(e) => handlePermissionChange(child.path, 'can_edit', e.target.checked)}
+                                  className="h-4 w-4 text-amber-600 focus:ring-amber-500 border-gray-300 rounded"
+                                  disabled={!childPermission?.can_view}
+                                />
+                              </EditGuard>
                               <label htmlFor={`edit-${child.id}`} className="text-sm text-gray-700">
                                 Edit
                               </label>
@@ -515,25 +565,28 @@ export default function PermissionsPage() {
       </div>
 
       {/* Save Button */}
-      <div className="flex justify-end">
-        <button
-          onClick={handleSavePermissions}
-          disabled={isSaving}
-          className="flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-amber-500 disabled:opacity-50 transition-colors duration-200"
-        >
-          {isSaving ? (
-            <>
-              <RiLoader4Line className="w-5 h-5 animate-spin" />
-              Saving...
-            </>
-          ) : (
-            <>
-              <RiSaveLine className="w-5 h-5" />
-              Save Permissions
-            </>
-          )}
-        </button>
+      <EditGuard>
+        <div className="flex justify-end">
+          <button
+            onClick={handleSavePermissions}
+            disabled={isSaving}
+            className="flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-amber-500 disabled:opacity-50 transition-colors duration-200"
+          >
+            {isSaving ? (
+              <>
+                <RiLoader4Line className="w-5 h-5 animate-spin" />
+                Saving...
+              </>
+            ) : (
+              <>
+                <RiSaveLine className="w-5 h-5" />
+                Save Permissions
+              </>
+            )}
+          </button>
+        </div>
+      </EditGuard>
       </div>
-    </div>
+    </PermissionGuard>
   );
 } 

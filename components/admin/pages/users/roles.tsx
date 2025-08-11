@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { createClient } from "@/utils/supabase/client";
 import { RiAddLine, RiEditLine, RiDeleteBinLine } from "react-icons/ri";
 import { toast } from "@/hooks/use-toast";
+import { PermissionGuard, EditGuard } from "@/components/PermissionGuard";
 
 interface Role {
   id: string;
@@ -196,85 +197,96 @@ export default function RolesPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <PermissionGuard>
+      <div className="space-y-6">
       {/* Add Role Form */}
-      <form onSubmit={handleAddRole} className="mb-8">
-        <div className="flex gap-4">
-          <input
-            type="text"
-            value={newRole}
-            onChange={(e) => setNewRole(e.target.value)}
-            placeholder="Enter role name"
-            className="flex-1 rounded-lg border border-gray-300 px-4 py-2 focus:outline-none focus:ring-2 focus:ring-amber-500"
-            disabled={isSubmitting}
-          />
-          <button
-            type="submit"
-            className="bg-amber-600 text-white px-6 py-2 rounded-lg hover:bg-amber-700 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-            disabled={isSubmitting || !newRole.trim()}
-          >
-            <RiAddLine /> Add Role
-          </button>
-        </div>
-      </form>
+      <EditGuard>
+        <form onSubmit={handleAddRole} className="mb-8">
+          <div className="flex gap-4">
+            <input
+              type="text"
+              value={newRole}
+              onChange={(e) => setNewRole(e.target.value)}
+              placeholder="Enter role name"
+              className="flex-1 rounded-lg border border-gray-300 px-4 py-2 focus:outline-none focus:ring-2 focus:ring-amber-500"
+              disabled={isSubmitting}
+            />
+            <button
+              type="submit"
+              className="bg-amber-600 text-white px-6 py-2 rounded-lg hover:bg-amber-700 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              disabled={isSubmitting || !newRole.trim()}
+            >
+              <RiAddLine /> Add Role
+            </button>
+          </div>
+        </form>
+      </EditGuard>
 
       {/* Roles List */}
       <div className="bg-white rounded-lg shadow">
         <div className="divide-y divide-gray-200">
           {roles.map((role) => (
             <div key={role.id} className="p-4 flex items-center justify-between">
-              {editingRole?.id === role.id ? (
-                <form onSubmit={handleUpdateRole} className="flex-1 flex gap-4">
-                  <input
-                    type="text"
-                    value={editingRole.name}
-                    onChange={(e) => setEditingRole({ ...editingRole, name: e.target.value })}
-                    className="flex-1 rounded-lg border border-gray-300 px-4 py-2 focus:outline-none focus:ring-2 focus:ring-amber-500"
-                    disabled={isSubmitting}
-                  />
-                  <button
-                    type="submit"
-                    className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                    disabled={isSubmitting || !editingRole.name.trim()}
-                  >
-                    Save
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setEditingRole(null)}
-                    className="bg-gray-500 text-white px-4 py-2 rounded-lg hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    Cancel
-                  </button>
-                </form>
-              ) : (
-                <>
-                  <div>
-                    <h3 className="text-lg font-medium text-gray-900">{role.name}</h3>
-                    <p className="text-sm text-gray-500">{role.description}</p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => setEditingRole(role)}
-                      className="text-amber-600 hover:text-amber-900"
+              <EditGuard fallback={
+                <div>
+                  <h3 className="text-lg font-medium text-gray-900">{role.name}</h3>
+                  <p className="text-sm text-gray-500">{role.description}</p>
+                </div>
+              }>
+                {editingRole?.id === role.id ? (
+                  <form onSubmit={handleUpdateRole} className="flex-1 flex gap-4">
+                    <input
+                      type="text"
+                      value={editingRole.name}
+                      onChange={(e) => setEditingRole({ ...editingRole, name: e.target.value })}
+                      className="flex-1 rounded-lg border border-gray-300 px-4 py-2 focus:outline-none focus:ring-2 focus:ring-amber-500"
                       disabled={isSubmitting}
+                    />
+                    <button
+                      type="submit"
+                      className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                      disabled={isSubmitting || !editingRole.name.trim()}
                     >
-                      <RiEditLine className="w-5 h-5" />
+                      Save
                     </button>
                     <button
-                      onClick={() => handleDeleteRole(role.id)}
-                      className="text-red-600 hover:text-red-900"
-                      disabled={isSubmitting}
+                      type="button"
+                      onClick={() => setEditingRole(null)}
+                      className="bg-gray-500 text-white px-4 py-2 rounded-lg hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                      <RiDeleteBinLine className="w-5 h-5" />
+                      Cancel
                     </button>
-                  </div>
-                </>
-              )}
+                  </form>
+                ) : (
+                  <>
+                    <div>
+                      <h3 className="text-lg font-medium text-gray-900">{role.name}</h3>
+                      <p className="text-sm text-gray-500">{role.description}</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => setEditingRole(role)}
+                        className="text-amber-600 hover:text-amber-900"
+                        disabled={isSubmitting}
+                      >
+                        <RiEditLine className="w-5 h-5" />
+                      </button>
+                      <button
+                        onClick={() => handleDeleteRole(role.id)}
+                        className="text-red-600 hover:text-red-900"
+                        disabled={isSubmitting}
+                      >
+                        <RiDeleteBinLine className="w-5 h-5" />
+                      </button>
+                    </div>
+                  </>
+                )}
+              </EditGuard>
             </div>
           ))}
         </div>
       </div>
-    </div>
+      </div>
+    </PermissionGuard>
   );
 } 

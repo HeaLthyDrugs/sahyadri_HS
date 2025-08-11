@@ -6,6 +6,7 @@ import { RiDownloadLine, RiPrinterLine } from 'react-icons/ri';
 import { toast } from 'react-hot-toast';
 import LoadingSpinner from '../LoadingSpinner';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
+import { EditGuard } from '@/components/PermissionGuard';
 
 interface PackageItem {
   productName: string;
@@ -113,28 +114,25 @@ const ProgramReport: React.FC<ProgramReportProps> = ({
   // Fetch existing comments when component mounts
   useEffect(() => {
     const fetchComments = async () => {
+      if ((!isStaffMode && !programId) || (isStaffMode && !month)) return;
+      
       try {
-        // Use report_comments table instead of program_item_comments
-        const query = supabase
+        let query = supabase
           .from('report_comments')
-          .select('reference_id, report_type, comment')
+          .select('reference_id, comment')
           .eq('report_type', 'program_item')
-          .eq('ofStaff', isStaffMode ? true : false);
+          .eq('ofStaff', isStaffMode);
           
-        // For staff mode, filter by month
-        if (isStaffMode && month) {
-          query.eq('month', month);
-        } else if (!isStaffMode && programId) {
-          // For regular program reports, filter by program ID
-          query.eq('program_id', programId);
+        if (isStaffMode) {
+          query = query.eq('month', month);
+        } else {
+          query = query.eq('program_id', programId);
         }
           
         const { data, error } = await query;
-
         if (error) throw error;
 
-        const commentMap = data.reduce((acc, item) => {
-          // The reference_id format is "packageType:productName"
+        const commentMap = (data || []).reduce((acc, item) => {
           acc[item.reference_id] = item.comment;
           return acc;
         }, {} as { [key: string]: string });
@@ -142,7 +140,6 @@ const ProgramReport: React.FC<ProgramReportProps> = ({
         setComments(commentMap);
       } catch (error) {
         console.error('Error fetching comments:', error);
-        toast.error('Failed to load comments');
       }
     };
 
@@ -239,12 +236,21 @@ const ProgramReport: React.FC<ProgramReportProps> = ({
     const commentKey = `${packageType}:${productName}`;
     setComments(prev => ({ ...prev, [commentKey]: comment }));
 
-    // Debounce the save operation
-    const timeoutId = setTimeout(() => {
-      saveComment(packageType, productName, comment);
-    }, 1000);
+    // Clear existing timeout
+    if (window.commentTimeouts?.[commentKey]) {
+      clearTimeout(window.commentTimeouts[commentKey]);
+    }
 
-    return () => clearTimeout(timeoutId);
+    // Initialize timeouts object if it doesn't exist
+    if (!window.commentTimeouts) {
+      window.commentTimeouts = {};
+    }
+
+    // Debounce the save operation
+    window.commentTimeouts[commentKey] = setTimeout(() => {
+      saveComment(packageType, productName, comment);
+      delete window.commentTimeouts[commentKey];
+    }, 1500);
   };
 
   // Get all unique dates from all items
@@ -692,37 +698,43 @@ const ProgramReport: React.FC<ProgramReportProps> = ({
                                   ₹{item.total.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                                 </td>
                                 <td className="px-1.5 py-1 border-l border-gray-200">
-                                  <div className="relative">
-                                    <textarea
-                                      value={comments[`${packageType}:${item.productName}`] || ''}
-                                      onChange={(e) => handleCommentChange(packageType, item.productName, e.target.value)}
-                                      placeholder="Add comment..."
-                                      className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-amber-500 focus:border-amber-500 resize-none pr-6"
-                                      rows={1}
-                                      style={{ minHeight: '2rem' }}
-                                    />
-                                    <div className="absolute right-2 top-1/2 -translate-y-1/2 transition-opacity duration-200">
-                                      {savingStates[`${packageType}:${item.productName}`] && (
-                                        <LoadingSpinner size="sm" className="text-amber-400 opacity-60 w-3 h-3" />
-                                      )}
-                                      {savedStates[`${packageType}:${item.productName}`] && (
-                                        <svg
-                                          className="w-3 h-3 text-green-500 opacity-60"
-                                          fill="none"
-                                          stroke="currentColor"
-                                          viewBox="0 0 24 24"
-                                          xmlns="http://www.w3.org/2000/svg"
-                                        >
-                                          <path
-                                            strokeLinecap="round"
-                                            strokeLinejoin="round"
-                                            strokeWidth={2}
-                                            d="M5 13l4 4L19 7"
-                                          />
-                                        </svg>
-                                      )}
+                                  <EditGuard fallback={
+                                    <div className="w-full px-2 py-1 text-xs text-gray-600 min-h-[2rem] flex items-center">
+                                      {comments[`${packageType}:${item.productName}`] || '-'}
                                     </div>
-                                  </div>
+                                  }>
+                                    <div className="relative">
+                                      <textarea
+                                        value={comments[`${packageType}:${item.productName}`] || ''}
+                                        onChange={(e) => handleCommentChange(packageType, item.productName, e.target.value)}
+                                        placeholder="Add comment..."
+                                        className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-amber-500 focus:border-amber-500 resize-none pr-6"
+                                        rows={1}
+                                        style={{ minHeight: '2rem' }}
+                                      />
+                                      <div className="absolute right-2 top-1/2 -translate-y-1/2 transition-opacity duration-200">
+                                        {savingStates[`${packageType}:${item.productName}`] && (
+                                          <LoadingSpinner size="sm" className="text-amber-400 opacity-60 w-3 h-3" />
+                                        )}
+                                        {savedStates[`${packageType}:${item.productName}`] && (
+                                          <svg
+                                            className="w-3 h-3 text-green-500 opacity-60"
+                                            fill="none"
+                                            stroke="currentColor"
+                                            viewBox="0 0 24 24"
+                                            xmlns="http://www.w3.org/2000/svg"
+                                          >
+                                            <path
+                                              strokeLinecap="round"
+                                              strokeLinejoin="round"
+                                              strokeWidth={2}
+                                              d="M5 13l4 4L19 7"
+                                            />
+                                          </svg>
+                                        )}
+                                      </div>
+                                    </div>
+                                  </EditGuard>
                                 </td>
                               </tr>
                             );

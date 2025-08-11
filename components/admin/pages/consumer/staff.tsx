@@ -39,6 +39,7 @@ import {
 import { createClientComponentClient } from "@supabase/auth-helpers-nextjs";
 import { toast } from "@/hooks/use-toast";
 import { format } from 'date-fns';
+import { PermissionGuard, EditGuard } from "@/components/PermissionGuard";
 
 interface StaffType {
   id: string;
@@ -463,18 +464,21 @@ export default function StaffPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <PermissionGuard>
+      <div className="space-y-6">
       {/* Header with Actions */}
       <div className="flex flex-col gap-4">
-        <div className="flex justify-end">
-          <Button
-            onClick={() => setIsAddingStaff(true)}
-            className="flex items-center gap-2 bg-amber-600 text-white hover:bg-amber-700"
-          >
-            <RiAddLine className="w-4 h-4" />
-            Add Staff Member
-          </Button>
-        </div>
+        <EditGuard>
+          <div className="flex justify-end">
+            <Button
+              onClick={() => setIsAddingStaff(true)}
+              className="flex items-center gap-2 bg-amber-600 text-white hover:bg-amber-700"
+            >
+              <RiAddLine className="w-4 h-4" />
+              Add Staff Member
+            </Button>
+          </div>
+        </EditGuard>
 
         {/* Search and Filter Controls */}
         <div className="flex flex-wrap items-center gap-4">
@@ -562,9 +566,11 @@ export default function StaffPage() {
                     <TableHead className="w-[120px] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Comments
                     </TableHead>
-                    <TableHead className="w-[100px] px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Actions
-                    </TableHead>
+                    <EditGuard>
+                      <TableHead className="w-[100px] px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Actions
+                      </TableHead>
+                    </EditGuard>
                   </TableRow>
                 </TableHeader>
                 <TableBody className="bg-white divide-y divide-gray-200">
@@ -603,37 +609,39 @@ export default function StaffPage() {
                           <span>{member.comments?.length || 0}</span>
                         </Button>
                       </TableCell>
-                      <TableCell className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                        <div className="flex justify-end items-center gap-2">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-8 w-8 p-0 text-amber-600 hover:text-amber-700 hover:bg-amber-50"
-                            onClick={() => {
-                              setSelectedStaff(member);
-                              setNewStaff({
-                                name: member.name,
-                                type_id: member.type_id,
-                                organisation: member.organisation,
-                              });
-                              setIsAddingStaff(true);
-                            }}
-                          >
-                            <RiEditLine className="w-4 h-4" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-8 w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
-                            onClick={() => {
-                              setStaffToDelete(member);
-                              setIsDeleteModalOpen(true);
-                            }}
-                          >
-                            <RiDeleteBinLine className="w-4 h-4" />
-                          </Button>
-                        </div>
-                      </TableCell>
+                      <EditGuard>
+                        <TableCell className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                          <div className="flex justify-end items-center gap-2">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-8 w-8 p-0 text-amber-600 hover:text-amber-700 hover:bg-amber-50"
+                              onClick={() => {
+                                setSelectedStaff(member);
+                                setNewStaff({
+                                  name: member.name,
+                                  type_id: member.type_id,
+                                  organisation: member.organisation,
+                                });
+                                setIsAddingStaff(true);
+                              }}
+                            >
+                              <RiEditLine className="w-4 h-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-8 w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
+                              onClick={() => {
+                                setStaffToDelete(member);
+                                setIsDeleteModalOpen(true);
+                              }}
+                            >
+                              <RiDeleteBinLine className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </EditGuard>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -666,35 +674,37 @@ export default function StaffPage() {
                       <RiMessageLine className="w-4 h-4" />
                       {member.comments?.length || 0} Comments
                     </Button>
-                    <div className="flex items-center gap-2">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-8 w-8 p-0 text-amber-600 hover:text-amber-700 hover:bg-amber-50"
-                        onClick={() => {
-                          setSelectedStaff(member);
-                          setNewStaff({
-                            name: member.name,
-                            type_id: member.type_id,
-                            organisation: member.organisation,
-                          });
-                          setIsAddingStaff(true);
-                        }}
-                      >
-                        <RiEditLine className="w-4 h-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-8 w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
-                        onClick={() => {
-                          setStaffToDelete(member);
-                          setIsDeleteModalOpen(true);
-                        }}
-                      >
-                        <RiDeleteBinLine className="w-4 h-4" />
-                      </Button>
-                    </div>
+                    <EditGuard>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 w-8 p-0 text-amber-600 hover:text-amber-700 hover:bg-amber-50"
+                          onClick={() => {
+                            setSelectedStaff(member);
+                            setNewStaff({
+                              name: member.name,
+                              type_id: member.type_id,
+                              organisation: member.organisation,
+                            });
+                            setIsAddingStaff(true);
+                          }}
+                        >
+                          <RiEditLine className="w-4 h-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
+                          onClick={() => {
+                            setStaffToDelete(member);
+                            setIsDeleteModalOpen(true);
+                          }}
+                        >
+                          <RiDeleteBinLine className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    </EditGuard>
                   </div>
                 </div>
               ))}
@@ -750,18 +760,19 @@ export default function StaffPage() {
       )}
 
       {/* Add/Edit Modal */}
-      {isAddingStaff && (
-        <Dialog open={isAddingStaff} onOpenChange={(open) => {
-          if (!open) {
-            setIsAddingStaff(false);
-            setSelectedStaff(null);
-            setNewStaff({
-              name: "",
-              type_id: staffTypes[0]?.id || "",
-              organisation: "",
-            });
-          }
-        }}>
+      <EditGuard>
+        {isAddingStaff && (
+          <Dialog open={isAddingStaff} onOpenChange={(open) => {
+            if (!open) {
+              setIsAddingStaff(false);
+              setSelectedStaff(null);
+              setNewStaff({
+                name: "",
+                type_id: staffTypes[0]?.id || "",
+                organisation: "",
+              });
+            }
+          }}>
           <DialogContent className="sm:max-w-md">
             <DialogHeader>
               <DialogTitle>
@@ -846,10 +857,11 @@ export default function StaffPage() {
                   {selectedStaff ? 'Update Staff' : 'Add Staff'}
                 </Button>
               </div>
-            </form>
-          </DialogContent>
-        </Dialog>
-      )}
+              </form>
+            </DialogContent>
+          </Dialog>
+        )}
+      </EditGuard>
 
       {/* Comments Modal */}
       {isCommentModalOpen && selectedStaff && (
@@ -922,8 +934,9 @@ export default function StaffPage() {
       )}
 
       {/* Delete Confirmation Modal */}
-      {isDeleteModalOpen && staffToDelete && (
-        <Dialog open={isDeleteModalOpen} onOpenChange={setIsDeleteModalOpen}>
+      <EditGuard>
+        {isDeleteModalOpen && staffToDelete && (
+          <Dialog open={isDeleteModalOpen} onOpenChange={setIsDeleteModalOpen}>
           <DialogContent className="sm:max-w-md">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
@@ -958,10 +971,12 @@ export default function StaffPage() {
                   Delete
                 </Button>
               </div>
-            </div>
-          </DialogContent>
-        </Dialog>
-      )}
-    </div>
+              </div>
+            </DialogContent>
+          </Dialog>
+        )}
+      </EditGuard>
+      </div>
+    </PermissionGuard>
   );
 }

@@ -21,6 +21,7 @@ import { supabase } from "@/lib/supabase";
 import { toast } from "react-hot-toast";
 import { format, addDays } from 'date-fns';
 import { parse, unparse } from 'papaparse';
+import { PermissionGuard, EditGuard } from "@/components/PermissionGuard";
 
 interface Program {
   id: string;
@@ -884,48 +885,51 @@ export function ProgramsPage() {
   };
 
   return (
-    <div>
+    <PermissionGuard>
+      <div>
       {/* Header with Search and Filters */}
       <div className="flex flex-col gap-4 mb-6">
-        <div className="flex justify-end">
-          <div className="flex flex-wrap items-center gap-2">
-            {/* Export Button */}
-            <button
-              onClick={handleExportCSV}
-              className="flex items-center gap-2 px-3 py-2 text-amber-600 bg-amber-50 rounded-lg hover:bg-amber-100 transition-colors text-sm"
-            >
-              <RiUploadLine className="w-4 h-4" />
-              Export
-            </button>
-
-            {/* Import Button */}
-            <div className="relative">
-              <input
-                type="file"
-                accept=".csv"
-                onChange={handleImportCSV}
-                className="hidden"
-                id="csv-upload"
-              />
-              <label
-                htmlFor="csv-upload"
-                className="flex items-center gap-2 px-3 py-2 text-amber-600 bg-amber-50 rounded-lg hover:bg-amber-100 transition-colors cursor-pointer text-sm"
+        <EditGuard>
+          <div className="flex justify-end">
+            <div className="flex flex-wrap items-center gap-2">
+              {/* Export Button */}
+              <button
+                onClick={handleExportCSV}
+                className="flex items-center gap-2 px-3 py-2 text-amber-600 bg-amber-50 rounded-lg hover:bg-amber-100 transition-colors text-sm"
               >
-                <RiDownloadLine className="w-4 h-4" />
-                Import
-              </label>
-            </div>
+                <RiUploadLine className="w-4 h-4" />
+                Export
+              </button>
 
-            {/* Add Program Button */}
-            <button
-              onClick={() => setIsModalOpen(true)}
-              className="flex items-center gap-2 px-3 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors ml-2 text-sm"
-            >
-              <RiAddLine className="w-4 h-4" />
-              Add Program
-            </button>
+              {/* Import Button */}
+              <div className="relative">
+                <input
+                  type="file"
+                  accept=".csv"
+                  onChange={handleImportCSV}
+                  className="hidden"
+                  id="csv-upload"
+                />
+                <label
+                  htmlFor="csv-upload"
+                  className="flex items-center gap-2 px-3 py-2 text-amber-600 bg-amber-50 rounded-lg hover:bg-amber-100 transition-colors cursor-pointer text-sm"
+                >
+                  <RiDownloadLine className="w-4 h-4" />
+                  Import
+                </label>
+              </div>
+
+              {/* Add Program Button */}
+              <button
+                onClick={() => setIsModalOpen(true)}
+                className="flex items-center gap-2 px-3 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors ml-2 text-sm"
+              >
+                <RiAddLine className="w-4 h-4" />
+                Add Program
+              </button>
+            </div>
           </div>
-        </div>
+        </EditGuard>
 
         {/* Filters Section */}
         <div className="flex flex-wrap items-center gap-4">
@@ -1038,9 +1042,11 @@ export function ProgramsPage() {
                 <th className="w-1/4 min-w-[150px] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Status
                 </th>
-                <th className="w-1/4 min-w-[120px] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Actions
-                </th>
+                <EditGuard>
+                  <th className="w-1/4 min-w-[120px] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Actions
+                  </th>
+                </EditGuard>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
@@ -1074,34 +1080,36 @@ export function ProgramsPage() {
                       {program.status}
                     </span>
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                    <button
-                      onClick={() => {
-                        setEditingProgram(program);
-                        setFormData({
-                          name: program.name,
-                          customer_name: program.customer_name,
-                          start_date: program.start_date,
-                          end_date: program.end_date,
-                          total_participants: program.total_participants.toString(),
-                          billing_month: program.billing_month
-                        });
-                        setIsModalOpen(true);
-                      }}
-                      className="text-amber-600 hover:text-amber-900 mr-4"
-                    >
-                      <RiEditLine className="w-5 h-5" />
-                    </button>
-                    <button
-                      onClick={() => {
-                        setProgramToDelete(program);
-                        setIsDeleteModalOpen(true);
-                      }}
-                      className="text-red-600 hover:text-red-900"
-                    >
-                      <RiDeleteBinLine className="w-5 h-5" />
-                    </button>
-                  </td>
+                  <EditGuard>
+                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                      <button
+                        onClick={() => {
+                          setEditingProgram(program);
+                          setFormData({
+                            name: program.name,
+                            customer_name: program.customer_name,
+                            start_date: program.start_date,
+                            end_date: program.end_date,
+                            total_participants: program.total_participants.toString(),
+                            billing_month: program.billing_month
+                          });
+                          setIsModalOpen(true);
+                        }}
+                        className="text-amber-600 hover:text-amber-900 mr-4"
+                      >
+                        <RiEditLine className="w-5 h-5" />
+                      </button>
+                      <button
+                        onClick={() => {
+                          setProgramToDelete(program);
+                          setIsDeleteModalOpen(true);
+                        }}
+                        className="text-red-600 hover:text-red-900"
+                      >
+                        <RiDeleteBinLine className="w-5 h-5" />
+                      </button>
+                    </td>
+                  </EditGuard>
                 </tr>
               ))}
             </tbody>
@@ -1116,8 +1124,9 @@ export function ProgramsPage() {
         handlePageChange={setCurrentPage}
       />
 
-      {/* Modal */}
-      {isModalOpen && (
+      {/* Modal - Only for users with edit access */}
+      <EditGuard>
+        {isModalOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 w-full max-w-md">
             <div className="flex justify-between items-center mb-4">
@@ -1256,10 +1265,12 @@ export function ProgramsPage() {
             </form>
           </div>
         </div>
-      )}
+        )}
+      </EditGuard>
 
-      {/* Delete Confirmation Modal */}
-      {isDeleteModalOpen && programToDelete && (
+      {/* Delete Confirmation Modal - Only for users with edit access */}
+      <EditGuard>
+        {isDeleteModalOpen && programToDelete && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 w-full max-w-md">
             <div className="flex justify-between items-center mb-4">
@@ -1320,7 +1331,9 @@ export function ProgramsPage() {
             </div>
           </div>
         </div>
-      )}
+        )}
+      </EditGuard>
     </div>
+    </PermissionGuard>
   );
 } 
