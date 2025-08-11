@@ -789,17 +789,17 @@ export function ParticipantsPage() {
                     sequence_number: index
                   };
 
-                  if (receptionCheckIn) {
-                    participantData.reception_checkin = receptionCheckIn;
+                  if (receptionCheckin) {
+                    participantData.reception_checkin = receptionCheckin;
                   }
-                  if (receptionCheckOut) {
-                    participantData.reception_checkout = receptionCheckOut;
+                  if (receptionCheckout) {
+                    participantData.reception_checkout = receptionCheckout;
                   }
-                  if (securityCheckIn) {
-                    participantData.security_checkin = securityCheckIn;
+                  if (securityCheckin) {
+                    participantData.security_checkin = securityCheckin;
                   }
-                  if (securityCheckOut) {
-                    participantData.security_checkout = securityCheckOut;
+                  if (securityCheckout) {
+                    participantData.security_checkout = securityCheckout;
                   }
 
                   return participantData;
@@ -1059,7 +1059,8 @@ export function ParticipantsPage() {
   const handleDelete = async () => {
     if (!participantToDelete) return;
 
-    try {      setIsLoading(true);
+    try {
+      setIsLoading(true);
 
       const { error: participantError } = await supabase
         .from('participants')
@@ -1891,9 +1892,10 @@ export function ParticipantsPage() {
                 {isLoading ? 'Deleting...' : 'Delete All'}
               </button>
             </div>
+            </div>
           </div>
-        </div>
-      )}
+        )}
+      </EditGuard>
 
       <EditGuard>
         {isDeleteModalOpen && participantToDelete && (
@@ -1906,31 +1908,31 @@ export function ParticipantsPage() {
                 </h2>
               </div>
 
-            <p className="text-gray-500 mb-2">
-              Are you sure you want to delete <span className="font-medium">{participantToDelete.attendee_name}</span>?
-            </p>
+              <p className="text-gray-500 mb-2">
+                Are you sure you want to delete <span className="font-medium">{participantToDelete.attendee_name}</span>?
+              </p>
 
-            <p className="text-red-600 text-sm mb-6">
-              This will also delete all billing entries associated with this participant. This action cannot be undone.
-            </p>
+              <p className="text-red-600 text-sm mb-6">
+                This will also delete all billing entries associated with this participant. This action cannot be undone.
+              </p>
 
-            <div className="flex justify-end gap-3">
-              <button
-                onClick={() => {
-                  setIsDeleteModalOpen(false);
-                  setParticipantToDelete(null);
-                }}
-                className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleDelete}
-                disabled={isLoading}
-                className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 disabled:opacity-50"
-              >
-                {isLoading ? 'Deleting...' : 'Delete'}
-              </button>
+              <div className="flex justify-end gap-3">
+                <button
+                  onClick={() => {
+                    setIsDeleteModalOpen(false);
+                    setParticipantToDelete(null);
+                  }}
+                  className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleDelete}
+                  disabled={isLoading}
+                  className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 disabled:opacity-50"
+                >
+                  {isLoading ? 'Deleting...' : 'Delete'}
+                </button>
               </div>
             </div>
           </div>
