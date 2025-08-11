@@ -7,6 +7,7 @@ import { toast } from 'react-hot-toast';
 import LoadingSpinner from '../LoadingSpinner';
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { EditGuard } from '@/components/PermissionGuard';
+import { useStrictPermissions } from '@/hooks/use-strict-permissions';
 
 interface PackageItem {
   productName: string;
@@ -110,6 +111,7 @@ const ProgramReport: React.FC<ProgramReportProps> = ({
   const [savingStates, setSavingStates] = useState<{ [key: string]: boolean }>({});
   const [savedStates, setSavedStates] = useState<{ [key: string]: boolean }>({});
   const supabase = createClientComponentClient();
+  const { canEdit } = useStrictPermissions();
 
   // Fetch existing comments when component mounts
   useEffect(() => {
@@ -231,26 +233,35 @@ const ProgramReport: React.FC<ProgramReportProps> = ({
     }
   };
 
-  // Updated handleCommentChange with debounce
+  // Store timeouts in component state instead of window
+  const [commentTimeouts, setCommentTimeouts] = useState<{ [key: string]: NodeJS.Timeout }>({});
+
+  // Updated handleCommentChange with debounce and permission check
   const handleCommentChange = (packageType: string, productName: string, comment: string) => {
+    // Prevent changes if user doesn't have edit access
+    if (!canEdit) {
+      return;
+    }
+    
     const commentKey = `${packageType}:${productName}`;
     setComments(prev => ({ ...prev, [commentKey]: comment }));
 
     // Clear existing timeout
-    if (window.commentTimeouts?.[commentKey]) {
-      clearTimeout(window.commentTimeouts[commentKey]);
-    }
-
-    // Initialize timeouts object if it doesn't exist
-    if (!window.commentTimeouts) {
-      window.commentTimeouts = {};
+    if (commentTimeouts[commentKey]) {
+      clearTimeout(commentTimeouts[commentKey]);
     }
 
     // Debounce the save operation
-    window.commentTimeouts[commentKey] = setTimeout(() => {
+    const timeoutId = setTimeout(() => {
       saveComment(packageType, productName, comment);
-      delete window.commentTimeouts[commentKey];
+      setCommentTimeouts(prev => {
+        const newTimeouts = { ...prev };
+        delete newTimeouts[commentKey];
+        return newTimeouts;
+      });
     }, 1500);
+
+    setCommentTimeouts(prev => ({ ...prev, [commentKey]: timeoutId }));
   };
 
   // Get all unique dates from all items
@@ -698,11 +709,7 @@ const ProgramReport: React.FC<ProgramReportProps> = ({
                                   ₹{item.total.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                                 </td>
                                 <td className="px-1.5 py-1 border-l border-gray-200">
-                                  <EditGuard fallback={
-                                    <div className="w-full px-2 py-1 text-xs text-gray-600 min-h-[2rem] flex items-center">
-                                      {comments[`${packageType}:${item.productName}`] || '-'}
-                                    </div>
-                                  }>
+                                  {canEdit ? (
                                     <div className="relative">
                                       <textarea
                                         value={comments[`${packageType}:${item.productName}`] || ''}
@@ -734,7 +741,17 @@ const ProgramReport: React.FC<ProgramReportProps> = ({
                                         )}
                                       </div>
                                     </div>
-                                  </EditGuard>
+                                  ) : (
+                                    <textarea
+                                      value={comments[`${packageType}:${item.productName}`] || ''}
+                                      placeholder="Add comment..."
+                                      className="w-full px-2 py-1 text-xs border border-gray-300 rounded bg-gray-50 text-gray-600 resize-none cursor-not-allowed"
+                                      rows={1}
+                                      style={{ minHeight: '2rem' }}
+                                      disabled
+                                      readOnly
+                                    />
+                                  )}
                                 </td>
                               </tr>
                             );

@@ -188,36 +188,37 @@ export function requiresParentPermission(pathname: string): boolean {
 /**
  * Check if user has permission for a specific path with strict enforcement
  * This function enforces that each page must have explicit permission
+ * Specific page permissions override wildcard permissions
  */
 export function hasStrictPermission(
   permissions: Array<{ page_name: string; can_view: boolean; can_edit: boolean }>,
   pathname: string,
   action: 'view' | 'edit' = 'view'
 ): boolean {
-  // Check for full access first
-  const hasFullAccess = permissions.some(
-    (p) => p.page_name === '*' && p.can_view
-  );
-
-  if (hasFullAccess) {
-    return true;
-  }
-
   // Clean the pathname
   const cleanPath = pathname.replace(/\/\[.*?\]/g, '').replace(/\/$/, '') || '/';
   
-  // Find exact permission for this path
-  const permission = permissions.find((p) => p.page_name === cleanPath);
+  // Find exact permission for this path (specific permissions take priority)
+  const specificPermission = permissions.find((p) => p.page_name === cleanPath);
   
-  if (!permission) {
-    return false;
+  if (specificPermission) {
+    if (action === 'edit') {
+      return specificPermission.can_view && specificPermission.can_edit;
+    }
+    return specificPermission.can_view;
   }
 
-  if (action === 'edit') {
-    return permission.can_view && permission.can_edit;
-  }
+  // If no specific permission found, check for wildcard permission
+  const wildcardPermission = permissions.find((p) => p.page_name === '*');
   
-  return permission.can_view;
+  if (wildcardPermission && wildcardPermission.can_view) {
+    if (action === 'edit') {
+      return wildcardPermission.can_edit;
+    }
+    return true;
+  }
+
+  return false;
 }
 
 /**
