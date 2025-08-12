@@ -5,6 +5,7 @@ import { Services } from "../components/sections/services";
 import { Menu } from "../components/sections/menu";
 import { Contact } from "../components/sections/contact";
 import { Navbar } from "../components/navbar";
+import { PermissionGuard } from "@/components/PermissionGuard";
 
 export default function Home() {
   return (

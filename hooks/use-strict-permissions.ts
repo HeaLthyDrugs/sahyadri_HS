@@ -65,12 +65,17 @@ export function useStrictPermissions(specificPath?: string) {
           .single();
 
         if (profileError || !profileData?.role_id) {
+          console.error('Profile/Role error:', {
+            profileError,
+            profileData,
+            userId: user.id
+          });
           setState({
             loading: false,
             hasViewAccess: false,
             hasEditAccess: false,
             permissions: [],
-            error: 'Role not found'
+            error: profileError ? `Profile error: ${profileError.message}` : 'No role assigned to user'
           });
           return;
         }
@@ -82,14 +87,29 @@ export function useStrictPermissions(specificPath?: string) {
           .eq('role_id', profileData.role_id);
 
         if (permissionsError) {
+          console.error('Permissions query error:', permissionsError);
           throw permissionsError;
         }
 
         const permissionList = permissions || [];
+        
+        console.log('Permission check debug:', {
+          userId: user.id,
+          roleId: profileData.role_id,
+          currentPath,
+          permissionCount: permissionList.length,
+          permissions: permissionList
+        });
 
         // Use strict permission checking
         const hasViewAccess = hasStrictPermission(permissionList, currentPath, 'view');
         const hasEditAccess = hasStrictPermission(permissionList, currentPath, 'edit');
+        
+        console.log('Permission result:', {
+          currentPath,
+          hasViewAccess,
+          hasEditAccess
+        });
 
         setState({
           loading: false,

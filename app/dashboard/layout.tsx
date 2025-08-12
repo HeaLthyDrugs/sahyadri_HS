@@ -29,6 +29,7 @@ import { auth } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
 import Link from "next/link";
 import { createClient } from "@/utils/supabase/client";
+import { PermissionGuard } from "@/components/PermissionGuard";
 
 interface MenuItem {
   title: string;
@@ -185,6 +186,11 @@ export default function DashboardLayout({
   };
 
   const hasPermission = (path: string) => {
+    // Profile route is always accessible
+    if (path === '/dashboard/profile') {
+      return true;
+    }
+    
     // Check for full access first
     const hasFullAccess = userPermissions.some(p => p.page_name === '*' && p.can_view);
     if (hasFullAccess) {
@@ -411,7 +417,9 @@ export default function DashboardLayout({
       {/* Main Content */}
       <div className="md:ml-64 p-4 md:p-8 mt-16 md:mt-0">
         <div className="bg-white rounded-lg shadow p-4 md:p-6">
-          {children}
+          <PermissionGuard>
+            {children}
+          </PermissionGuard>
         </div>
       </div>
     </div>

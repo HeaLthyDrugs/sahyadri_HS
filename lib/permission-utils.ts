@@ -74,6 +74,14 @@ export function checkPathPermission(
   pathname: string,
   requireEdit = false
 ): { hasAccess: boolean; canEdit: boolean } {
+  // Clean the pathname
+  const cleanPath = pathname.replace(/\/\[.*?\]/g, '').replace(/\/$/, '') || '/';
+  
+  // Profile route is always accessible to authenticated users
+  if (cleanPath === '/dashboard/profile') {
+    return { hasAccess: true, canEdit: true };
+  }
+  
   // Check for full access first
   const hasFullAccess = permissions.some(
     (p) => p.page_name === '*' && p.can_view
@@ -82,9 +90,6 @@ export function checkPathPermission(
   if (hasFullAccess) {
     return { hasAccess: true, canEdit: true };
   }
-
-  // Clean the pathname
-  const cleanPath = pathname.replace(/\/\[.*?\]/g, '').replace(/\/$/, '') || '/';
   
   // First, check for exact path match (most specific)
   const exactPermission = permissions.find((p) => p.page_name === cleanPath);
@@ -198,10 +203,24 @@ export function hasStrictPermission(
   // Clean the pathname
   const cleanPath = pathname.replace(/\/\[.*?\]/g, '').replace(/\/$/, '') || '/';
   
+  // Profile route is always accessible to authenticated users
+  if (cleanPath === '/dashboard/profile') {
+    return true;
+  }
+  
+  console.log('hasStrictPermission debug:', {
+    originalPath: pathname,
+    cleanPath,
+    action,
+    permissionsCount: permissions.length,
+    permissions: permissions.map(p => ({ page_name: p.page_name, can_view: p.can_view, can_edit: p.can_edit }))
+  });
+  
   // Find exact permission for this path (specific permissions take priority)
   const specificPermission = permissions.find((p) => p.page_name === cleanPath);
   
   if (specificPermission) {
+    console.log('Found specific permission:', specificPermission);
     if (action === 'edit') {
       return specificPermission.can_view && specificPermission.can_edit;
     }
@@ -211,13 +230,17 @@ export function hasStrictPermission(
   // If no specific permission found, check for wildcard permission
   const wildcardPermission = permissions.find((p) => p.page_name === '*');
   
-  if (wildcardPermission && wildcardPermission.can_view) {
-    if (action === 'edit') {
-      return wildcardPermission.can_edit;
+  if (wildcardPermission) {
+    console.log('Found wildcard permission:', wildcardPermission);
+    if (wildcardPermission.can_view) {
+      if (action === 'edit') {
+        return wildcardPermission.can_edit;
+      }
+      return true;
     }
-    return true;
   }
 
+  console.log('No permission found for path:', cleanPath);
   return false;
 }
 

@@ -1,4 +1,5 @@
 import { ReactNode } from 'react';
+import { usePathname } from 'next/navigation';
 import { usePermissions } from '@/hooks/use-permissions';
 import { useStrictPermissions } from '@/hooks/use-strict-permissions';
 import { NoAccess } from './NoAccess';
@@ -18,6 +19,13 @@ export function PermissionGuard({
   requiredPath,
   strict = true // Default to strict checking
 }: PermissionGuardProps) {
+  const pathname = usePathname();
+  
+  // Profile route is always accessible to authenticated users
+  if (pathname === '/dashboard/profile') {
+    return <>{children}</>;
+  }
+  
   const legacyPermissions = usePermissions(requiredPath);
   const strictPermissions = useStrictPermissions(requiredPath);
   
@@ -76,6 +84,13 @@ export function StrictPermissionGuard({
   requireEdit = false,
   requiredPath
 }: Omit<PermissionGuardProps, 'strict'>) {
+  const pathname = usePathname();
+  
+  // Profile route is always accessible to authenticated users
+  if (pathname === '/dashboard/profile') {
+    return <>{children}</>;
+  }
+  
   return (
     <PermissionGuard
       strict={true}

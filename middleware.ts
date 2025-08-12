@@ -110,6 +110,11 @@ export async function middleware(request: NextRequest) {
         return response
       }
 
+      // Profile route is always accessible to authenticated users
+      if (pathname === '/dashboard/profile') {
+        return response;
+      }
+      
       // Check if user has full access
       const hasFullAccess = permissions?.some(p => p.page_name === '*' && p.can_view)
       
