@@ -29,12 +29,12 @@ interface Packages {
 }
 
 interface ProgramReportProps {
-  programId?: string;  // Made optional since staff mode won't have a program ID
-  programName?: string; // Made optional for staff mode
-  customerName?: string; // Made optional for staff mode
-  startDate?: string; // Made optional for staff mode
-  endDate?: string; // Made optional for staff mode
-  totalParticipants?: number; // Made optional for staff mode
+  programId?: string;
+  programName?: string;
+  customerName?: string;
+  startDate?: string;
+  endDate?: string;
+  totalParticipants?: number;
   selectedPackage: string;
   packages: Packages;
   grandTotal: number;
@@ -44,7 +44,6 @@ interface ProgramReportProps {
   onMonthChange?: (month: string) => void;
 }
 
-// Package type mapping and order
 const PACKAGE_TYPE_DISPLAY = {
   'Normal': 'CATERING PACKAGE',
   'Extra': 'EXTRA CATERING PACKAGE',
@@ -53,7 +52,6 @@ const PACKAGE_TYPE_DISPLAY = {
 
 const PACKAGE_TYPE_ORDER = ['Normal', 'Extra', 'Cold Drink'];
 
-// Define catering product order according to the provided sequence - EXACT MATCH with the screenshot
 const CATERING_PRODUCT_ORDER = [
   'Morning Tea',
   'Breakfast',
@@ -64,24 +62,20 @@ const CATERING_PRODUCT_ORDER = [
   'DINNER'
 ];
 
-// Function to normalize product names for comparison
 const normalizeProductName = (name: string): string => {
   return name.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
 };
 
-// Function to get the product order index, using normalized comparison
 const getProductOrderIndex = (productName: string): number => {
   const normalizedName = normalizeProductName(productName);
   
   for (let i = 0; i < CATERING_PRODUCT_ORDER.length; i++) {
     const orderName = normalizeProductName(CATERING_PRODUCT_ORDER[i]);
     
-    // Exact match
     if (normalizedName === orderName) {
       return i;
     }
     
-    // Contains match (for partial matches)
     if (normalizedName.includes(orderName) || orderName.includes(normalizedName)) {
       return i;
     }
@@ -135,7 +129,11 @@ const ProgramReport: React.FC<ProgramReportProps> = ({
         if (error) throw error;
 
         const commentMap = (data || []).reduce((acc, item) => {
-          acc[item.reference_id] = item.comment;
+          // Extract the original comment key from the unique reference_id
+          const originalKey = isStaffMode 
+            ? item.reference_id.replace(`${month}:`, '')
+            : item.reference_id.replace(`${programId}:`, '');
+          acc[originalKey] = item.comment;
           return acc;
         }, {} as { [key: string]: string });
 
@@ -148,7 +146,6 @@ const ProgramReport: React.FC<ProgramReportProps> = ({
     fetchComments();
   }, [programId, isStaffMode, month]);
 
-  // Updated saveComment function to use report_comments table
   const saveComment = async (packageType: string, productName: string, comment: string) => {
     const commentKey = `${packageType}:${productName}`;
     
@@ -156,71 +153,66 @@ const ProgramReport: React.FC<ProgramReportProps> = ({
       setSavingStates(prev => ({ ...prev, [commentKey]: true }));
       setSavedStates(prev => ({ ...prev, [commentKey]: false }));
 
-      // Create the data object for report_comments table
-      const commentData: any = {
-        report_type: 'program_item',
-        reference_id: commentKey, // Using the format "packageType:productName"
-        comment: comment.trim() || null,
-        ofStaff: isStaffMode
-      };
-      
-      // Add program_id or month based on mode
-      if (isStaffMode && month) {
-        commentData.month = month;
-      } else if (!isStaffMode && programId) {
-        commentData.program_id = programId;
-      }
+      if (!comment.trim()) {
+        const uniqueReferenceId = isStaffMode 
+          ? `${month}:${commentKey}` 
+          : `${programId}:${commentKey}`;
 
-      // First, try to find existing record
-      let query = supabase
-        .from('report_comments')
-        .select('id')
-        .eq('report_type', 'program_item')
-        .eq('reference_id', commentKey)
-        .eq('ofStaff', isStaffMode);
+        const { error } = await supabase
+          .from('report_comments')
+          .delete()
+          .eq('report_type', 'program_item')
+          .eq('reference_id', uniqueReferenceId)
+          .eq('ofStaff', isStaffMode);
 
-      if (isStaffMode && month) {
-        query = query.eq('month', month);
-      } else if (!isStaffMode && programId) {
-        query = query.eq('program_id', programId);
-      }
+        if (error && error.code !== 'PGRST116') {
+          throw error;
+        }
+      } else {
+        const uniqueReferenceId = isStaffMode 
+          ? `${month}:${commentKey}` 
+          : `${programId}:${commentKey}`;
 
-      const { data: existingRecord } = await query.single();
+        const commentData: any = {
+          report_type: 'program_item',
+          reference_id: uniqueReferenceId,
+          comment: comment.trim(),
+          ofStaff: isStaffMode
+        };
+        
+        if (isStaffMode && month) {
+          commentData.month = month;
+        } else if (!isStaffMode && programId) {
+          commentData.program_id = programId;
+        }
 
-      let result;
-      if (existingRecord) {
-        if (!comment.trim()) {
-          // Delete record if comment is empty
-          result = await supabase
-            .from('report_comments')
-            .delete()
-            .eq('id', existingRecord.id);
-        } else {
-          // Update existing record
-          result = await supabase
+        const { data: existing } = await supabase
+          .from('report_comments')
+          .select('id')
+          .eq('report_type', 'program_item')
+          .eq('reference_id', uniqueReferenceId)
+          .eq('ofStaff', isStaffMode)
+          .maybeSingle();
+
+        let error;
+        if (existing) {
+          ({ error } = await supabase
             .from('report_comments')
             .update(commentData)
-            .eq('id', existingRecord.id);
+            .eq('id', existing.id));
+        } else {
+          ({ error } = await supabase
+            .from('report_comments')
+            .insert(commentData));
         }
-      } else if (comment.trim()) {
-        // Only insert new record if comment is not empty
-        result = await supabase
-          .from('report_comments')
-          .insert(commentData);
-      } else {
-        // No action needed for empty comment on non-existing record
-        result = { error: null };
+
+        if (error) {
+          throw error;
+        }
       }
 
-      if (result.error) {
-        console.error('Save error:', result.error);
-        throw result.error;
-      }
-
-      // Show success state
       setSavedStates(prev => ({ ...prev, [commentKey]: true }));
       
-      // Reset success state after 2 seconds
       setTimeout(() => {
         setSavedStates(prev => ({ ...prev, [commentKey]: false }));
       }, 2000);
@@ -233,12 +225,9 @@ const ProgramReport: React.FC<ProgramReportProps> = ({
     }
   };
 
-  // Store timeouts in component state instead of window
   const [commentTimeouts, setCommentTimeouts] = useState<{ [key: string]: NodeJS.Timeout }>({});
 
-  // Updated handleCommentChange with debounce and permission check
   const handleCommentChange = (packageType: string, productName: string, comment: string) => {
-    // Prevent changes if user doesn't have edit access
     if (!canEdit) {
       return;
     }
@@ -246,12 +235,10 @@ const ProgramReport: React.FC<ProgramReportProps> = ({
     const commentKey = `${packageType}:${productName}`;
     setComments(prev => ({ ...prev, [commentKey]: comment }));
 
-    // Clear existing timeout
     if (commentTimeouts[commentKey]) {
       clearTimeout(commentTimeouts[commentKey]);
     }
 
-    // Debounce the save operation
     const timeoutId = setTimeout(() => {
       saveComment(packageType, productName, comment);
       setCommentTimeouts(prev => {
@@ -264,7 +251,6 @@ const ProgramReport: React.FC<ProgramReportProps> = ({
     setCommentTimeouts(prev => ({ ...prev, [commentKey]: timeoutId }));
   };
 
-  // Get all unique dates from all items
   const getAllDates = () => {
     const datesSet = new Set<string>();
     Object.values(packages).forEach(pkg => {
@@ -283,7 +269,6 @@ const ProgramReport: React.FC<ProgramReportProps> = ({
       setIsGeneratingPDF(true);
       const toastId = toast.loading('Preparing document for print...');
 
-      // Transform the data structure to match API expectations
       const transformedPackages = Object.entries(packages).reduce((acc, [type, data]) => {
         acc[type] = {
           products: data.items.map(item => ({
@@ -291,7 +276,7 @@ const ProgramReport: React.FC<ProgramReportProps> = ({
             name: item.productName,
             serve_item_no: item.serve_item_no,
             rate: item.rate,
-            comment: comments[`${type}:${item.productName}`] || null // Include comments in transformation
+            comment: comments[`${type}:${item.productName}`] || null
           })),
           entries: getAllDates().map(date => ({
             date,
@@ -373,7 +358,6 @@ const ProgramReport: React.FC<ProgramReportProps> = ({
       setIsGeneratingPDF(true);
       const toastId = toast.loading('Generating PDF...');
 
-      // Transform the data structure to match API expectations
       const transformedPackages = Object.entries(packages).reduce((acc, [type, data]) => {
         acc[type] = {
           products: data.items.map(item => ({
@@ -381,7 +365,7 @@ const ProgramReport: React.FC<ProgramReportProps> = ({
             name: item.productName,
             serve_item_no: item.serve_item_no,
             rate: item.rate,
-            comment: comments[`${type}:${item.productName}`] || null // Include comments in transformation
+            comment: comments[`${type}:${item.productName}`] || null
           })),
           entries: getAllDates().map(date => ({
             date,
@@ -461,23 +445,19 @@ const ProgramReport: React.FC<ProgramReportProps> = ({
       return null;
     }
 
-    // Get all unique dates
     const allDates = getAllDates();
 
-    // Filter out dates with no consumption
     const datesWithConsumption = allDates.filter(date => 
       Object.values(packages).some(pkg => 
         pkg.items.some(item => (item.dates?.[date] || 0) > 0)
       )
     ).sort();
 
-    // Filter package groups based on selected package
     const filteredPackages = (() => {
       if (selectedPackage === 'all') {
         return packages;
       }
 
-      // Convert selected package to proper case
       const packageTypeMap = {
         'normal': 'Normal',
         'extra': 'Extra',
@@ -487,7 +467,6 @@ const ProgramReport: React.FC<ProgramReportProps> = ({
       const mappedType = packageTypeMap[selectedPackage.toLowerCase() as keyof typeof packageTypeMap];
       if (!mappedType) return {};
 
-      // Filter packages by type
       return Object.entries(packages).reduce((acc, [type, data]) => {
         if (type === mappedType) {
           acc[type] = data;
@@ -506,7 +485,6 @@ const ProgramReport: React.FC<ProgramReportProps> = ({
       );
     }
 
-    // Sort package types according to defined order
     const sortedPackageTypes = Object.keys(filteredPackages).sort((a, b) => {
       const orderA = PACKAGE_TYPE_ORDER.indexOf(a) !== -1 ? PACKAGE_TYPE_ORDER.indexOf(a) : 999;
       const orderB = PACKAGE_TYPE_ORDER.indexOf(b) !== -1 ? PACKAGE_TYPE_ORDER.indexOf(b) : 999;
@@ -524,49 +502,39 @@ const ProgramReport: React.FC<ProgramReportProps> = ({
             return null;
           }
 
-          // Get all items with any consumption
           const itemsWithConsumption = [...packageData.items]
             .filter(item => Object.values(item.dates || {}).some(qty => qty > 0));
 
           if (itemsWithConsumption.length === 0) return null;
 
-          // Apply special sorting ONLY for Normal/Catering package
           let sortedItems = [...itemsWithConsumption];
           
           if (packageType.toLowerCase() === 'normal') {
-            // Create a map for fast lookup of product order
             const orderMap = new Map();
             CATERING_PRODUCT_ORDER.forEach((name, index) => {
-              // Store both regular and normalized versions
               orderMap.set(name, index);
               orderMap.set(normalizeProductName(name), index);
             });
             
-            // Custom sort function that prioritizes our defined order
             sortedItems = sortedItems.sort((a, b) => {
               const nameA = a.productName.trim();
               const nameB = b.productName.trim();
               
-              // Try direct match first
               const directOrderA = orderMap.get(nameA);
               const directOrderB = orderMap.get(nameB);
               
-              // Then try normalized match
               const normA = normalizeProductName(nameA);
               const normB = normalizeProductName(nameB);
               const orderA = directOrderA !== undefined ? directOrderA : orderMap.get(normA);
               const orderB = directOrderB !== undefined ? directOrderB : orderMap.get(normB);
               
-              // If both have a defined order, sort by that order
               if (orderA !== undefined && orderB !== undefined) {
                 return orderA - orderB;
               }
               
-              // If only one has a defined order, prioritize it
               if (orderA !== undefined) return -1;
               if (orderB !== undefined) return 1;
               
-              // Check for partial matches using getProductOrderIndex
               const indexA = getProductOrderIndex(nameA);
               const indexB = getProductOrderIndex(nameB);
               
@@ -574,15 +542,12 @@ const ProgramReport: React.FC<ProgramReportProps> = ({
               if (indexA !== -1) return -1;
               if (indexB !== -1) return 1;
               
-              // Fallback to alphabetical sorting
               return nameA.localeCompare(nameB);
             });
             
-            // Force the exact order from CATERING_PRODUCT_ORDER if possible
             const exactOrderItems = new Array(CATERING_PRODUCT_ORDER.length).fill(null);
             const remainingItems: PackageItem[] = [];
             
-            // First pass: look for exact matches (case insensitive)
             sortedItems.forEach(item => {
               const normalizedName = normalizeProductName(item.productName);
               
@@ -597,7 +562,6 @@ const ProgramReport: React.FC<ProgramReportProps> = ({
                 }
               }
               
-              // Check for partial matches
               const partialIndex = getProductOrderIndex(item.productName);
               if (partialIndex !== -1) {
                 exactOrderItems[partialIndex] = item;
@@ -606,11 +570,9 @@ const ProgramReport: React.FC<ProgramReportProps> = ({
               }
             });
             
-            // Combine the ordered items with any remaining items
             sortedItems = [...exactOrderItems.filter(Boolean), ...remainingItems];
           }
 
-          // Only chunk normal package items
           const shouldChunk = packageType.toLowerCase() === 'normal';
           const itemChunks = shouldChunk 
             ? sortedItems.reduce((chunks: PackageItem[][], item: PackageItem, index: number) => {
@@ -633,7 +595,6 @@ const ProgramReport: React.FC<ProgramReportProps> = ({
               </div>
 
               {itemChunks.map((chunk, chunkIndex) => {
-                // Filter dates that have data for this chunk
                 const chunkDates = datesWithConsumption.filter(date => 
                   chunk.some(item => (item.dates?.[date] || 0) > 0)
                 );
@@ -676,7 +637,6 @@ const ProgramReport: React.FC<ProgramReportProps> = ({
                         </thead>
                         <tbody>
                           {chunk.map((item, itemIndex) => {
-                            // Calculate row totals
                             const rowTotal = chunkDates.reduce((sum, date) => 
                               sum + (item.dates?.[date] || 0), 0
                             );
@@ -711,15 +671,32 @@ const ProgramReport: React.FC<ProgramReportProps> = ({
                                 <td className="px-1.5 py-1 border-l border-gray-200">
                                   {canEdit ? (
                                     <div className="relative">
-                                      <textarea
-                                        value={comments[`${packageType}:${item.productName}`] || ''}
-                                        onChange={(e) => handleCommentChange(packageType, item.productName, e.target.value)}
-                                        placeholder="Add comment..."
-                                        className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-amber-500 focus:border-amber-500 resize-none pr-6"
-                                        rows={1}
-                                        style={{ minHeight: '2rem' }}
-                                      />
-                                      <div className="absolute right-2 top-1/2 -translate-y-1/2 transition-opacity duration-200">
+                                      <div className="min-w-0 max-w-full overflow-hidden">
+                                        <textarea
+                                          value={comments[`${packageType}:${item.productName}`] || ''}
+                                          onChange={(e) => {
+                                            const target = e.target;
+                                            target.style.height = 'auto';
+                                            target.style.height = Math.max(32, target.scrollHeight) + 'px';
+                                            handleCommentChange(packageType, item.productName, e.target.value);
+                                          }}
+                                          placeholder="Add comment..."
+                                          className="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-amber-500 focus:border-amber-500 resize-y pr-6"
+                                          rows={1}
+                                          style={{ 
+                                            minHeight: '2rem',
+                                            maxWidth: '100%',
+                                            scrollbarWidth: 'none',
+                                            msOverflowStyle: 'none'
+                                          }}
+                                          onInput={(e) => {
+                                            const target = e.target as HTMLTextAreaElement;
+                                            target.style.height = 'auto';
+                                            target.style.height = Math.max(32, target.scrollHeight) + 'px';
+                                          }}
+                                        />
+                                      </div>
+                                      <div className="absolute right-2 top-2 transition-opacity duration-200 z-10">
                                         {savingStates[`${packageType}:${item.productName}`] && (
                                           <LoadingSpinner size="sm" className="text-amber-400 opacity-60 w-3 h-3" />
                                         )}
@@ -742,15 +719,22 @@ const ProgramReport: React.FC<ProgramReportProps> = ({
                                       </div>
                                     </div>
                                   ) : (
-                                    <textarea
-                                      value={comments[`${packageType}:${item.productName}`] || ''}
-                                      placeholder="Add comment..."
-                                      className="w-full px-2 py-1 text-xs border border-gray-300 rounded bg-gray-50 text-gray-600 resize-none cursor-not-allowed"
-                                      rows={1}
-                                      style={{ minHeight: '2rem' }}
-                                      disabled
-                                      readOnly
-                                    />
+                                    <div className="min-w-0 max-w-full overflow-hidden">
+                                      <textarea
+                                        value={comments[`${packageType}:${item.productName}`] || ''}
+                                        placeholder="Add comment..."
+                                        className="w-full px-2 py-1 text-xs border border-gray-300 rounded bg-gray-50 text-gray-600 resize-none cursor-not-allowed"
+                                        rows={1}
+                                        style={{ 
+                                          minHeight: '2rem',
+                                          maxWidth: '100%',
+                                          scrollbarWidth: 'none',
+                                          msOverflowStyle: 'none'
+                                        }}
+                                        disabled
+                                        readOnly
+                                      />
+                                    </div>
                                   )}
                                 </td>
                               </tr>
@@ -763,7 +747,6 @@ const ProgramReport: React.FC<ProgramReportProps> = ({
                 );
               })}
 
-              {/* Package Total */}
               <div className="mb-2 py-1 px-2 text-right text-[11px]">
                 <span className="font-normal mr-2">Package Total:</span>
                 <span className="text-gray-900">₹{packageData.packageTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
@@ -772,7 +755,6 @@ const ProgramReport: React.FC<ProgramReportProps> = ({
           );
         })}
 
-        {/* Grand Total */}
         <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg">
           <div className="flex justify-end">
             <div className="text-right">
@@ -787,7 +769,6 @@ const ProgramReport: React.FC<ProgramReportProps> = ({
 
   const hasPackages = packages && Object.keys(packages).length > 0;
 
-  // Helper function to get current month in YYYY-MM format
   const getCurrentMonth = () => {
     const now = new Date();
     return format(now, 'yyyy-MM');
@@ -795,10 +776,7 @@ const ProgramReport: React.FC<ProgramReportProps> = ({
 
   return (
     <div className="bg-white w-full">
-      {/* Mode Selection and Filters */}
       <div className="flex justify-end items-center mb-6 print:hidden max-w-5xl mx-auto">
-
-        {/* Action Buttons */}
         <div className="flex gap-4">
           <button
             onClick={handlePrint}
@@ -827,7 +805,6 @@ const ProgramReport: React.FC<ProgramReportProps> = ({
         </div>
       </div>
 
-      {/* Report Content */}
       <div className="bg-white max-w-5xl mx-auto px-4">
         {isGeneratingPDF && (
           <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50">
@@ -842,7 +819,6 @@ const ProgramReport: React.FC<ProgramReportProps> = ({
 
         {hasPackages ? (
           <>
-            {/* Report Header */}
             <div className="text-center mb-6 p-4 bg-gray-50 border border-gray-200 rounded-lg">
               <h2 className="text-xl font-semibold text-gray-900 mb-2">
                 {isStaffMode ? 'Staff Catering Report' : `Program Report - ${programName}`}
