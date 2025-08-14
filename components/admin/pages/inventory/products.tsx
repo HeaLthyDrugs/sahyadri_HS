@@ -942,7 +942,7 @@ export function ProductsPage() {
                         {product.serve_item_no || '-'}
                       </td>
                       <td className="w-1/6 min-w-[150px] px-4 py-4">
-                        <div className="text-sm font-medium text-gray-900 truncate">
+                        <div className="text-sm font-medium text-gray-900">
                           {product.name}
                         </div>
                       </td>
