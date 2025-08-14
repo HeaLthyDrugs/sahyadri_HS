@@ -65,6 +65,18 @@ BEGIN
     SELECT array_agg(day_date) INTO affected_dates FROM date_range;
   END;
 
+  -- Only process billing entries if the participant type is 'participant'
+  -- For non-participant types, skip billing calculations entirely
+  IF TG_OP = 'DELETE' AND OLD.type != 'participant' THEN
+    RAISE NOTICE 'Skipping billing calculation for non-participant type: %', OLD.type;
+    RETURN OLD;
+  END IF;
+  
+  IF TG_OP IN ('INSERT', 'UPDATE') AND NEW.type != 'participant' THEN
+    RAISE NOTICE 'Skipping billing calculation for non-participant type: %', NEW.type;
+    RETURN NEW;
+  END IF;
+
   -- For DELETE and UPDATE operations, remove existing entries for affected dates
   IF TG_OP IN ('DELETE', 'UPDATE') THEN
     DELETE FROM billing_entries 
@@ -78,16 +90,18 @@ BEGIN
     -- Recalculate entries for all affected dates and products
     WITH valid_participants AS (
       SELECT 
-        id,
-        reception_checkin AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata' AS checkin_ist,
-        reception_checkout AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata' AS checkout_ist
-      FROM participants
+        p.id,
+        p.reception_checkin AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata' AS checkin_ist,
+        p.reception_checkout AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata' AS checkout_ist,
+        p.type
+      FROM participants p
       WHERE 
-        program_id = program_record.id
-        AND reception_checkin IS NOT NULL
-        AND reception_checkout IS NOT NULL
-        AND reception_checkout >= reception_checkin
-        AND (TG_OP != 'DELETE' OR id != participant_id)
+        p.program_id = program_record.id
+        AND p.reception_checkin IS NOT NULL
+        AND p.reception_checkout IS NOT NULL
+        AND p.reception_checkout >= p.reception_checkin
+        AND p.type = 'participant'  -- Only calculate for participants with type 'participant'
+        AND (TG_OP != 'DELETE' OR p.id != participant_id)
     ),
     calculated_entries AS (
       SELECT
@@ -111,8 +125,13 @@ BEGIN
           AND
           (d.date_val + pr.slot_end::time)::timestamp AT TIME ZONE 'Asia/Kolkata' >= p.checkin_ist
         )
+        -- Join with product_rules to check if this product is allowed for participant type
+        LEFT JOIN product_rules prl ON (prl.product_id = pr.id AND prl.participant_type = 'participant' AND prl.allowed = true)
       WHERE
         pr.package_id = normal_package_id
+        AND (prl.id IS NOT NULL OR NOT EXISTS (
+          SELECT 1 FROM product_rules WHERE product_id = pr.id AND participant_type = 'participant'
+        ))  -- Include product if it's explicitly allowed OR if no rules exist for it
       GROUP BY d.date_val, pr.id, pr.rate
       HAVING COUNT(DISTINCT p.id) > 0
     )

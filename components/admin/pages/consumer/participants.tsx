@@ -941,6 +941,7 @@ export function ParticipantsPage() {
         }
 
         toast.success(`Successfully imported ${importData.length} participants to ${programs.find(p => p.id === selectedProgramId)?.name}`);
+        // Note: Billing entries will be automatically calculated for participants with type 'participant'
         fetchParticipants();
       } catch (error: any) {
         console.error('Error importing file:', error);
@@ -1069,7 +1070,9 @@ export function ParticipantsPage() {
 
       if (participantError) throw participantError;
 
-      toast.success('Participant and their billing entries deleted successfully');
+      // Note: Billing entries are automatically recalculated by the database trigger
+      // Only participants with type 'participant' contribute to billing calculations
+      toast.success('Participant deleted successfully');
       setParticipants(prev => prev.filter(p => p.id !== participantToDelete.id));
       setIsDeleteModalOpen(false);
       setParticipantToDelete(null);

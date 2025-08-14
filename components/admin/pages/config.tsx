@@ -407,7 +407,6 @@ const Config = () => {
     }
   };
 
-
   return (
     <div className="p-6">
       <Tabs defaultValue="product-rules" className="w-full">
@@ -416,167 +415,6 @@ const Config = () => {
           <TabsTrigger value="invoice">Invoice Settings</TabsTrigger>
           <TabsTrigger value="staff-types">Staff Types</TabsTrigger>
         </TabsList>
-
- {/* Staff Types Tab */}
-        <TabsContent value="staff-types" className="mt-0">
-          <div className="bg-white rounded-lg shadow p-6">
-            <div className="flex justify-between items-center mb-6">
-              <div>
-                <h2 className="text-lg font-medium text-gray-900">Staff Types</h2>
-                <p className="text-sm text-gray-500">Manage staff type configurations</p>
-              </div>
-              <Button
-                onClick={() => setIsModalOpen(true)}
-                className="flex items-center gap-2 bg-amber-600 hover:bg-amber-700"
-              >
-                <RiAddLine className="w-4 h-4" />
-                Add Staff Type
-              </Button>
-            </div>
-
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Name</TableHead>
-                    <TableHead>Description</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {staffTypes.map((type) => (
-                    <TableRow key={type.id}>
-                      <TableCell className="font-medium">{type.name}</TableCell>
-                      <TableCell>{type.description}</TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex justify-end items-center gap-2">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-8 w-8 p-0 text-amber-600 hover:text-amber-700 hover:bg-amber-50"
-                            onClick={() => {
-                              setSelectedStaffType(type);
-                              setNewStaffType({
-                                name: type.name,
-                                description: type.description
-                              });
-                              setIsModalOpen(true);
-                            }}
-                          >
-                            <RiEditLine className="w-4 h-4" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-8 w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
-                            onClick={() => {
-                              setStaffTypeToDelete(type);
-                              setIsDeleteModalOpen(true);
-                            }}
-                          >
-                            <RiDeleteBinLine className="w-4 h-4" />
-                          </Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          </div>
-        </TabsContent>
-
-
-              {/* Staff Type Modal */}
-      <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>
-              {selectedStaffType ? 'Edit Staff Type' : 'Add New Staff Type'}
-            </DialogTitle>
-          </DialogHeader>
-          <form onSubmit={handleSaveStaffType} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="name">Name</Label>
-              <Input
-                id="name"
-                value={newStaffType.name}
-                onChange={(e) =>
-                  setNewStaffType({ ...newStaffType, name: e.target.value })
-                }
-                placeholder="Enter type name"
-                required
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="description">Description</Label>
-              <Input
-                id="description"
-                value={newStaffType.description}
-                onChange={(e) =>
-                  setNewStaffType({ ...newStaffType, description: e.target.value })
-                }
-                placeholder="Enter description"
-              />
-            </div>
-            <div className="flex justify-end gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => {
-                  setIsModalOpen(false);
-                  setSelectedStaffType(null);
-                  setNewStaffType({
-                    name: "",
-                    description: ""
-                  });
-                }}
-              >
-                Cancel
-              </Button>
-              <Button type="submit" className="bg-amber-600 hover:bg-amber-700">
-                {selectedStaffType ? 'Update' : 'Add'} Staff Type
-              </Button>
-            </div>
-          </form>
-        </DialogContent>
-      </Dialog>
-
-      {/* Delete Confirmation Modal */}
-      <Dialog open={isDeleteModalOpen} onOpenChange={setIsDeleteModalOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <RiAlertLine className="h-5 w-5 text-red-500" />
-              Confirm Deletion
-            </DialogTitle>
-          </DialogHeader>
-          <div className="py-3">
-            <p>Are you sure you want to delete the staff type &quot;{staffTypeToDelete?.name}&quot;?</p>
-            <p className="text-sm text-gray-500 mt-2">This action cannot be undone.</p>
-          </div>
-          <DialogFooter className="flex justify-end gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => {
-                setIsDeleteModalOpen(false);
-                setStaffTypeToDelete(null);
-              }}
-            >
-              Cancel
-            </Button>
-            <Button 
-              type="button" 
-              variant="destructive"
-              disabled={isLoading}
-              onClick={handleDeleteStaffType}
-            >
-              {isLoading ? "Deleting..." : "Delete Staff Type"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
         {/* Product Rules Tab */}
         <TabsContent value="product-rules" className="mt-0">
@@ -803,7 +641,167 @@ const Config = () => {
             </div>
           </div>
         </TabsContent>
+
+        {/* Staff Types Tab */}
+        <TabsContent value="staff-types" className="mt-0">
+          <div className="bg-white rounded-lg shadow p-6">
+            <div className="flex justify-between items-center mb-6">
+              <div>
+                <h2 className="text-lg font-medium text-gray-900">Staff Types</h2>
+                <p className="text-sm text-gray-500">Manage staff type configurations</p>
+              </div>
+              <Button
+                onClick={() => setIsModalOpen(true)}
+                className="flex items-center gap-2 bg-amber-600 hover:bg-amber-700"
+              >
+                <RiAddLine className="w-4 h-4" />
+                Add Staff Type
+              </Button>
+            </div>
+
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Name</TableHead>
+                    <TableHead>Description</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {staffTypes.map((type) => (
+                    <TableRow key={type.id}>
+                      <TableCell className="font-medium">{type.name}</TableCell>
+                      <TableCell>{type.description}</TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex justify-end items-center gap-2">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 w-8 p-0 text-amber-600 hover:text-amber-700 hover:bg-amber-50"
+                            onClick={() => {
+                              setSelectedStaffType(type);
+                              setNewStaffType({
+                                name: type.name,
+                                description: type.description
+                              });
+                              setIsModalOpen(true);
+                            }}
+                          >
+                            <RiEditLine className="w-4 h-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
+                            onClick={() => {
+                              setStaffTypeToDelete(type);
+                              setIsDeleteModalOpen(true);
+                            }}
+                          >
+                            <RiDeleteBinLine className="w-4 h-4" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </div>
+        </TabsContent>
       </Tabs>
+
+      {/* Staff Type Modal */}
+      <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {selectedStaffType ? 'Edit Staff Type' : 'Add New Staff Type'}
+            </DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleSaveStaffType} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="name">Name</Label>
+              <Input
+                id="name"
+                value={newStaffType.name}
+                onChange={(e) =>
+                  setNewStaffType({ ...newStaffType, name: e.target.value })
+                }
+                placeholder="Enter type name"
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="description">Description</Label>
+              <Input
+                id="description"
+                value={newStaffType.description}
+                onChange={(e) =>
+                  setNewStaffType({ ...newStaffType, description: e.target.value })
+                }
+                placeholder="Enter description"
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setIsModalOpen(false);
+                  setSelectedStaffType(null);
+                  setNewStaffType({
+                    name: "",
+                    description: ""
+                  });
+                }}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" className="bg-amber-600 hover:bg-amber-700">
+                {selectedStaffType ? 'Update' : 'Add'} Staff Type
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Modal */}
+      <Dialog open={isDeleteModalOpen} onOpenChange={setIsDeleteModalOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <RiAlertLine className="h-5 w-5 text-red-500" />
+              Confirm Deletion
+            </DialogTitle>
+          </DialogHeader>
+          <div className="py-3">
+            <p>Are you sure you want to delete the staff type "{staffTypeToDelete?.name}"?</p>
+            <p className="text-sm text-gray-500 mt-2">This action cannot be undone.</p>
+          </div>
+          <DialogFooter className="flex justify-end gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setIsDeleteModalOpen(false);
+                setStaffTypeToDelete(null);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button 
+              type="button" 
+              variant="destructive"
+              disabled={isLoading}
+              onClick={handleDeleteStaffType}
+            >
+              {isLoading ? "Deleting..." : "Delete Staff Type"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
