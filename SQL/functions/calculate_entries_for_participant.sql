@@ -66,7 +66,7 @@ BEGIN
   END;
 
   -- Only process billing entries if the participant type is 'participant'
-  -- For non-participant types, skip billing calculations entirely
+  -- For non-participant types (guest, other, driver), skip billing calculations entirely
   IF TG_OP = 'DELETE' AND OLD.type != 'participant' THEN
     RAISE NOTICE 'Skipping billing calculation for non-participant type: %', OLD.type;
     RETURN OLD;
@@ -100,7 +100,7 @@ BEGIN
         AND p.reception_checkin IS NOT NULL
         AND p.reception_checkout IS NOT NULL
         AND p.reception_checkout >= p.reception_checkin
-        AND p.type = 'participant'  -- Only calculate for participants with type 'participant'
+        AND p.type = 'participant'  -- Only calculate entries for participants with type 'participant' (excludes guest, other, driver)
         AND (TG_OP != 'DELETE' OR p.id != participant_id)
     ),
     calculated_entries AS (

@@ -9,7 +9,7 @@ create table public.participants (
   created_at timestamp with time zone not null default now(),
   actual_arrival_date date null,
   actual_departure_date date null,
-  type text not null default 'participant'::text,
+  type text not null default 'participant'::text, -- Only 'participant' type generates billing entries
   has_date_error boolean null default false,
   date_error_message text null,
   sequence_number integer null,
@@ -29,19 +29,20 @@ create table public.participants (
   )
 ) TABLESPACE pg_default;
 
-create index IF not exists participants_created_at_idx on public.participants using btree (created_at desc) TABLESPACE pg_default;
-
-create index IF not exists participants_attendee_name_idx on public.participants using btree (attendee_name) TABLESPACE pg_default;
-
-create index IF not exists participants_type_idx on public.participants using btree (type) TABLESPACE pg_default;
+create index IF not exists idx_participants_sequence_number on public.participants using btree (sequence_number) TABLESPACE pg_default;
 
 create index IF not exists participants_actual_arrival_date_idx on public.participants using btree (actual_arrival_date) TABLESPACE pg_default;
 
 create index IF not exists participants_actual_departure_date_idx on public.participants using btree (actual_departure_date) TABLESPACE pg_default;
 
-create index IF not exists idx_participants_sequence_number on public.participants using btree (sequence_number) TABLESPACE pg_default;
+create index IF not exists participants_attendee_name_idx on public.participants using btree (attendee_name) TABLESPACE pg_default;
 
-create trigger participant_entry_calculator BEFORE INSERT
+create index IF not exists participants_created_at_idx on public.participants using btree (created_at desc) TABLESPACE pg_default;
+
+create index IF not exists participants_type_idx on public.participants using btree (type) TABLESPACE pg_default;
+
+create trigger participant_entry_calculator
+after INSERT
 or DELETE
 or
 update on participants for EACH row

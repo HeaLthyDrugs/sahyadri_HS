@@ -941,7 +941,7 @@ export function ParticipantsPage() {
         }
 
         toast.success(`Successfully imported ${importData.length} participants to ${programs.find(p => p.id === selectedProgramId)?.name}`);
-        // Note: Billing entries will be automatically calculated for participants with type 'participant'
+        // Note: Billing entries are automatically calculated only for participants with type 'participant'
         fetchParticipants();
       } catch (error: any) {
         console.error('Error importing file:', error);

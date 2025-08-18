@@ -1,3 +1,6 @@
+-- Billing entries table
+-- Only participants with type 'participant' contribute to billing calculations
+-- Guests, drivers, and other types are excluded from billing entry generation
 create table public.billing_entries (
   id uuid not null default extensions.uuid_generate_v4 (),
   program_id uuid null,
