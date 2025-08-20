@@ -285,22 +285,16 @@ const generatePDF = async (
                       if (a.program === 'Staff') return 1;
                       if (b.program === 'Staff') return -1;
                       
-                      // Extract sequence numbers from program names
-                      const getSequenceNumber = (programName: string) => {
-                        const match = programName.match(/^(\d+)\s/);
-                        return match ? parseInt(match[1]) : 999; // Programs without numbers go to end
+                      // Simple number extraction - just get the first number in the string
+                      const getNumber = (str: string) => {
+                        const match = str.match(/\d+/);
+                        return match ? parseInt(match[0], 10) : 999;
                       };
                       
-                      const seqA = getSequenceNumber(a.program);
-                      const seqB = getSequenceNumber(b.program);
+                      const numA = getNumber(a.program);
+                      const numB = getNumber(b.program);
                       
-                      // Sort by sequence number first
-                      if (seqA !== seqB) {
-                        return seqA - seqB;
-                      }
-                      
-                      // If no sequence numbers or same sequence numbers, sort by program name
-                      return a.program.localeCompare(b.program);
+                      return numA - numB;
                     })
                     .map((row, index, sortedArray) => {
                       // Calculate sequence numbers properly for non-Staff programs only
@@ -376,22 +370,16 @@ const generatePDF = async (
                           if (a.program === 'Staff') return 1;
                           if (b.program === 'Staff') return -1;
                           
-                          // Extract sequence numbers from program names
-                          const getSequenceNumber = (programName: string) => {
-                            const match = programName.match(/^(\d+)\s/);
-                            return match ? parseInt(match[1]) : 999; // Programs without numbers go to end
+                          // Simple number extraction - just get the first number in the string
+                          const getNumber = (str: string) => {
+                            const match = str.match(/\d+/);
+                            return match ? parseInt(match[0], 10) : 999;
                           };
                           
-                          const seqA = getSequenceNumber(a.program);
-                          const seqB = getSequenceNumber(b.program);
+                          const numA = getNumber(a.program);
+                          const numB = getNumber(b.program);
                           
-                          // Sort by sequence number first
-                          if (seqA !== seqB) {
-                            return seqA - seqB;
-                          }
-                          
-                          // If no sequence numbers or same sequence numbers, sort by program name
-                          return a.program.localeCompare(b.program);
+                          return numA - numB;
                         });
                       
                       return sortedCateringData
